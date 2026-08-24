@@ -11,26 +11,23 @@
 - [ ] Configuração/infraestrutura (CI, build, etc.)
 - [ ] Documentação
 
-## Como testar
+## Uso de IA
 
-<!-- Passos para quem for revisar conseguir testar localmente. -->
-
-1.
-2.
-3.
+<!-- Quais ferramentas de IA foram usadas neste PR (ChatGPT, Claude, Copilot,
+Cursor, etc.) e em quais partes (geração de código, revisão, documentação,
+testes, etc.). Se nenhuma foi usada, escreva "Nenhuma". -->
 
 ## Checklist
 
 - [ ] Rodei `npm run lint` localmente e não há erros
 - [ ] Rodei `npm run build` localmente e o projeto builda sem erros
 - [ ] Rodei `npm run test` localmente (quando aplicável)
-- [ ] O PR está direcionado para a branch `develop` (não `main`)
-- [ ] Adicionei prints/vídeo caso envolva mudança visual
+- [ ] Adicionei prints caso envolva mudança visual
 
-## Prints ou vídeo (se aplicável)
+## Prints
 
 <!-- Cole aqui prints de antes/depois, se for mudança visual. -->
 
 ## Observações
 
-<!-- Qualquer contexto adicional para quem for revisar. --> 
+<!-- Qualquer contexto adicional para quem for revisar. -->
