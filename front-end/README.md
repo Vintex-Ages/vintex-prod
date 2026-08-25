@@ -1,5 +1,7 @@
 # front-end
 
+Consulte o [guia de contribuição](CONTRIBUTING.md) antes de abrir uma issue ou Pull Request.
+
 Repositório de front-end do projeto **Vintex**, PoC de marketplace de moda circular
 (brechós e microempreendedores de moda usada), conforme o Termo de Abertura do Projeto
 (AGES, 2LM4LM, semestre 2026/2).
@@ -77,12 +79,13 @@ ou Pull Request nas branches `main` e `develop`:
 5. Testes (`npm run test`)
 6. Build (`npm run build`), com o resultado publicado como artefato
 
-Recomendado configurar esse workflow como *required status check* na proteção
+Recomendado configurar esse workflow como _required status check_ na proteção
 das branches `main` e/ou `develop`, bloqueando merge de PRs que quebrem lint,
 tipos, testes ou build.
 
 Ainda não configurados (a adicionar depois, cada um como job/workflow
 separado, sem alterar este):
+
 - Testes E2E (Playwright)
 - Deploy automatizado (Vercel/Netlify)
 
