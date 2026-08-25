@@ -10,6 +10,9 @@ develop -> main -> futura AWS
 
 - Promoções de componentes alteram somente o manifesto correspondente.
 - Alterações de governança usam os prefixos `feature`, `bugfix`, `hotfix`, `refactor`, `docs` ou `chore`, com número de issue.
+- PRs de governança usam `Closes #<issue>`; a primeira issue deve coincidir com a branch e issues adicionais não podem ter milestones conflitantes.
 - `main` aceita somente Pull Requests de `develop`.
-- Todo PR exige CI e review; não há merge automático.
+- Promoções automáticas dispensam issue, mas entram no Project geral.
+- O GitHub solicita review aos quatro integrantes de AGES III. O merge exige duas aprovações vigentes, que podem vir de AGES III ou AGES IV.
+- Todo PR exige CI e review; novo commit invalida aprovações anteriores e não há merge automático.
 - O repositório é público e não pode armazenar segredos.
