@@ -16,6 +16,13 @@ const workBranch =
   /^(feature|bugfix|hotfix|refactor|docs|chore)\/[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
     head,
   );
+const closingIssues = [
+  ...new Set(
+    [...(pr.body || "").matchAll(/\b(?:Closes|Fixes|Resolves)\s+#(\d+)/gi)].map(
+      (match) => Number(match[1]),
+    ),
+  ),
+];
 
 if (base === "main" && head !== "develop")
   errors.push("main aceita somente Pull Requests de develop.");
@@ -29,7 +36,7 @@ if (!["main", "develop"].includes(base))
 const api = async (path) => {
   const response = await fetch(`https://api.github.com${path}`, {
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       Accept: "application/vnd.github+json",
     },
   });
@@ -37,6 +44,36 @@ const api = async (path) => {
     throw new Error(`GET ${path}: ${response.status} ${await response.text()}`);
   return response.json();
 };
+
+if (base === "develop" && workBranch) {
+  const branchIssue = Number(head.match(/^[^/]+\/(\d+)-/)?.[1]);
+  if (!closingIssues.length) {
+    errors.push("Inclua Closes #<issue> no corpo do PR.");
+  } else {
+    if (branchIssue !== closingIssues[0]) {
+      errors.push("A primeira issue vinculada deve coincidir com o número da branch.");
+    }
+    const issues = [];
+    for (const number of closingIssues) {
+      try {
+        const issue = await api(`/repos/${owner}/${repo}/issues/${number}`);
+        if (issue.pull_request) {
+          errors.push(`#${number} é um Pull Request, não uma issue.`);
+        } else {
+          issues.push(issue);
+        }
+      } catch {
+        errors.push(`A issue #${number} não existe neste repositório.`);
+      }
+    }
+    const milestones = new Set(
+      issues.map((issue) => issue.milestone?.number).filter(Boolean),
+    );
+    if (milestones.size > 1) {
+      errors.push("As issues vinculadas possuem milestones diferentes.");
+    }
+  }
+}
 
 if (promotionMatch) {
   const component = promotionMatch[1];
