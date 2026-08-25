@@ -2,6 +2,6 @@ schema_version: 1
 component: front-end
 source_repository: Vintex-Ages/front-end
 source_branch: deploy
-source_sha: null
-promoted_at: null
-source_run_url: null
+source_sha: 3b480af7bc853581b2155d31ee97ce2d8e4bb91a
+promoted_at: 2026-08-25T04:11:51Z
+source_run_url: https://github.com/Vintex-Ages/front-end/actions
