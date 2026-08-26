@@ -31,8 +31,4 @@ Closes #<!-- número da issue -->
 ## Checklist
 
 - [ ] Criei a branch a partir de `develop`
-- [ ] Rodei `npm run lint`
-- [ ] Rodei `npm run test`
-- [ ] Rodei `npm run build`
-- [ ] Rodei `npm run format` e revisei as alterações
 - [ ] Atualizei testes e documentação quando necessário
