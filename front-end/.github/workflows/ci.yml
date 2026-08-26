@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Verificar formatação
+        run: npm run format:check
+
       - name: Auditoria de dependências
         run: npm audit --audit-level=high
 
