@@ -6,6 +6,7 @@ Antes de trabalhar neste repositório, leia e siga:
 - `.ai/architecture.md`
 - `.ai/coding-rules.md`
 - `.ai/learning-rules.md`
+- `.ai/git-workflow.md`
 
 Consulte `.ai/glossary.md` e `.ai/examples.md` quando forem relevantes.
 
