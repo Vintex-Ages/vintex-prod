@@ -93,15 +93,21 @@ function StyleGuide() {
           decisões de página.
         </p>
         <ul className="space-y-3">
-          {Object.entries(spacing).map(([step, value]) => (
-            <li key={step} className="flex items-center gap-4">
-              <span className="w-10 text-label uppercase tracking-wide text-texto-auxiliar">
-                {step}
-              </span>
-              <span className="h-3 rounded-sm bg-verde-rs" style={{ width: value }} />
-              <span className="text-texto-auxiliar">{value}</span>
-            </li>
-          ))}
+          {Object.entries(spacing).map(([step, value]) => {
+            const px = Number.parseFloat(value) * 16;
+            return (
+              <li key={step} className="flex items-center gap-4">
+                <span className="w-10 text-label uppercase tracking-wide text-texto-auxiliar">
+                  {step}
+                </span>
+                <span className="h-3 rounded-sm bg-verde-rs" style={{ width: value }} />
+                <span className="text-texto-auxiliar">
+                  {value}
+                  {px > 0 ? ` · ${px}px` : ''}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </Section>
 
