@@ -33,12 +33,14 @@ describe('design tokens', () => {
     expect(fontSize.h1[1].lineHeight).toBe('0.92');
   });
 
-  it('uses a spacing scale of 4px multiples only', () => {
+  it('uses a 4px spacing grid expressed in rem', () => {
     const values = Object.values(spacing);
     expect(values.length).toBeGreaterThan(0);
     for (const value of values) {
-      expect(value).toMatch(/^\d+px$/);
-      expect(Number.parseInt(value, 10) % 4).toBe(0);
+      if (value === '0px') continue;
+      expect(value).toMatch(/^\d+(\.\d+)?rem$/);
+      // 0.25rem === 4px at a 16px root, so every step lands on the 4px grid.
+      expect((Number.parseFloat(value) * 16) % 4).toBe(0);
     }
   });
 
