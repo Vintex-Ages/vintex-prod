@@ -20,19 +20,19 @@ export type CheckboxProps = {
 function Checkbox({ checked, onChange, label, disabled = false, id }: CheckboxProps) {
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="relative inline-flex h-5 w-5 shrink-0">
+      <span className="relative inline-flex h-4 w-4 shrink-0">
         <input
           type="checkbox"
           id={id}
           checked={checked}
           disabled={disabled}
           onChange={(event) => onChange(event.target.checked)}
-          className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-linha bg-branco-quente transition-colors checked:border-verde-rs checked:bg-verde-rs disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-verde-rs"
+          className="peer h-4 w-4 cursor-pointer appearance-none border border-linha bg-branco-quente transition-colors checked:border-verde-rs checked:bg-verde-rs disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-verde-rs"
         />
         <svg
           aria-hidden="true"
           viewBox="0 0 16 16"
-          className="pointer-events-none absolute inset-0 h-5 w-5 p-1 text-branco-quente opacity-0 peer-checked:opacity-100"
+          className="pointer-events-none absolute inset-0 h-4 w-4 text-branco-quente opacity-0 peer-checked:opacity-100"
         >
           <path
             d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
