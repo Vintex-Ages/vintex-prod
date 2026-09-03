@@ -371,75 +371,6 @@ async function syncProject(number, pr, primaryIssue) {
   );
 }
 
-const latestReviewStates = async (pr) => {
-  const reviews = await listPages(
-    "/repos/" + owner + "/" + repo + "/pulls/" + pr.number + "/reviews",
-  );
-  reviews.sort(
-    (left, right) =>
-      new Date(left.submitted_at || 0) - new Date(right.submitted_at || 0) ||
-      left.id - right.id,
-  );
-  const latest = new Map();
-  for (const review of reviews) {
-    if (
-      review.user?.login &&
-      ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(review.state)
-    ) {
-      latest.set(review.user.login.toLowerCase(), review.state);
-    }
-  }
-  return latest;
-};
-
-async function requestReviews(pr) {
-  const reviewActions = new Set([
-    "opened",
-    "reopened",
-    "ready_for_review",
-    "synchronize",
-  ]);
-  if (
-    eventName !== "pull_request_target" ||
-    !reviewActions.has(event.action) ||
-    pr.state !== "open" ||
-    pr.draft
-  ) {
-    return;
-  }
-
-  const latest = await latestReviewStates(pr);
-  const requested = new Set(
-    (pr.requested_reviewers || []).map((reviewer) =>
-      reviewer.login.toLowerCase(),
-    ),
-  );
-  const author = pr.user.login.toLowerCase();
-  const reviewers = config.requestedReviewers.filter((login) => {
-    const normalized = login.toLowerCase();
-    return (
-      normalized !== author &&
-      !requested.has(normalized) &&
-      latest.get(normalized) !== "APPROVED"
-    );
-  });
-
-  if (!reviewers.length) return;
-  await rest(
-    "/repos/" +
-      owner +
-      "/" +
-      repo +
-      "/pulls/" +
-      pr.number +
-      "/requested_reviewers",
-    {
-      method: "POST",
-      body: JSON.stringify({ reviewers }),
-    },
-  );
-}
-
 const changeLabel = (body) => {
   const types = ["feature", "bugfix", "hotfix", "refactor", "docs", "chore"];
   const selected = types.find((type) =>
@@ -550,7 +481,6 @@ async function syncPullRequest(inputPr) {
   }
 
   await syncRepositoryMetadata(pr, issues);
-  await requestReviews(pr);
 
   const projectNumbers = [
     config.sourceProjectNumber,
