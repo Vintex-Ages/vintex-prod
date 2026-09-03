@@ -40,9 +40,7 @@ describe('<Checkbox />', () => {
   });
 
   it('reflete o estado marcado/desmarcado via prop checked (controlado)', () => {
-    const { rerender } = render(
-      <Checkbox id="terms" checked={false} onChange={() => {}} />,
-    );
+    const { rerender } = render(<Checkbox id="terms" checked={false} onChange={() => {}} />);
     expect(screen.getByRole('checkbox')).not.toBeChecked();
 
     rerender(<Checkbox id="terms" checked={true} onChange={() => {}} />);
