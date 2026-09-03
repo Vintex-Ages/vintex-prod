@@ -8,7 +8,6 @@ const config = JSON.parse(
 );
 const token = process.env.GH_TOKEN;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
-const eventName = process.env.GITHUB_EVENT_NAME;
 
 if (!token) throw new Error("GH_TOKEN não configurado.");
 
