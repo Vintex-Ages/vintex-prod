@@ -1,6 +1,5 @@
 import clsx from 'clsx';
 
-
 export type InputFieldProps = {
   label: string;
   value: string;
@@ -31,7 +30,10 @@ function InputField({
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-label font-bold lowercase first-letter:uppercase text-tinta">
+      <label
+        htmlFor={id}
+        className="text-label font-bold lowercase first-letter:uppercase text-tinta"
+      >
         {label}
       </label>
 
