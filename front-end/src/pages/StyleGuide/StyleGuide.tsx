@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
 import { colorTokens, fontSize, screens, spacing } from '@/styles/tokens';
+import { AccountMenu } from '@/components/layout/AccountMenu';
 
 /**
  * Sample page that renders every design token side by side (Style Guide v.1).
@@ -121,6 +122,67 @@ function StyleGuide() {
             </li>
           ))}
         </ul>
+      </Section>
+      <Section title="Account Menu">
+        <div className="space-y-8">
+          <div>
+            <p className="mb-3 font-ui text-label uppercase tracking-wide text-texto-auxiliar">
+              Mobile · Anônimo
+            </p>
+            <AccountMenu
+              authenticated={false}
+              platform="mobile"
+              onLogin={() => {}}
+              onRegister={() => {}}
+            />
+          </div>
+
+          <div>
+            <p className="mb-3 font-ui text-label uppercase tracking-wide text-texto-auxiliar">
+              Web · Anônimo
+            </p>
+            <AccountMenu
+              authenticated={false}
+              platform="web"
+              onLogin={() => {}}
+              onRegister={() => {}}
+            />
+          </div>
+
+          <div>
+            <p className="mb-3 font-ui text-label uppercase tracking-wide text-texto-auxiliar">
+              Mobile · Logado
+            </p>
+            <AccountMenu
+              authenticated
+              platform="mobile"
+              user={{ name: 'Ana Beatriz' }}
+              items={[
+                { label: 'Favoritos', onSelect: () => {} },
+                { label: 'Pedidos', onSelect: () => {} },
+                { label: 'Preferências', onSelect: () => {} },
+              ]}
+              onLogout={() => {}}
+            />
+          </div>
+
+          <div>
+            <p className="mb-3 font-ui text-label uppercase tracking-wide text-texto-auxiliar">
+              Web · Logado
+            </p>
+            <AccountMenu
+              authenticated
+              platform="web"
+              user={{ name: 'Ana Beatriz' }}
+              items={[
+                { label: 'Favoritos', onSelect: () => {} },
+                { label: 'Pedidos', onSelect: () => {} },
+                { label: 'Preferências', onSelect: () => {} },
+              ]}
+              onLogout={() => {}}
+            />
+          </div>
+        </div>
       </Section>
     </main>
   );
