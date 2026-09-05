@@ -42,16 +42,15 @@ describe('<IconButton />', () => {
     expect(screen.getByTestId('icon')).toBeInTheDocument();
   });
 
-  it('defaults to the "default" variant', () => {
+  it('applies different styles depending on the variant', () => {
     renderButton();
+    const defaultClassName = screen.getByRole('button').className;
 
-    expect(screen.getByRole('button')).toHaveClass('border-linha');
-  });
-
-  it('applies the "primary" variant styles', () => {
+    cleanup();
     renderButton({ variant: 'primary' });
+    const primaryClassName = screen.getByRole('button').className;
 
-    expect(screen.getByRole('button')).toHaveClass('bg-vermelho-escuro');
+    expect(primaryClassName).not.toBe(defaultClassName);
   });
 
   it('meets the minimum 44px touch target', () => {

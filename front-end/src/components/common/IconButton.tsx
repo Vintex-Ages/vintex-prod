@@ -1,7 +1,16 @@
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
+/**
+ * Botão só de ícone — apresentação e comportamento genérico (clique).
+ * `ariaLabel` é obrigatório porque não há texto visível. Sem regra de negócio.
+ *
+ * Usage:
+ *   import IconButton from '@/components/common/IconButton';
+ *   <IconButton icon={<Icon />} ariaLabel="Voltar" onClick={voltar} />
+ */
 export type IconButtonProps = {
-  icon: React.ReactNode;
+  icon: ReactNode;
   onClick: () => void;
   ariaLabel: string;
   variant?: 'default' | 'primary';
