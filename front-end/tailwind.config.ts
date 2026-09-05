@@ -3,15 +3,17 @@ import { tokens } from './src/styles/tokens';
 
 /**
  * Vintex design tokens live in `src/styles/tokens.ts` and are wired here.
- * `screens` and `spacing` are overridden (not extended) so only the project's
- * breakpoints and 4px grid are reachable from utilities.
+ * `screens` is overridden so only the project's breakpoints (mobile/tablet/web)
+ * are reachable. Spacing keeps Tailwind's default 4px rem grid — the style
+ * guide's canonical steps (`tokens.spacing`) are a documented subset for
+ * reference, not a restriction (overriding it silently dropped `1.5`, `px`, …
+ * and broke utilities people reach for by habit).
  */
 const config: Config = {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     screens: tokens.screens,
-    spacing: tokens.spacing,
     extend: {
       colors: tokens.colors,
       fontFamily: tokens.fontFamily,
