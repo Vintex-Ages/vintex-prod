@@ -4,7 +4,7 @@
  * sem validação de tela — ver `.ai/coding-rules.md`.
  *
  * Uso:
- *   <FooterLink text="Não tem conta?" linkLabel="Criar uma" to="/signup" />
+ *   <FooterLink text="Não tem uma conta?" linkLabel="Criar conta" to="/signup" />
  *   <FooterLink text="Já tem conta?" linkLabel="Entrar" onClick={() => setMode('login')} />
  */
 interface FooterLinkProps {
@@ -20,7 +20,7 @@ interface FooterLinkProps {
 
 export function FooterLink({ text, linkLabel, to, onClick }: FooterLinkProps) {
   const linkClass =
-    'font-ui text-body font-semibold text-vermelho-escuro bg-transparent border-0 p-0 cursor-pointer';
+    'font-ui text-body font-bold text-vermelho-escuro no-underline bg-transparent border-0 p-0 cursor-pointer';
 
   return (
     <p className="font-ui text-body text-texto-auxiliar flex items-center justify-center gap-1">
