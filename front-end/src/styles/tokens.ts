@@ -68,10 +68,11 @@ export const fontSize: Record<string, FontSizeToken> = {
 };
 
 /**
- * Spacing rhythm — a 4px grid expressed in `rem` (steps of `0.25rem`), so it
- * scales with the user's root font size. Overrides Tailwind's default scale to
- * drop the off-grid steps (`0.5`, `1.5`, `px`, …). Guide: 8–16px inside a
- * control, 24–32px between groups, 48–64px between page-level decisions.
+ * Spacing rhythm — the style guide's canonical 4px steps, in `rem`. This is a
+ * documented *subset* for reference and the style-guide page; it is NOT wired
+ * into Tailwind as an override, so the full default scale (same 4px rem grid,
+ * plus `0.5`/`1.5`/… and `px`) stays available. Guide: 8–16px inside a control,
+ * 24–32px between groups, 48–64px between page-level decisions.
  */
 export const spacing: Record<string, string> = {
   0: '0px',
