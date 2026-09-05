@@ -1,5 +1,14 @@
 import clsx from 'clsx';
 
+/**
+ * Campo de texto com label, helper e estado de erro — só apresentação.
+ * Sem validação: quem chama passa `error` quando o valor for inválido.
+ *
+ * Usage:
+ *   import InputField from '@/components/common/InputField';
+ *   <InputField id="email" label="E-mail" type="email" value={email}
+ *     onChange={setEmail} error={erroEmail} />
+ */
 export type InputFieldProps = {
   label: string;
   value: string;
@@ -30,10 +39,7 @@ function InputField({
 
   return (
     <div className="flex flex-col gap-2">
-      <label
-        htmlFor={id}
-        className="text-label font-bold lowercase first-letter:uppercase text-tinta"
-      >
+      <label htmlFor={id} className="text-label font-bold text-tinta">
         {label}
       </label>
 
@@ -59,6 +65,7 @@ function InputField({
       {message ? (
         <p
           id={messageId}
+          role={hasError ? 'alert' : undefined}
           className={clsx('text-label', hasError ? 'text-vermelho-escuro' : 'text-texto-auxiliar')}
         >
           {message}
