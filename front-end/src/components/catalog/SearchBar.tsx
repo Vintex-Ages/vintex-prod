@@ -56,17 +56,17 @@ export function SearchBar({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        aria-label="Buscar"
+        aria-label="Enviar Busca"
         className="flex-1 bg-transparent px-2 py-2 font-ui text-body text-tinta placeholder:text-texto-auxiliar outline-none focus:outline-none focus:ring-1 focus:ring-tinta focus:border-tinta"
       />
 
       <button
         type="submit"
         disabled={loading}
-        aria-label="Buscar"
+        aria-label="Enviar Busca"
         className={clsx(
           'flex items-center justify-center px-4 bg-verde-rs text-branco-quente',
-          loading && 'opacity-70 cursor-not-allowed'
+          loading && 'opacity-70 cursor-not-allowed',
         )}
       >
         {loading ? (
