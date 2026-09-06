@@ -33,7 +33,7 @@ export function SearchBar({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-stretch w-full rounded-lg border border-linha bg-branco-quente overflow-hidden"
+      className="flex items-stretch w-full rounded-none border border-linha bg-branco-quente overflow-hidden"
     >
       <span className="flex items-center pl-3 text-texto-auxiliar" aria-hidden="true">
         <svg
@@ -57,7 +57,7 @@ export function SearchBar({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         aria-label="Buscar"
-        className="flex-1 bg-transparent px-2 py-2 font-ui text-body text-tinta placeholder:text-texto-auxiliar outline-none"
+        className="flex-1 bg-transparent px-2 py-2 font-ui text-body text-tinta placeholder:text-texto-auxiliar outline-none focus:outline-none focus:ring-1 focus:ring-tinta focus:border-tinta"
       />
 
       <button
@@ -66,7 +66,7 @@ export function SearchBar({
         aria-label="Buscar"
         className={clsx(
           'flex items-center justify-center px-4 bg-verde-rs text-branco-quente',
-          loading && 'opacity-70 cursor-not-allowed',
+          loading && 'opacity-70 cursor-not-allowed'
         )}
       >
         {loading ? (

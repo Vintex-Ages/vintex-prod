@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { SearchBar } from '@/components/catalog/SearchBar';
+import { SearchBar } from './SearchBar';
 
 describe('SearchBar', () => {
   it('dispara onSubmit com o termo ao pressionar Enter', async () => {
@@ -22,7 +22,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    await user.click(screen.getByRole('button', { name: 'Enviar Busca' }));
 
     expect(onSubmit).toHaveBeenCalledWith('camiseta');
   });
@@ -47,7 +47,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} loading />);
 
-    const button = screen.getByRole('button', { name: 'Buscar' });
+    const button = screen.getByRole('button', { name: 'Enviar Busca' });
     expect(button).toBeDisabled();
 
     await user.click(button);
