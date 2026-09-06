@@ -20,7 +20,7 @@ interface FooterLinkProps {
 
 export function FooterLink({ text, linkLabel, to, onClick }: FooterLinkProps) {
   const linkClass =
-    'font-ui text-body font-bold text-vermelho-escuro no-underline bg-transparent border-0 p-0 cursor-pointer';
+    'font-ui text-body font-bold text-vermelho-escuro no-underline bg-transparent border-0 p-0 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro';
 
   return (
     <p className="font-ui text-body text-texto-auxiliar flex items-center justify-center gap-1">

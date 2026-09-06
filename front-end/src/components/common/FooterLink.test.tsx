@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { FooterLink } from '@/components/common/FooterLink';
+import { FooterLink } from './FooterLink';
 
 describe('FooterLink', () => {
   it('renderiza o texto auxiliar e o link corretamente', () => {
