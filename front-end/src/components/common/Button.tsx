@@ -11,7 +11,7 @@ import clsx from 'clsx';
  */
 export type ButtonProps = {
   children: ReactNode;
-  variant?: 'primary' | 'secondary' | 'quiet' | 'success';
+  variant?: 'primary' | 'secondary' | 'quiet' | 'success' | 'link';
   onClick?: () => void;
   type?: 'button' | 'submit';
   disabled?: boolean;
@@ -42,6 +42,8 @@ function Button({
           'border border-transparent bg-transparent text-tinta focus:ring-tinta',
         variant === 'success' &&
           'border border-verde-rs bg-verde-rs text-branco-quente focus:ring-verde-rs',
+        variant === 'link' &&
+          'border border-vermelho-escuro bg-transparent text-vermelho-escuro focus:ring-vermelho-escuro',
         disabled && 'cursor-not-allowed opacity-50',
       )}
     >

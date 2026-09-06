@@ -15,7 +15,7 @@ function renderButton(props: Partial<ButtonProps> = {}) {
 }
 
 describe('<Button />', () => {
-  it.each(['primary', 'secondary', 'quiet', 'success'] as const)(
+  it.each(['primary', 'secondary', 'quiet', 'success', 'link'] as const)(
     'renders the "%s" variant with the label',
     (variant) => {
       renderButton({ variant });
