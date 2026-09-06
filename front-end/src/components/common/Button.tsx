@@ -32,15 +32,16 @@ function Button({
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'inline-flex min-h-11 items-center justify-center border px-6 text-body font-semibold focus:outline-none focus:ring-1',
+        'inline-flex min-h-11 items-center justify-center px-6 text-body font-semibold focus:outline-none focus:ring-1',
         fullWidth && 'w-full',
         variant === 'primary' &&
-          'border-vermelho-escuro bg-vermelho-escuro text-branco-quente focus:ring-vermelho-escuro',
+          'border border-vermelho-escuro bg-vermelho-escuro text-branco-quente focus:ring-vermelho-escuro',
         variant === 'secondary' &&
-          'border-vermelho-escuro bg-transparent text-vermelho-escuro focus:ring-vermelho-escuro',
-        variant === 'quiet' && 'border-transparent bg-transparent text-tinta focus:ring-tinta',
+          'border-2 border-linha bg-transparent text-tinta focus:ring-tinta',
+        variant === 'quiet' &&
+          'border border-transparent bg-transparent text-tinta focus:ring-tinta',
         variant === 'success' &&
-          'border-verde-rs bg-verde-rs text-branco-quente focus:ring-verde-rs',
+          'border border-verde-rs bg-verde-rs text-branco-quente focus:ring-verde-rs',
         disabled && 'cursor-not-allowed opacity-50',
       )}
     >
