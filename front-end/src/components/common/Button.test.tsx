@@ -15,7 +15,7 @@ function renderButton(props: Partial<ButtonProps> = {}) {
 }
 
 describe('<Button />', () => {
-  it.each(['primary', 'secondary', 'quiet', 'success', 'link'] as const)(
+  it.each(['primary', 'secondary', 'quiet', 'success', 'outline'] as const)(
     'renders the "%s" variant with the label',
     (variant) => {
       renderButton({ variant });
@@ -23,6 +23,23 @@ describe('<Button />', () => {
       expect(screen.getByRole('button', { name: 'Continuar' })).toBeInTheDocument();
     },
   );
+
+  it('applies different styles depending on the variant', () => {
+    renderButton({ variant: 'primary' });
+    const primaryClassName = screen.getByRole('button').className;
+
+    cleanup();
+    renderButton({ variant: 'outline' });
+    const outlineClassName = screen.getByRole('button').className;
+
+    expect(outlineClassName).not.toBe(primaryClassName);
+  });
+
+  it('forwards native button attributes not covered by ButtonProps', () => {
+    renderButton({ 'aria-label': 'Fechar modal' });
+
+    expect(screen.getByRole('button', { name: 'Fechar modal' })).toBeInTheDocument();
+  });
 
   it('calls onClick when clicked', async () => {
     const onClick = vi.fn();
