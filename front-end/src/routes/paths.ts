@@ -4,10 +4,10 @@
  */
 export const paths = {
   home: '/',
-  catalog: '/catalogo',
-  product: '/produto',
+  catalog: '/catalog',
+  product: '/product',
   login: '/login',
-  register: '/cadastro',
+  register: '/register',
   onboarding: '/onboarding',
   styleGuide: '/style-guide',
 } as const;

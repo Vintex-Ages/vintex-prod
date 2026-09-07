@@ -26,3 +26,8 @@ pnpm-debug.log*
 # misc
 *.local
 coverage
+
+# tsc/vite build artifacts (machine-specific, regenerated on every build)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
