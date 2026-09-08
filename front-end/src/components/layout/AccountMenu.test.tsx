@@ -48,11 +48,7 @@ describe('AccountMenu', () => {
     const onSelect = vi.fn();
 
     render(
-      <AccountMenu
-        authenticated
-        items={[{ label: 'Favoritos', onSelect }]}
-        onLogout={vi.fn()}
-      />,
+      <AccountMenu authenticated items={[{ label: 'Favoritos', onSelect }]} onLogout={vi.fn()} />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Favoritos' }));
