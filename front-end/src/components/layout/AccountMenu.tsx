@@ -5,9 +5,23 @@ type AccountMenuProps = {
   onLogin?: () => void;
   onRegister?: () => void;
   onLogout?: () => void;
-  platform?: 'mobile' | 'web';
 };
 
+/**
+ * Menu de conta do header — apresentação em dois estados (anônimo / logado).
+ * O pai passa authenticated, os itens e os callbacks.
+ *
+ * Usage:
+ * import { AccountMenu } from '@/components/layout/AccountMenu';
+ * <AccountMenu
+ *   authenticated={logado}
+ *   user={{ name }}
+ *   items={[{ label: 'Favoritos', onSelect: abrirFavoritos }]}
+ *   onLogin={abrirLogin}
+ *   onRegister={abrirCadastro}
+ *   onLogout={sair}
+ * />
+ */
 export function AccountMenu({
   authenticated,
   user,
@@ -15,12 +29,9 @@ export function AccountMenu({
   onLogin,
   onRegister,
   onLogout,
-  platform = 'web',
 }: AccountMenuProps) {
-  const containerClass = platform === 'mobile' ? 'w-full max-w-sm' : 'w-full max-w-md';
-
   return (
-    <div className={`${containerClass} border border-linha bg-branco-quente p-6`}>
+    <div className="w-full max-w-sm border border-linha bg-branco-quente p-6 web:max-w-md">
       {authenticated ? (
         <div>
           {user?.name && <p className="mb-4 font-ui text-body font-bold text-tinta">{user.name}</p>}
