@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import clsx from 'clsx';
-import { AccountButton } from '@/components/layout/AccountButton';
 import { colorTokens, fontSize, screens, spacing } from '@/styles/tokens';
 
 /**
@@ -122,12 +121,6 @@ function StyleGuide() {
             </li>
           ))}
         </ul>
-      </Section>
-      <Section title="Componentes">
-        <div className="flex gap-6">
-          <AccountButton label="Entrar" open={false} onClick={() => {}} />
-          <AccountButton label="Entrar" open onClick={() => {}} />
-        </div>
       </Section>
     </main>
   );

@@ -7,12 +7,22 @@ type AccountButtonProps = {
   icon?: ReactNode;
 };
 
+/**
+ * Botão de conta para o header — apresentação e comportamento genérico
+ * (abre/fecha um menu). Sem regra de negócio: quem chama decide o que
+ * onClick faz.
+ *
+ * Usage:
+ * import { AccountButton } from '@/components/layout/AccountButton';
+ * <AccountButton label="Entrar" open={aberto} onClick={() => setAberto((v) => !v)} />
+ */
 export function AccountButton({ label, open, onClick, icon }: AccountButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-expanded={open}
+      aria-haspopup="menu"
       className={`inline-flex items-center gap-3 px-3 py-2 font-ui text-label font-bold uppercase tracking-wide text-tinta ${
         open ? 'border border-linha bg-branco-quente' : 'border border-transparent bg-transparent'
       }`}
