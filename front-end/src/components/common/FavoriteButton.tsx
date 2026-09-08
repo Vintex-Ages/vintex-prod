@@ -4,6 +4,14 @@ type FavoriteButtonProps = {
   ariaLabel?: string;
 };
 
+/**
+ * Botão de favoritar — apenas apresentação e comportamento genérico (toggle).
+ * Sem regra de negócio: quem chama decide o que active / onToggle significam.
+ *
+ * Usage:
+ * import { FavoriteButton } from '@/components/common/FavoriteButton';
+ * <FavoriteButton active={isFavorito} onToggle={() => setFavorito((v) => !v)} />
+ */
 export function FavoriteButton({ active, onToggle, ariaLabel }: FavoriteButtonProps) {
   return (
     <button
