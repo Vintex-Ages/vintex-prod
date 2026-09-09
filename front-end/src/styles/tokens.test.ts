@@ -33,7 +33,8 @@ describe('design tokens', () => {
     expect(fontSize.h1[1].lineHeight).toBe('0.92');
   });
 
-  it('uses a 4px spacing grid expressed in rem', () => {
+  it('documents the canonical 4px spacing steps in rem', () => {
+    // Reference subset only — not wired into Tailwind (see tokens.ts / tailwind.config.ts).
     const values = Object.values(spacing);
     expect(values.length).toBeGreaterThan(0);
     for (const value of values) {
