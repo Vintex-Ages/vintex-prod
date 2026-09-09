@@ -95,7 +95,7 @@ function LoginInterceptor({
         className="w-11/12 max-w-sm border border-linha bg-branco-quente p-6 web:max-w-md"
       >
         <div className="flex items-start justify-between gap-4">
-          <h2 id={titleId} className="font-display text-2xl text-tinta">
+          <h2 id={titleId} className="font-display text-h2 text-tinta">
             {title}
           </h2>
 
