@@ -8,6 +8,7 @@
 - Trate carregamento, erro, ausência de dados e sucesso de forma explícita.
 - Use Tailwind conforme configurado e evite valores visuais arbitrários quando existir token reutilizável.
 - Garanta HTML semântico, navegação por teclado, rótulos de formulário e contraste adequado.
+- Estados de interação (hover, foco, pressionado) seguem `.ai/interaction-states.md`; todo elemento interativo precisa de indicador de foco visível.
 - Não adicione dependências sem justificar a necessidade e verificar compatibilidade com a stack.
 - Não exponha segredos no bundle; somente variáveis públicas apropriadas ao Vite podem chegar ao cliente.
 - Cubra comportamento relevante com Vitest quando a mudança introduzir lógica ou corrigir defeito.
