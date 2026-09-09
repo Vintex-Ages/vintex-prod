@@ -33,6 +33,15 @@ function getInitials(name: string): string {
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
 
+/**
+ * Avatar circular do Vintex — apresentação apenas, sem regra de negócio.
+ * Mostra a imagem quando `src` existe; caso contrário, mostra as iniciais
+ * derivadas de `name`.
+ *
+ * Usage:
+ *   import Avatar from '@/components/common/Avatar';
+ *   <Avatar name="Ana Silva" src={fotoUrl} />
+ */
 function Avatar({ name, src, size = 'md' }: AvatarProps) {
   if (src) {
     return (
