@@ -27,8 +27,8 @@ export function FilterChip({
   const baseClass = clsx(
     'inline-flex items-center gap-1 rounded-full border px-3 py-1 font-ui text-body',
     active
-      ? 'bg-tinta text-branco-quente border-tinta'
-      : 'bg-branco-quente text-tinta border-linha',
+      ? 'bg-tinta text-branco-quente border-tinta hover:brightness-110 transition'
+      : 'bg-branco-quente text-tinta border-linha hover:bg-papel-profundo transition-colors',
   );
 
   const focusClass =
