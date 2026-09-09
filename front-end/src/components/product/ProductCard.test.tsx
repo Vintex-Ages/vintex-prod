@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import ProductCard, { type Product } from './ProductCard';
 
 afterEach(cleanup);
@@ -16,10 +18,13 @@ const baseProduct: Product = {
   condition: 'excelente',
 };
 
+// O ProductCard usa <Link> do react-router-dom, que precisa de um Router ancestral.
+const renderCard = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+
 describe('<ProductCard />', () => {
   // Objetivo: garantir que os campos do produto aparecem no cartão.
   it('renderiza os campos do produto', () => {
-    render(<ProductCard product={baseProduct} onOpen={() => {}} />);
+    renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
 
     expect(screen.getByText('vestidos')).toBeTruthy();
     expect(screen.getByText('Vestido floral')).toBeTruthy();
@@ -34,16 +39,67 @@ describe('<ProductCard />', () => {
   // Objetivo: sem coverImageUrl, mostra um placeholder e não quebra a renderização.
   it('usa um placeholder quando não há coverImageUrl', () => {
     const productWithoutImage: Product = { ...baseProduct, coverImageUrl: null };
-    render(<ProductCard product={productWithoutImage} onOpen={() => {}} />);
+    renderCard(<ProductCard product={productWithoutImage} onOpen={() => {}} />);
 
     const placeholder = screen.getByRole('img', { name: 'Vestido floral' });
     expect(placeholder.tagName).not.toBe('IMG');
     expect(screen.getByText('Vestido floral')).toBeTruthy();
   });
 
+  // Objetivo: o título do produto é um link real (role implícito de link).
+  it('renderiza o título como um link', () => {
+    renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
+
+    expect(screen.getByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
+  });
+
+  // Objetivo: sem productPath, o link usa o placeholder e a navegação fica a cargo
+  // de onOpen — clicar no título dispara onOpen com o id e não altera a URL.
+  it('dispara onOpen com o id do produto ao clicar no título', async () => {
+    const user = userEvent.setup();
+    const handleOpen = vi.fn();
+    renderCard(<ProductCard product={baseProduct} onOpen={handleOpen} />);
+
+    await user.click(screen.getByRole('link', { name: 'Vestido floral' }));
+
+    expect(handleOpen).toHaveBeenCalledTimes(1);
+    expect(handleOpen).toHaveBeenCalledWith('prod-1');
+  });
+
+  // Objetivo: acionar o link pelo teclado (Enter) equivale ao clique.
+  it('dispara onOpen ao pressionar Enter com o link do título focado', async () => {
+    const user = userEvent.setup();
+    const handleOpen = vi.fn();
+    renderCard(<ProductCard product={baseProduct} onOpen={handleOpen} />);
+
+    screen.getByRole('link', { name: 'Vestido floral' }).focus();
+    await user.keyboard('{Enter}');
+
+    expect(handleOpen).toHaveBeenCalledTimes(1);
+    expect(handleOpen).toHaveBeenCalledWith('prod-1');
+  });
+
+  // Objetivo: quando a rota real do produto é informada, ela vira o destino do link
+  // e o clique continua chamando onOpen (sem preventDefault do placeholder).
+  it('usa productPath como destino do link quando fornecido', async () => {
+    const user = userEvent.setup();
+    const handleOpen = vi.fn();
+    renderCard(
+      <ProductCard product={baseProduct} onOpen={handleOpen} productPath="/produto/prod-1" />,
+    );
+
+    const link = screen.getByRole('link', { name: 'Vestido floral' });
+    expect(link).toHaveAttribute('href', '/produto/prod-1');
+
+    await user.click(link);
+
+    expect(handleOpen).toHaveBeenCalledTimes(1);
+    expect(handleOpen).toHaveBeenCalledWith('prod-1');
+  });
+
   // Objetivo: garantir que o favoriteSlot recebido é renderizado dentro do cartão.
   it('renderiza o favoriteSlot quando fornecido', () => {
-    render(
+    renderCard(
       <ProductCard
         product={baseProduct}
         onOpen={() => {}}
@@ -54,64 +110,32 @@ describe('<ProductCard />', () => {
     expect(screen.getByRole('button', { name: 'Favoritar' })).toBeTruthy();
   });
 
-  // Objetivo: clicar no cartão (fora do favoriteSlot) dispara onOpen com o id correto.
-  it('dispara onOpen com o id do produto ao clicar no cartão', async () => {
+  // Objetivo: o favoriteSlot é irmão do link esticado (não descendente) e clicável
+  // de forma independente — acioná-lo não dispara o onOpen do cartão. Sem
+  // stopPropagation: não há mais aninhamento de interativo dentro de interativo.
+  it('o favoriteSlot é um elemento irmão clicável e independente do link', async () => {
     const user = userEvent.setup();
     const handleOpen = vi.fn();
-    render(<ProductCard product={baseProduct} onOpen={handleOpen} />);
-
-    await user.click(screen.getByText('Vestido floral'));
-
-    expect(handleOpen).toHaveBeenCalledTimes(1);
-    expect(handleOpen).toHaveBeenCalledWith('prod-1');
-  });
-
-  // Objetivo: clicar no favoriteSlot não deve disparar onOpen do cartão.
-  it('não dispara onOpen ao clicar no favoriteSlot', async () => {
-    const user = userEvent.setup();
-    const handleOpen = vi.fn();
-    render(
+    const handleFavorite = vi.fn();
+    renderCard(
       <ProductCard
         product={baseProduct}
         onOpen={handleOpen}
-        favoriteSlot={<button aria-label="Favoritar">♥</button>}
+        favoriteSlot={
+          <button type="button" aria-label="Favoritar" onClick={handleFavorite}>
+            ♥
+          </button>
+        }
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Favoritar' }));
+    const link = screen.getByRole('link', { name: 'Vestido floral' });
+    const favoriteButton = screen.getByRole('button', { name: 'Favoritar' });
+    expect(link).not.toContainElement(favoriteButton);
 
-    expect(handleOpen).not.toHaveBeenCalled();
-  });
+    await user.click(favoriteButton);
 
-  // Objetivo: pressionar Enter com o cartão focado dispara onOpen, igual ao clique.
-  it('dispara onOpen ao pressionar Enter no cartão', async () => {
-    const user = userEvent.setup();
-    const handleOpen = vi.fn();
-    render(<ProductCard product={baseProduct} onOpen={handleOpen} />);
-
-    screen.getByRole('button', { name: 'Vestido floral' }).focus();
-    await user.keyboard('{Enter}');
-
-    expect(handleOpen).toHaveBeenCalledTimes(1);
-    expect(handleOpen).toHaveBeenCalledWith('prod-1');
-  });
-
-  // Objetivo: pressionar uma tecla dentro do favoriteSlot não deve disparar onOpen do
-  // cartão (o keydown é interrompido antes de borbulhar até o card).
-  it('não dispara onOpen ao pressionar uma tecla dentro do favoriteSlot', async () => {
-    const user = userEvent.setup();
-    const handleOpen = vi.fn();
-    render(
-      <ProductCard
-        product={baseProduct}
-        onOpen={handleOpen}
-        favoriteSlot={<button aria-label="Favoritar">♥</button>}
-      />,
-    );
-
-    screen.getByRole('button', { name: 'Favoritar' }).focus();
-    await user.keyboard('{Enter}');
-
+    expect(handleFavorite).toHaveBeenCalledTimes(1);
     expect(handleOpen).not.toHaveBeenCalled();
   });
 });
