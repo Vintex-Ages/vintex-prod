@@ -8,7 +8,7 @@ describe('<VerifiedBadge />', () => {
   it('renders the badge when verified is true', () => {
     render(<VerifiedBadge verified />);
 
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByRole('img')).toBeTruthy();
   });
 
   it('renders nothing when verified is false', () => {
@@ -20,19 +20,19 @@ describe('<VerifiedBadge />', () => {
   it('uses the default accessible label when no label is provided', () => {
     render(<VerifiedBadge verified />);
 
-    expect(screen.getByRole('status', { name: 'Confiável' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Confiável' })).toBeTruthy();
   });
 
   it('shows the label text and uses it as the accessible name when provided', () => {
     render(<VerifiedBadge verified label="Vendedor confiável" />);
 
     expect(screen.getByText('Vendedor confiável')).toBeTruthy();
-    expect(screen.getByRole('status', { name: 'Vendedor confiável' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Vendedor confiável' })).toBeTruthy();
   });
 
   it('renders no visible text when label is not provided', () => {
     render(<VerifiedBadge verified />);
 
-    expect(screen.getByRole('status')).toHaveTextContent('');
+    expect(screen.getByRole('img')).toHaveTextContent('');
   });
 });

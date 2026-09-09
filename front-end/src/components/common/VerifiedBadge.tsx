@@ -26,6 +26,16 @@ function CheckIcon() {
   );
 }
 
+/**
+ * Selo "Confiável" — indica a verificação simulada do vendedor
+ * (ver `.ai/glossary.md`, "Selo Confiável"). Renderiza apenas quando
+ * `verified` é `true`; caso contrário não renderiza nada.
+ * É só apresentação: não executa nenhuma verificação real/externa.
+ *
+ * Usage:
+ *   import VerifiedBadge from '@/components/common/VerifiedBadge';
+ *   <VerifiedBadge verified={vendedor.verificado} />
+ */
 function VerifiedBadge({ verified, label }: VerifiedBadgeProps) {
   if (!verified) {
     return null;
@@ -33,7 +43,7 @@ function VerifiedBadge({ verified, label }: VerifiedBadgeProps) {
 
   return (
     <span
-      role="status"
+      role="img"
       aria-label={label ?? DEFAULT_LABEL}
       className={clsx(
         'inline-flex items-center justify-center rounded-full bg-verde-rs text-branco-quente',
