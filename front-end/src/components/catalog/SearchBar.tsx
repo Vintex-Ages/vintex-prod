@@ -65,7 +65,7 @@ export function SearchBar({
         disabled={loading}
         aria-label="Enviar busca"
         className={clsx(
-          'flex items-center justify-center px-4 bg-verde-rs text-branco-quente',
+          'flex items-center justify-center px-4 bg-verde-rs text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente',
           loading && 'opacity-70 cursor-not-allowed',
         )}
       >
