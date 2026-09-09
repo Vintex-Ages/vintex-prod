@@ -67,9 +67,7 @@ function LoginInterceptor({
 
     if (event.key !== 'Tab' || !cardRef.current) return;
 
-    const focusable = Array.from(
-      cardRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-    );
+    const focusable = Array.from(cardRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
     if (focusable.length === 0) return;
 
     const first = focusable[0];
@@ -122,7 +120,11 @@ function LoginInterceptor({
         </p>
 
         <div className="mt-6 flex flex-col gap-3 web:flex-row web:flex-wrap">
-          <Button variant="primary" onClick={onLogin} className={`${actionClassName} web:order-2 web:flex-1`}>
+          <Button
+            variant="primary"
+            onClick={onLogin}
+            className={`${actionClassName} web:order-2 web:flex-1`}
+          >
             Entrar
           </Button>
           <Button
