@@ -45,6 +45,7 @@ describe('httpClient', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('injeta Authorization: Bearer <token> quando há sessão ativa', async () => {
@@ -80,7 +81,8 @@ describe('httpClient', () => {
   });
 
   it('no 401 sem handler registrado: faz fallback para window.location.assign(/login)', async () => {
-    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    const assign = vi.fn();
+    vi.stubGlobal('location', { pathname: '/perfil', search: '', assign });
     setOnAuthRequired(null);
     httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED');
 
