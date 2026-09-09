@@ -16,6 +16,16 @@ describe('<FilterToggle />', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('rotates the chevron (rotate-180) only when open is true', () => {
+    const { container, rerender } = render(<FilterToggle onClick={vi.fn()} open />);
+
+    // O chevron é o único <svg> com a classe de transição; o ícone de filtro não tem className.
+    expect(container.querySelector('svg.transition-transform')).toHaveClass('rotate-180');
+
+    rerender(<FilterToggle onClick={vi.fn()} open={false} />);
+    expect(container.querySelector('svg.transition-transform')).not.toHaveClass('rotate-180');
+  });
+
   it('shows the count badge only when count is greater than 0', () => {
     const { rerender } = render(<FilterToggle onClick={vi.fn()} count={3} />);
     expect(screen.getByText('3')).toBeTruthy();
