@@ -22,7 +22,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole('button', { name: 'Enviar Busca' }));
+    await user.click(screen.getByRole('button', { name: 'Enviar busca' }));
 
     expect(onSubmit).toHaveBeenCalledWith('camiseta');
   });
@@ -47,7 +47,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} loading />);
 
-    const button = screen.getByRole('button', { name: 'Enviar Busca' });
+    const button = screen.getByRole('button', { name: 'Enviar busca' });
     expect(button).toBeDisabled();
 
     await user.click(button);
