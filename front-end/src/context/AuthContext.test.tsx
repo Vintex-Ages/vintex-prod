@@ -36,6 +36,23 @@ function PathProbe() {
   return <span data-testid="path">{useLocation().pathname}</span>;
 }
 
+/**
+ * Executa `fn` engolindo o erro de render que o react-dom, em modo dev,
+ * re-dispara como evento `error` no `window` (jsdom o imprimiria no stderr como
+ * "uncaught"). Também silencia o `console.error` que o React emite junto.
+ */
+function withSuppressedRenderError(fn: () => void): void {
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const swallow = (event: ErrorEvent) => event.preventDefault();
+  window.addEventListener('error', swallow);
+  try {
+    fn();
+  } finally {
+    window.removeEventListener('error', swallow);
+    errorSpy.mockRestore();
+  }
+}
+
 function renderApp(entries: string[] = ['/protegido']) {
   return render(
     <MemoryRouter initialEntries={entries}>
@@ -102,11 +119,9 @@ describe('AuthContext', () => {
   });
 
   it('useAuth() lança erro claro quando usado fora do AuthProvider', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    expect(() => render(<Probe />)).toThrow(/useAuth.*AuthProvider/);
-
-    errorSpy.mockRestore();
+    withSuppressedRenderError(() => {
+      expect(() => render(<Probe />)).toThrow(/useAuth.*<AuthProvider>/);
+    });
   });
 
   it('o handler de 401 registrado no httpClient navega para /login e limpa a sessão', async () => {
