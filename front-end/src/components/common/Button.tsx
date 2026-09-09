@@ -28,18 +28,18 @@ function Button({
     <button
       type={type}
       className={clsx(
-        'inline-flex min-h-11 items-center justify-center px-6 text-body font-semibold focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex min-h-11 items-center justify-center px-6 text-body font-semibold transition focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50',
         fullWidth && 'w-full',
         variant === 'primary' &&
-          'border border-vermelho-escuro bg-vermelho-escuro text-branco-quente focus:ring-vermelho-escuro',
+          'border border-vermelho-escuro bg-vermelho-escuro text-branco-quente hover:brightness-110 focus-visible:ring-branco-quente',
         variant === 'secondary' &&
-          'border-2 border-linha bg-transparent text-tinta focus:ring-tinta',
+          'border-2 border-linha bg-transparent text-tinta hover:bg-papel-profundo focus-visible:ring-tinta',
         variant === 'quiet' &&
-          'border border-transparent bg-transparent text-tinta focus:ring-tinta',
+          'border border-transparent bg-transparent text-tinta hover:bg-papel-profundo focus-visible:ring-tinta',
         variant === 'success' &&
-          'border border-verde-rs bg-verde-rs text-branco-quente focus:ring-verde-rs',
+          'border border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110 focus-visible:ring-branco-quente',
         variant === 'outline' &&
-          'border border-vermelho-escuro bg-transparent text-vermelho-escuro focus:ring-vermelho-escuro',
+          'border border-vermelho-escuro bg-transparent text-vermelho-escuro hover:bg-vermelho-suave focus-visible:ring-vermelho-escuro',
         className,
       )}
       {...rest}

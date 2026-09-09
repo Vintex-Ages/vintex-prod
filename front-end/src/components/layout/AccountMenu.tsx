@@ -42,7 +42,7 @@ export function AccountMenu({
                 <button
                   type="button"
                   onClick={item.onSelect}
-                  className="w-full py-4 text-left font-ui text-body text-tinta"
+                  className="w-full py-4 text-left font-ui text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta"
                 >
                   {item.label}
                 </button>
@@ -53,7 +53,7 @@ export function AccountMenu({
               <button
                 type="button"
                 onClick={onLogout}
-                className="w-full py-4 text-left font-ui text-body text-tinta"
+                className="w-full py-4 text-left font-ui text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta"
               >
                 Sair
               </button>
@@ -70,7 +70,7 @@ export function AccountMenu({
             <button
               type="button"
               onClick={onLogin}
-              className="w-full border border-linha bg-branco-quente px-4 py-3 font-ui text-body font-bold text-tinta"
+              className="w-full border border-linha bg-branco-quente px-4 py-3 font-ui text-body font-bold text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
             >
               Entrar
             </button>
@@ -78,7 +78,7 @@ export function AccountMenu({
             <button
               type="button"
               onClick={onRegister}
-              className="w-full bg-verde-rs px-4 py-3 font-ui text-body font-bold text-branco-quente"
+              className="w-full bg-verde-rs px-4 py-3 font-ui text-body font-bold text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente"
             >
               Criar conta
             </button>
