@@ -23,7 +23,7 @@ export function AccountButton({ label, open, onClick, icon }: AccountButtonProps
       onClick={onClick}
       aria-expanded={open}
       aria-haspopup="menu"
-      className={`inline-flex items-center gap-3 px-3 py-2 font-ui text-label font-bold uppercase tracking-wide text-tinta ${
+      className={`inline-flex items-center gap-3 px-3 py-2 font-ui text-label font-bold uppercase tracking-wide text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta ${
         open ? 'border border-linha bg-branco-quente' : 'border border-transparent bg-transparent'
       }`}
     >
