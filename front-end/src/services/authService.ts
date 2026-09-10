@@ -1,5 +1,11 @@
 import axios from 'axios';
-import { AUTH_REQUIRED, type ApiError, type AuthUser, type LoginInput, type RegisterInput } from '@/types/auth';
+import {
+  AUTH_REQUIRED,
+  type ApiError,
+  type AuthUser,
+  type LoginInput,
+  type RegisterInput,
+} from '@/types/auth';
 import { httpClient } from './httpClient';
 
 /**
@@ -183,7 +189,8 @@ function toAuthUser(apiUser: ApiUser, isSeller: boolean): AuthUser {
 function toApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
     const body = (error.response?.data ?? {}) as Partial<ApiError>;
-    const code = typeof body.code === 'string' && body.code.length > 0 ? body.code : GENERIC_API_ERROR;
+    const code =
+      typeof body.code === 'string' && body.code.length > 0 ? body.code : GENERIC_API_ERROR;
     const message =
       typeof body.message === 'string' && body.message.length > 0 ? body.message : error.message;
 

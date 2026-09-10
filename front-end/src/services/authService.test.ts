@@ -247,4 +247,3 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     });
   });
 });
-
