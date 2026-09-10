@@ -16,7 +16,13 @@ vi.mock('@/services/httpClient', async (importOriginal) => {
   return { ...actual, setAuthTokenProvider: vi.fn(), setOnAuthRequired: vi.fn() };
 });
 
-const SAMPLE_USER: AuthUser = { id: 'u_1', name: 'Ana Brechó', email: 'ana@exemplo.com' };
+const SAMPLE_USER: AuthUser = {
+  id: 'u_1',
+  name: 'Ana Brechó',
+  email: 'ana@exemplo.com',
+  is_seller: false,
+  is_admin: false,
+};
 
 function Probe() {
   const { user, token, isAuthenticated, loading, login, logout } = useAuth();
