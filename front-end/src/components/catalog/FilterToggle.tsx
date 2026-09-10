@@ -44,6 +44,16 @@ function ChevronDownIcon({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * Botão "Mais filtros" do catálogo — abre o painel de filtros e mostra a
+ * contagem de filtros ativos num badge. Apresentação apenas, sem regra de
+ * negócio: quem chama controla o estado `open`/`count` e decide o que
+ * `onClick` faz.
+ *
+ * Usage:
+ *   import FilterToggle from '@/components/catalog/FilterToggle';
+ *   <FilterToggle open={aberto} count={filtrosAtivos} onClick={() => setAberto((v) => !v)} />
+ */
 function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
   const hasCount = typeof count === 'number' && count > 0;
 
@@ -51,13 +61,13 @@ function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={open}
-      className="inline-flex w-fit items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-1.5 text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+      aria-expanded={open}
+      className="inline-flex w-fit items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-2 text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
     >
       <FilterIcon />
       <span>Mais filtros</span>
       {hasCount && (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-vermelho-escuro px-1.5 text-label text-branco-quente">
+        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-vermelho-escuro px-2 text-label text-branco-quente">
           {count}
         </span>
       )}
