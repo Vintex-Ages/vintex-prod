@@ -1,8 +1,12 @@
-import StyleGuide from '@/pages/StyleGuide/StyleGuide';
+import { BrowserRouter } from 'react-router-dom';
+import AppRoutes from '@/routes/AppRoutes';
 
-// TODO(FE-FND-1c, #106): replace with the router once routes/404 land.
 function App() {
-  return <StyleGuide />;
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
 }
 
 export default App;
