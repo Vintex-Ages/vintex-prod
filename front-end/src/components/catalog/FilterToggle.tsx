@@ -52,7 +52,7 @@ function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
       type="button"
       onClick={onClick}
       aria-pressed={open}
-      className="inline-flex w-fit items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-1.5 text-body text-tinta"
+      className="inline-flex w-fit items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-1.5 text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
     >
       <FilterIcon />
       <span>Mais filtros</span>
