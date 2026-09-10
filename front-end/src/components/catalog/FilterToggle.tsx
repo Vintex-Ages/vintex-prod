@@ -1,0 +1,79 @@
+import clsx from 'clsx';
+
+export type FilterToggleProps = {
+  onClick: () => void;
+  /** Number of active filters. */
+  count?: number;
+  open?: boolean;
+};
+
+function FilterIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={clsx('transition-transform', open && 'rotate-180')}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+/**
+ * Botão "Mais filtros" do catálogo — abre o painel de filtros e mostra a
+ * contagem de filtros ativos num badge. Apresentação apenas, sem regra de
+ * negócio: quem chama controla o estado `open`/`count` e decide o que
+ * `onClick` faz.
+ *
+ * Usage:
+ *   import FilterToggle from '@/components/catalog/FilterToggle';
+ *   <FilterToggle open={aberto} count={filtrosAtivos} onClick={() => setAberto((v) => !v)} />
+ */
+function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
+  const hasCount = typeof count === 'number' && count > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      className="inline-flex w-fit items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-2 text-body text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+    >
+      <FilterIcon />
+      <span>Mais filtros</span>
+      {hasCount && (
+        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-vermelho-escuro px-2 text-label text-branco-quente">
+          {count}
+        </span>
+      )}
+      <ChevronDownIcon open={open} />
+    </button>
+  );
+}
+
+export default FilterToggle;
