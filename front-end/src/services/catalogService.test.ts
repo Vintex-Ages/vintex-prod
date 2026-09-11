@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogError, getFeed, getFeedWithDetails, getProduct, getProducts, search } from './catalogService';
+import {
+  CatalogError,
+  getFeed,
+  getFeedWithDetails,
+  getProduct,
+  getProducts,
+  search,
+} from './catalogService';
 import { products as mockProducts } from '@/mocks/products';
 
 const ACTIVE_COUNT = mockProducts.filter((product) => product.status === 'ativo').length;

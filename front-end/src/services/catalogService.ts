@@ -296,12 +296,16 @@ async function apiGetFeedWithDetails(params: FeedParams): Promise<Paginated<Prod
   const settled = await Promise.allSettled(feedPage.items.map((item) => apiGetProduct(item.id)));
 
   const items = settled
-    .filter((result): result is PromiseFulfilledResult<ProductDetail> => result.status === 'fulfilled')
+    .filter(
+      (result): result is PromiseFulfilledResult<ProductDetail> => result.status === 'fulfilled',
+    )
     .map((result) => result.value);
 
   const failed = settled.length - items.length;
   if (failed > 0) {
-    console.warn(`[catalogService] ${failed} produto(s) do feed sem detalhe disponível — descartado(s) da página.`);
+    console.warn(
+      `[catalogService] ${failed} produto(s) do feed sem detalhe disponível — descartado(s) da página.`,
+    );
   }
 
   return { ...feedPage, items };
