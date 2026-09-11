@@ -22,10 +22,7 @@ describe('AuthTabs', () => {
   it('linka para as rotas de cadastro e login', () => {
     renderTabs('login');
 
-    expect(screen.getByRole('link', { name: 'Criar conta' })).toHaveAttribute(
-      'href',
-      '/register',
-    );
+    expect(screen.getByRole('link', { name: 'Criar conta' })).toHaveAttribute('href', '/register');
     expect(screen.getByRole('link', { name: 'Já tenho conta' })).toHaveAttribute('href', '/login');
   });
 
