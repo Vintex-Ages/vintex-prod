@@ -1,26 +1,6 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-
-/**
- * TEMPORARY type — ainda não existe um contrato `Product` compartilhado em
- * `src/types` (a task FE-SVC-catalog, responsável por criá-lo, não foi
- * implementada). Quando ela existir, substitua este type pelo oficial e
- * remova esta definição local.
- *
- * `category` é `string` (não `string[]`) porque o design mostra apenas uma
- * categoria por cartão; revise este campo junto com o type oficial caso o
- * catálogo passe a suportar múltiplas categorias por produto.
- */
-export type Product = {
-  id: string;
-  title: string;
-  category: string;
-  storeName: string;
-  city: string;
-  price: number;
-  coverImageUrl?: string | null;
-  condition: string;
-};
+import type { Product } from '@/types/product';
 
 export type ProductCardProps = {
   product: Product;
@@ -95,13 +75,13 @@ function ProductCard({
         {product.coverImageUrl ? (
           <img
             src={product.coverImageUrl}
-            alt={product.title}
+            alt={product.name}
             className="h-full w-full object-cover"
           />
         ) : (
           <div
             role="img"
-            aria-label={product.title}
+            aria-label={product.name}
             className="flex h-full w-full items-center justify-center text-texto-auxiliar"
           >
             <svg
@@ -123,23 +103,20 @@ function ProductCard({
       </div>
 
       <div className="flex flex-col gap-1 p-3">
-        <span className="text-label uppercase tracking-wide text-texto-auxiliar">
-          {product.category}
-        </span>
         <p className="text-body font-medium">
           <Link
             to={productPath}
             onClick={handleOpen}
             className="text-tinta no-underline after:absolute after:inset-0 after:content-[''] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
           >
-            {product.title}
+            {product.name}
           </Link>
         </p>
         <p className="text-label text-texto-auxiliar">
-          {product.storeName} · {product.city}
+          {product.store.name}
+          {product.store.city ? ` · ${product.store.city}` : null}
         </p>
         <p className="text-body font-semibold text-tinta">{priceFormatter.format(product.price)}</p>
-        <p className="text-label text-texto-auxiliar">{product.condition}</p>
       </div>
 
       {favoriteSlot ? <div className="absolute right-2 top-2 z-10">{favoriteSlot}</div> : null}
