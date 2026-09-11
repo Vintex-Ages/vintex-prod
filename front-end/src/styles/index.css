@@ -11,3 +11,29 @@
     @apply bg-papel text-tinta font-ui text-body antialiased;
   }
 }
+
+/**
+ * Scroll discreto para áreas de conversa/listas longas (ex: a lista
+ * de mensagens da tela da Vintex AI). Pseudo-elementos de scrollbar não
+ * são alcançáveis por classes utilitárias do Tailwind, por isso este CSS
+ * vive aqui em vez de inline num componente React.
+ *
+ * O hex usado é o mesmo do token `linha` (`#CFC3B3`, ver src/styles/tokens.ts).
+ */
+.vintex-chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cfc3b3 transparent;
+}
+ 
+.vintex-chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+ 
+.vintex-chat-scroll::-webkit-scrollbar-thumb {
+  background-color: #cfc3b3;
+  border-radius: 9999px;
+}
+ 
+.vintex-chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
