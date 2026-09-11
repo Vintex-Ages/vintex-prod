@@ -61,11 +61,16 @@ function normalize(value: string): string {
 }
 
 /**
+ * Usada por `getProducts`/`search`, nunca por `getProduct` — o detalhe
+ * continua acessível para uma peça `vendido` (histórico), só o catálogo
+ * público (`get_active_feed` no back) restringe a `ativo`.
+ *
  * `state` fica de fora por ora: `Store` ainda não tem esse campo e todas as
  * lojas do seed são do RS — só descarta quando outro estado é pedido
  * explicitamente.
  */
 function matchesFilters(product: ProductDetail, filters: FilterParams): boolean {
+  if (product.status !== 'ativo') return false;
   if (filters.category && product.category !== filters.category) return false;
   if (filters.size && product.size !== filters.size) return false;
   if (filters.brand && product.brand !== filters.brand) return false;
