@@ -13,10 +13,18 @@ describe('catalogService', () => {
     vi.clearAllMocks();
   });
 
-  // Objetivo: garantir que os sete filtros do catálogo sejam enviados
-  // corretamente como query params para a API.
-  it('envia os 7 filtros como query params', async () => {
-    vi.mocked(httpClient.get).mockResolvedValue({ data: [] });
+  // Garante que todos os filtros sejam enviados com os nomes
+  // esperados pelo contrato do backend.
+  it('envia os filtros como query params', async () => {
+    vi.mocked(httpClient.get).mockResolvedValue({
+      data: {
+        items: [],
+        page: 1,
+        page_size: 20,
+        total: 0,
+        applied_filters: {},
+      },
+    });
 
     await getProducts({
       category: 'roupas',
@@ -36,8 +44,8 @@ describe('catalogService', () => {
     const params = config?.params as URLSearchParams;
 
     expect(params.get('category')).toBe('roupas');
-    expect(params.get('minPrice')).toBe('50');
-    expect(params.get('maxPrice')).toBe('200');
+    expect(params.get('price_min')).toBe('50');
+    expect(params.get('price_max')).toBe('200');
     expect(params.getAll('size')).toEqual(['M', 'G']);
     expect(params.getAll('brand')).toEqual(['Nike']);
     expect(params.getAll('condition')).toEqual(['novo']);
@@ -46,10 +54,17 @@ describe('catalogService', () => {
     expect(params.get('state')).toBe('RS');
   });
 
-  // Objetivo: garantir que filtros não preenchidos não gerem
-  // query params desnecessários na requisição.
+  // Garante que filtros não preenchidos não sejam enviados
+  // desnecessariamente para a API.
   it('não envia filtros vazios', async () => {
-    vi.mocked(httpClient.get).mockResolvedValue({ data: [] });
+    vi.mocked(httpClient.get).mockResolvedValue({
+      data: {
+        items: [],
+        page: 1,
+        page_size: 20,
+        total: 0,
+      },
+    });
 
     await getProducts();
 
@@ -57,5 +72,31 @@ describe('catalogService', () => {
     const params = config?.params as URLSearchParams;
 
     expect(params.toString()).toBe('');
+  });
+
+  // Garante que o service devolva o FeedResponse recebido da API.
+  it('retorna os dados do feed', async () => {
+    const response = {
+      items: [
+        {
+          id: 1,
+          name: 'Jaqueta',
+          price: 120,
+          cover_image_url: null,
+          store: {
+            id: 10,
+            name: 'Brechó Centro',
+          },
+          status: 'ativo',
+        },
+      ],
+      page: 1,
+      page_size: 20,
+      total: 1,
+    };
+
+    vi.mocked(httpClient.get).mockResolvedValue({ data: response });
+
+    await expect(getProducts()).resolves.toEqual(response);
   });
 });
