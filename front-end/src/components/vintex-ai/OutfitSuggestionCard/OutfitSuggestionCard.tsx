@@ -4,7 +4,9 @@ import type { OutfitItemIcon, OutfitSuggestion } from '@/types/vintex-ai';
 
 interface OutfitSuggestionCardProps {
   suggestion: OutfitSuggestion;
+  /** Chamado ao clicar em "Salvar rascunho". */
   onSaveDraft?: () => void;
+  /** Chamado ao clicar em "Ver peças". */
   onViewItems?: () => void;
 }
 
