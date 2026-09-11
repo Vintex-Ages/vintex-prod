@@ -1,9 +1,10 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
+import { paths } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
 
@@ -14,16 +15,29 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
   currency: 'BRL',
 });
 
-/** Ainda não existe página de perfil do brechó no projeto — placeholder até essa rota existir. */
+/** Tamanhos por letra ganham o nome por extenso; numéricos (calçado) ficam como estão. */
+const SIZE_LABELS: Record<string, string> = {
+  P: 'Pequeno',
+  M: 'Médio',
+  G: 'Grande',
+  GG: 'Extra Grande',
+};
+
+function sizeLabel(size: string): string {
+  const label = SIZE_LABELS[size.toUpperCase()];
+  return label ? `${size} (${label})` : size;
+}
+
+/** Ainda não existe página de perfil do brechó (nem de busca por cidade) — placeholder até essas rotas existirem. */
 function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
   event.preventDefault();
 }
 
 function Attribute({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div>
-      <dt className="text-label uppercase tracking-wide text-texto-auxiliar">{label}</dt>
-      <dd className="text-body text-tinta">{value}</dd>
+    <div className="flex items-center justify-between gap-4 py-3">
+      <dt className="text-body text-texto-auxiliar">{label}</dt>
+      <dd className="text-body font-semibold text-tinta">{value}</dd>
     </div>
   );
 }
@@ -33,9 +47,12 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  * e exibe a ficha completa — categoria, tamanho, cor, marca, conservação, cidade,
  * preço em destaque e descrição — mais o card da loja.
  *
- * Sem galeria de múltiplas fotos (fica pra FE-US012-2, #85) e sem persistência de
- * favorito (a ação com barreira de login é a FE-US012-5, #88) — aqui é só toggle
- * visual local.
+ * Sem carrossel/lightbox de fotos (fica pra FE-US012-2, #85) — mostra a capa e as
+ * demais imagens de `media` como miniaturas estáticas, sem interação. Sem
+ * curadoria de IA (#127/#139) e sem carrinho/checkout real (pagamento real fora
+ * do escopo do projeto) — o botão de ação final não tem função real por trás, é
+ * só layout. Sem persistência de favorito (a ação com barreira de login é a
+ * FE-US012-5, #88) — aqui é só toggle visual local.
  *
  * Usage:
  *   import ProductDetail from '@/pages/ProductDetail';
@@ -76,7 +93,7 @@ function ProductDetail() {
 
   if (status === 'loading') {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <main className="mx-auto w-full max-w-5xl px-4 py-6">
         <p className="text-body text-texto-auxiliar">Carregando produto...</p>
       </main>
     );
@@ -84,7 +101,7 @@ function ProductDetail() {
 
   if (status === 'not_found') {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <main className="mx-auto w-full max-w-5xl px-4 py-6">
         <p role="alert" className="text-body text-tinta">
           Produto não encontrado.
         </p>
@@ -94,7 +111,7 @@ function ProductDetail() {
 
   if (status === 'error' || !product) {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <main className="mx-auto w-full max-w-5xl px-4 py-6">
         <p role="alert" className="text-body text-tinta">
           Não foi possível carregar este produto agora.
         </p>
@@ -102,75 +119,133 @@ function ProductDetail() {
     );
   }
 
+  const priceLabel = priceFormatter.format(product.price);
+  const extraMedia = product.media.filter((item) => item.url !== product.coverImageUrl);
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6 pb-28 web:pb-6">
-      <div className="aspect-square w-full bg-linha web:aspect-[4/3]">
-        {product.coverImageUrl ? (
-          <img
-            src={product.coverImageUrl}
-            alt={product.name}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div
-            role="img"
-            aria-label={product.name}
-            className="flex h-full w-full items-center justify-center text-texto-auxiliar"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="h-16 w-16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 16.5 8.5 12l3 3L16 10.5 20 15M4 6h16v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6Z"
-              />
-            </svg>
-          </div>
-        )}
-      </div>
-
-      <h1 className="mt-4 font-display text-h2 text-tinta">{product.name}</h1>
-      <p className="mt-1 font-display text-h2 font-semibold text-tinta">
-        {priceFormatter.format(product.price)}
-      </p>
-
-      <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-linha pt-6 web:grid-cols-3">
-        <Attribute label="Categoria" value={product.category} />
-        <Attribute label="Tamanho" value={product.size} />
-        <Attribute label="Cor" value={product.color} />
-        <Attribute label="Marca" value={product.brand} />
-        <Attribute label="Conservação" value={product.condition} />
-        <Attribute label="Cidade" value={product.store.city ?? '—'} />
-      </dl>
-
-      <p className="mt-6 text-body text-texto-auxiliar">{product.description}</p>
-
-      <a
-        href="#"
-        onClick={preventLinkActivation}
-        className="mt-8 flex items-center gap-3 border border-linha bg-branco-quente p-4 no-underline hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+    <main className="mx-auto w-full max-w-5xl px-4 py-6 web:py-10">
+      <nav
+        aria-label="Trilha"
+        className="mb-4 flex flex-wrap items-center gap-1 text-label text-texto-auxiliar"
       >
-        <Avatar name={product.store.name} src={product.store.logoUrl} />
-        <div className="flex flex-1 flex-col">
-          <span className="text-body font-medium text-tinta">{product.store.name}</span>
-          {product.store.city ? (
-            <span className="text-label text-texto-auxiliar">{product.store.city}</span>
+        <Link to={paths.home} className="hover:text-tinta hover:underline">
+          Início
+        </Link>
+        {product.store.city ? (
+          <>
+            <span aria-hidden="true">/</span>
+            <span>{product.store.city}</span>
+          </>
+        ) : null}
+        <span aria-hidden="true">/</span>
+        <a href="#" onClick={preventLinkActivation} className="hover:text-tinta hover:underline">
+          {product.store.name}
+        </a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page" className="text-tinta">
+          {product.name}
+        </span>
+      </nav>
+
+      <div className="grid grid-cols-1 gap-8 web:grid-cols-2">
+        <div>
+          <div className="aspect-square w-full bg-linha web:aspect-[4/5]">
+            {product.coverImageUrl ? (
+              <img
+                src={product.coverImageUrl}
+                alt={product.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div
+                role="img"
+                aria-label={product.name}
+                className="flex h-full w-full items-center justify-center text-texto-auxiliar"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="h-16 w-16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 16.5 8.5 12l3 3L16 10.5 20 15M4 6h16v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6Z"
+                  />
+                </svg>
+              </div>
+            )}
+          </div>
+
+          {extraMedia.length > 0 ? (
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              {extraMedia.map((item) => (
+                <div key={item.url} className="aspect-square bg-linha">
+                  {item.type === 'image' ? (
+                    <img
+                      src={item.url}
+                      alt={`${product.name} — foto adicional`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
           ) : null}
         </div>
-        <VerifiedBadge verified={Boolean(product.store.verified)} />
-      </a>
 
-      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:border-0 web:p-0">
-        <FavoriteButton active={favorited} onToggle={() => setFavorited((value) => !value)} />
-        <Button variant="primary" fullWidth className="uppercase tracking-wide">
-          Tenho interesse
-        </Button>
+        <div className="flex flex-col pb-28 web:pb-0">
+          <h1 className="font-display text-h2 text-tinta">{product.name}</h1>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-2xl font-bold text-tinta">{priceLabel}</p>
+            <p className="text-body text-texto-auxiliar">
+              Tamanho: <span className="font-bold text-tinta">{sizeLabel(product.size)}</span>
+            </p>
+          </div>
+
+          <a
+            href="#"
+            onClick={preventLinkActivation}
+            className="mt-6 flex items-center gap-3 border border-linha bg-branco-quente p-4 no-underline hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+          >
+            <Avatar name={product.store.name} src={product.store.logoUrl} />
+            <div className="flex flex-1 flex-col gap-1">
+              <span className="text-body font-medium text-tinta">{product.store.name}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <VerifiedBadge verified={Boolean(product.store.verified)} label="Confiável" />
+                {product.store.city ? (
+                  <span className="text-label text-texto-auxiliar">{product.store.city}</span>
+                ) : null}
+              </div>
+            </div>
+            <span className="shrink-0 border border-linha px-3 py-2 text-label font-bold uppercase tracking-wide text-tinta">
+              Ver loja
+            </span>
+          </a>
+
+          <h2 className="mt-8 text-lg font-bold text-tinta">História da Peça</h2>
+          <p className="mt-2 text-body text-texto-auxiliar">{product.description}</p>
+
+          <dl className="mt-6 divide-y divide-linha border-t border-linha">
+            <Attribute label="Marca" value={product.brand} />
+            <Attribute label="Estado" value={product.condition} />
+            {product.material ? <Attribute label="Material" value={product.material} /> : null}
+            {product.measurements ? (
+              <Attribute label="Medidas" value={product.measurements} />
+            ) : null}
+            <Attribute label="Localização" value={product.store.city ?? '—'} />
+          </dl>
+
+          <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:border-0 web:p-0">
+            <FavoriteButton active={favorited} onToggle={() => setFavorited((value) => !value)} />
+            <Button variant="primary" fullWidth className="uppercase tracking-wide">
+              Comprar Agora • {priceLabel}
+            </Button>
+          </div>
+        </div>
       </div>
     </main>
   );

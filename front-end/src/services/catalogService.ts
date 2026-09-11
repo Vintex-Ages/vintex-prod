@@ -189,6 +189,9 @@ interface ApiProductDetail {
   state: string;
   media: { type: 'image' | 'video'; url: string; position: number }[];
   store: ApiStore;
+  /** PLACEHOLDER (ver nota em `types/product.ts`): sem contrato confirmado no back. */
+  material?: string;
+  measurements?: string;
 }
 
 interface ApiPage<T> {
@@ -246,6 +249,8 @@ function mapProductDetail(item: ApiProductDetail): ProductDetail {
     description: item.description,
     status: item.status,
     media: item.media,
+    material: item.material,
+    measurements: item.measurements,
   };
 }
 

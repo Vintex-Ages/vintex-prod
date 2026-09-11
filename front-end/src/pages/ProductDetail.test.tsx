@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ProductDetail from './ProductDetail';
@@ -18,18 +18,43 @@ function renderAt(path: string) {
 
 describe('<ProductDetail />', () => {
   // Objetivo declarado do ticket: mostra atributos, preço e card da loja.
-  it('mostra categoria, tamanho, cor, marca, conservação, cidade, preço e descrição', async () => {
+  // NOTA: categoria e cor (também exigidos pelo ticket) ficaram de fora da
+  // ficha visível por decisão explícita, pra bater com o layout do print de
+  // referência (T-02) — ver JSDoc do componente.
+  it('mostra marca, tamanho, conservação, material, medidas, cidade, preço e a história da peça', async () => {
     renderAt('/product/1');
 
     expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
-    expect(screen.getByText('Roupas')).toBeTruthy();
-    expect(screen.getByText('M')).toBeTruthy();
-    expect(screen.getByText('Preto')).toBeTruthy();
     expect(screen.getByText('Nike')).toBeTruthy();
+    expect(screen.getByText('M (Médio)')).toBeTruthy();
     expect(screen.getByText('Seminovo')).toBeTruthy();
+    expect(screen.getByText('100% algodão')).toBeTruthy();
+    expect(screen.getByText('Ombro a ombro 44cm • Comprimento 68cm')).toBeTruthy();
     expect(screen.getAllByText('Porto Alegre').length).toBeGreaterThan(0);
-    expect(screen.getByText(/R\$\s?79,90/)).toBeTruthy();
-    expect(screen.getByText('Camiseta Nike, cor preto, tamanho M. Estado: seminovo.')).toBeTruthy();
+    expect(screen.getAllByText(/R\$\s?79,90/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Peça garimpada no Mercado Público de Porto Alegre/)).toBeTruthy();
+  });
+
+  it('mostra a trilha de navegação (início / cidade / loja / produto)', async () => {
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+
+    const trilha = screen.getByRole('navigation', { name: 'Trilha' });
+    expect(within(trilha).getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/');
+    expect(within(trilha).getByText('Porto Alegre')).toBeTruthy();
+    expect(
+      within(trilha).getAllByText('Brechó Mercado Público', { exact: false }).length,
+    ).toBeGreaterThan(0);
+    expect(within(trilha).getByText('Nike Camiseta Preto')).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('mostra as demais fotos da peça como miniaturas abaixo da capa', async () => {
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+
+    expect(screen.getAllByAltText('Nike Camiseta Preto — foto adicional')).toHaveLength(2);
   });
 
   it('mostra carregando antes do produto resolver', () => {
@@ -43,7 +68,7 @@ describe('<ProductDetail />', () => {
 
     await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
 
-    expect(screen.getByText('Brechó Mercado Público')).toBeTruthy();
+    expect(screen.getAllByText('Brechó Mercado Público').length).toBeGreaterThan(0);
     expect(screen.getByRole('img', { name: 'Confiável' })).toBeTruthy();
   });
 
@@ -52,7 +77,7 @@ describe('<ProductDetail />', () => {
 
     await screen.findByRole('heading', { name: 'Adidas Tênis Branco' });
 
-    expect(screen.getByText('Roupa Rodada')).toBeTruthy();
+    expect(screen.getAllByText('Roupa Rodada').length).toBeGreaterThan(0);
     expect(screen.queryByRole('img', { name: 'Confiável' })).toBeNull();
   });
 
@@ -62,7 +87,7 @@ describe('<ProductDetail />', () => {
 
     await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
 
-    expect(screen.getByRole('link', { name: /Brechó Mercado Público/ })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Ver loja/ })).toBeTruthy();
   });
 
   it('mostra "produto não encontrado" para um id inexistente', async () => {
@@ -86,5 +111,13 @@ describe('<ProductDetail />', () => {
       'aria-pressed',
       'true',
     );
+  });
+
+  it('botão de ação final mostra "Comprar Agora" com o preço', async () => {
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+
+    expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?79,90/ })).toBeTruthy();
   });
 });

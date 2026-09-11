@@ -46,6 +46,13 @@ export interface ProductDetail extends Product {
   description: string;
   status: 'ativo' | 'vendido' | 'despublicado';
   media: ProductMedia[];
+  /**
+   * Material e medidas da peça — PLACEHOLDER (FE-US012-1): pedidos no Figma
+   * mas sem contrato confirmado no back ainda. Opcionais de propósito; a
+   * tela de detalhe esconde a linha do atributo quando ausente.
+   */
+  material?: string;
+  measurements?: string;
 }
 
 /**
