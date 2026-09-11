@@ -9,6 +9,8 @@ export interface Store {
   name: string;
   city?: string;
   verified?: boolean;
+  /** URL do logo da loja. Usado no card da loja da página de detalhe (FE-US012-1). */
+  logoUrl?: string;
 }
 
 /**

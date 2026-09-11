@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CatalogError,
   getFeed,
@@ -127,5 +127,91 @@ describe('catalogService (mock)', () => {
       expect(result.suggestions?.items.length).toBeGreaterThan(0);
       expect(result.suggestions?.reason).toContain('bermuda cargo');
     });
+  });
+});
+
+describe('catalogService (API real) — mapeamento da loja', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Objetivo: FE-US012-1 (card da loja no detalhe) consome logoUrl/verified —
+  // até então `verified` nem chegava a ser mapeado do back real, só existia no mock.
+  it('mapeia logo_url e verified da loja pro Store do front (FE-US012-1)', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getProduct: apiGetProduct } = await import('./catalogService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          id: 1,
+          name: 'Vestido floral',
+          description: 'Vestido floral em ótimo estado.',
+          category: 'Roupas',
+          brand: 'Farm',
+          color: 'Floral',
+          size: 'M',
+          condition: 'Seminovo',
+          price: 99.9,
+          status: 'ativo',
+          city: 'Porto Alegre',
+          state: 'RS',
+          media: [],
+          store: { id: 5, name: 'Brechó Ana', logo_url: 'https://x.test/logo.png', verified: true },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const product = await apiGetProduct('1');
+
+    expect(product.store).toMatchObject({
+      id: '5',
+      name: 'Brechó Ana',
+      city: 'Porto Alegre',
+      logoUrl: 'https://x.test/logo.png',
+      verified: true,
+    });
+  });
+
+  it('deixa logoUrl/verified undefined quando o back não os envia', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getProduct: apiGetProduct } = await import('./catalogService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          id: 1,
+          name: 'Vestido floral',
+          description: 'Vestido floral em ótimo estado.',
+          category: 'Roupas',
+          brand: 'Farm',
+          color: 'Floral',
+          size: 'M',
+          condition: 'Seminovo',
+          price: 99.9,
+          status: 'ativo',
+          city: 'Porto Alegre',
+          state: 'RS',
+          media: [],
+          store: { id: 5, name: 'Brechó Ana' },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const product = await apiGetProduct('1');
+
+    expect(product.store.logoUrl).toBeUndefined();
+    expect(product.store.verified).toBeUndefined();
   });
 });
