@@ -147,15 +147,20 @@ function Register() {
           : undefined;
 
   return (
-    <div className="flex min-h-screen flex-col bg-papel">
+    <div className="flex min-h-screen flex-col bg-white">
       <header className="relative flex items-center justify-center border-b border-linha bg-papel-profundo px-4 py-4">
         <div className="absolute left-4">
-          <IconButton icon={<BackIcon />} ariaLabel="Voltar" onClick={() => navigate(-1)} />
+          <IconButton
+            icon={<BackIcon />}
+            ariaLabel="Voltar"
+            onClick={() => navigate(-1)}
+            variant="primary"
+          />
         </div>
         <span className="font-display text-h2 text-tinta">Vintex</span>
       </header>
 
-      <main className="mx-auto w-full max-w-md flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-md flex-1 bg-white px-4 py-8">
         <h1 className="font-display text-h2 text-tinta">Entre na sua conta</h1>
         <p className="mt-2 text-body text-texto-auxiliar">
           Garimpe peças exclusivas ou desapegue do seu armário
