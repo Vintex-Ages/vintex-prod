@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { AuthProvider } from '@/context/AuthContext';
 import AppRoutes from './AppRoutes';
 import { paths } from './paths';
 
@@ -9,7 +10,9 @@ afterEach(cleanup);
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </MemoryRouter>,
   );
 }
@@ -19,7 +22,7 @@ describe('<AppRoutes />', () => {
     [paths.home, 'Início'],
     [paths.catalog, 'Catálogo'],
     [paths.product, 'Produto'],
-    [paths.login, 'Entrar'],
+    [paths.login, 'Entre na Vintex'],
     [paths.register, 'Criar conta'],
     [paths.onboarding, 'Onboarding'],
   ])('renders the page mapped to %s', (path, heading) => {
