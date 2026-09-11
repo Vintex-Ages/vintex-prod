@@ -135,17 +135,16 @@ function mockSearch(q: string, filters: FilterParams): SearchResult {
 }
 
 // ---- API real ----
-// GET /products (feed/filtros/busca) e GET /products/{id} (detalhe) ainda
-// estão em desenvolvimento no back (branches feature/85, feature/87 — sem
-// `q`, `city`, `state` nem endpoint de detalhe até agora). O mapeamento
-// abaixo segue o que já está confirmado (feed) e assume o resto pelo
-// contrato desta ticket; revisar quando o back entregar.
+// Contrato confirmado pelo time de back (mensagem de alinhamento das tasks
+// de service, 2026-09-11): `GET /products` devolve `FeedResponse` sem `q` e
+// `SearchResponse` (já com match_type/suggestions prontos) com `q`; `GET
+// /products/{id}` devolve o detalhe. `style` e `store.logo_url` existem na
+// resposta real mas não entram no tipo do front — a ticket não pede e não
+// há consumidor ainda.
 
 interface ApiStore {
   id: number | string;
   name: string;
-  city?: string;
-  verified?: boolean;
 }
 
 interface ApiFeedItem {
@@ -156,15 +155,27 @@ interface ApiFeedItem {
   store: ApiStore;
 }
 
-interface ApiProductDetail extends ApiFeedItem {
-  category: string;
-  size: string;
-  color: string;
-  brand: string;
-  condition: string;
+/**
+ * Diferente do item de lista: `city`/`state` vêm soltos no produto (não em
+ * `store`), e `media` já chega no formato que `ProductMedia` espera — sem
+ * conversão extra, ao contrário do que eu tinha assumido antes de ver o
+ * contrato real.
+ */
+interface ApiProductDetail {
+  id: number | string;
+  name: string;
   description: string;
-  status: 'ativo' | 'vendido';
-  images: { image_url: string; position: number }[];
+  category: string;
+  brand: string;
+  color: string;
+  size: string;
+  condition: string;
+  price: number;
+  status: 'ativo' | 'vendido' | 'despublicado';
+  city: string;
+  state: string;
+  media: { type: 'image' | 'video'; url: string; position: number }[];
+  store: { id: number | string; name: string };
 }
 
 interface ApiPage<T> {
@@ -174,12 +185,19 @@ interface ApiPage<T> {
   total: number;
 }
 
+interface ApiSearchResponse {
+  items: ApiFeedItem[];
+  total: number;
+  match_type: 'exact' | 'fallback';
+  suggestions: { reason: string; items: ApiFeedItem[] } | null;
+}
+
 interface ApiErrorEnvelope {
   error?: { code?: string; message?: string };
 }
 
-function mapStore(store: ApiStore): Store {
-  return { id: String(store.id), name: store.name, city: store.city, verified: store.verified };
+function mapStore(store: ApiStore, city?: string): Store {
+  return { id: String(store.id), name: store.name, city };
 }
 
 function mapFeedItem(item: ApiFeedItem): Product {
@@ -192,9 +210,15 @@ function mapFeedItem(item: ApiFeedItem): Product {
   };
 }
 
+/** Capa = primeira imagem por `position`, igual o back já faz no feed (`get_active_feed`). */
 function mapProductDetail(item: ApiProductDetail): ProductDetail {
+  const cover = [...item.media].sort((a, b) => a.position - b.position)[0]?.url ?? null;
   return {
-    ...mapFeedItem(item),
+    id: String(item.id),
+    name: item.name,
+    price: item.price,
+    coverImageUrl: cover,
+    store: mapStore(item.store, item.city),
     category: item.category,
     size: item.size,
     color: item.color,
@@ -202,11 +226,7 @@ function mapProductDetail(item: ApiProductDetail): ProductDetail {
     condition: item.condition,
     description: item.description,
     status: item.status,
-    media: item.images.map((image) => ({
-      type: 'image',
-      url: image.image_url,
-      position: image.position,
-    })),
+    media: item.media,
   };
 }
 
@@ -271,27 +291,17 @@ async function apiGetProduct(id: string): Promise<ProductDetail> {
   }
 }
 
-/**
- * O back não tem endpoint de busca com fallback ainda — este adapter
- * reaproveita o feed filtrado: sem `q` acha algo, é `exact`; sem achar nada,
- * repete a consulta sem `q` e usa isso como sugestão. Revisar quando existir
- * um endpoint de busca real (hoje só há filtros combinados em feature/87).
- */
 async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult> {
-  const withQuery = await apiGetProducts({ ...filters, q });
-  if (withQuery.items.length > 0) {
-    return { match_type: 'exact', items: withQuery.items, total: withQuery.total };
-  }
-
-  const fallback = await apiGetProducts(filters);
+  const { data } = await httpClient.get<ApiSearchResponse>('/products', {
+    params: toApiParams({ ...filters, q }),
+  });
   return {
-    match_type: 'fallback',
-    items: [],
-    suggestions: {
-      reason: `Nenhum resultado para "${q}". Veja outras peças disponíveis.`,
-      items: fallback.items.slice(0, 4),
-    },
-    total: 0,
+    match_type: data.match_type,
+    items: data.items.map(mapFeedItem),
+    total: data.total,
+    suggestions: data.suggestions
+      ? { reason: data.suggestions.reason, items: data.suggestions.items.map(mapFeedItem) }
+      : undefined,
   };
 }
 

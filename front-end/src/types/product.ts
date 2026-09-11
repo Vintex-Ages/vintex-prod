@@ -30,9 +30,10 @@ export interface ProductMedia {
 }
 
 /**
- * `status` cobre só os dois valores visíveis publicamente. O back também tem
- * `despublicado` internamente, mas isso é estado de vendedor — nunca chega
- * num produto que o catálogo público expõe.
+ * `status` tem os 3 valores que o endpoint de detalhe (`GET /api/products/{id}`)
+ * pode devolver, confirmado pelo contrato do back. Uma peça `despublicado`
+ * nunca aparece no feed/filtros (`Product` da listagem), mas o detalhe pode
+ * retorná-la — como a tela reage a isso é decisão de FE-US012-1, não daqui.
  */
 export interface ProductDetail extends Product {
   category: string;
@@ -41,7 +42,7 @@ export interface ProductDetail extends Product {
   brand: string;
   condition: string;
   description: string;
-  status: 'ativo' | 'vendido';
+  status: 'ativo' | 'vendido' | 'despublicado';
   media: ProductMedia[];
 }
 
