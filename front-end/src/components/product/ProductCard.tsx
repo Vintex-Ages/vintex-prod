@@ -1,9 +1,15 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import type { Product } from '@/types/product';
+import type { ProductDetail } from '@/types/product';
 
 export type ProductCardProps = {
-  product: Product;
+  /**
+   * Precisa de `category`/`condition` (Figma) além dos campos de listagem —
+   * por isso `ProductDetail`, não `Product`. O feed sozinho não traz esses
+   * dois campos; quem popula a lista usa `getFeedWithDetails`
+   * (`catalogService.ts`), que busca o detalhe de cada item pra completar.
+   */
+  product: ProductDetail;
   onOpen: (id: string) => void;
   /**
    * Rota real do produto, usada como `to` do `<Link>` do título. Enquanto a
@@ -103,6 +109,9 @@ function ProductCard({
       </div>
 
       <div className="flex flex-col gap-1 p-3">
+        <span className="text-label uppercase tracking-wide text-texto-auxiliar">
+          {product.category}
+        </span>
         <p className="text-body font-medium">
           <Link
             to={productPath}
@@ -117,6 +126,7 @@ function ProductCard({
           {product.store.city ? ` · ${product.store.city}` : null}
         </p>
         <p className="text-body font-semibold text-tinta">{priceFormatter.format(product.price)}</p>
+        <p className="text-label text-texto-auxiliar">{product.condition}</p>
       </div>
 
       {favoriteSlot ? <div className="absolute right-2 top-2 z-10">{favoriteSlot}</div> : null}

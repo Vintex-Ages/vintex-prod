@@ -102,6 +102,15 @@ function mockGetFeed({ page = 1, pageSize = DEFAULT_PAGE_SIZE }: FeedParams): Pa
   return paginate(recent.map(toProduct), page, pageSize);
 }
 
+function mockGetFeedWithDetails({
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+}: FeedParams): Paginated<ProductDetail> {
+  const active = mockProducts.filter((product) => product.status === 'ativo');
+  const recent = [...active].reverse();
+  return paginate(recent, page, pageSize);
+}
+
 function mockGetProduct(id: string): Promise<ProductDetail> {
   const product = mockProducts.find((item) => item.id === id);
   return product ? Promise.resolve(product) : Promise.reject(productNotFound(id));
@@ -275,6 +284,29 @@ async function apiGetFeed({
   return mapPage(data, mapFeedItem);
 }
 
+/**
+ * Débito técnico: o feed não devolve `category`/`condition` (só o detalhe
+ * devolve), mas o card do Figma precisa dos dois. Enquanto o back não passa a
+ * devolver tudo no feed, buscamos o detalhe de cada item da página pra
+ * completar — 1 request de feed + N de detalhe por página. Item cujo detalhe
+ * falhar é descartado da página (não derruba os demais).
+ */
+async function apiGetFeedWithDetails(params: FeedParams): Promise<Paginated<ProductDetail>> {
+  const feedPage = await apiGetFeed(params);
+  const settled = await Promise.allSettled(feedPage.items.map((item) => apiGetProduct(item.id)));
+
+  const items = settled
+    .filter((result): result is PromiseFulfilledResult<ProductDetail> => result.status === 'fulfilled')
+    .map((result) => result.value);
+
+  const failed = settled.length - items.length;
+  if (failed > 0) {
+    console.warn(`[catalogService] ${failed} produto(s) do feed sem detalhe disponível — descartado(s) da página.`);
+  }
+
+  return { ...feedPage, items };
+}
+
 async function apiGetProducts(filters: FilterParams): Promise<Paginated<Product>> {
   const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
     params: toApiParams(filters),
@@ -309,6 +341,11 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
 
 export function getFeed(params: FeedParams = {}): Promise<Paginated<Product>> {
   return useMocks ? Promise.resolve(mockGetFeed(params)) : apiGetFeed(params);
+}
+
+/** Feed já enriquecido com `category`/`condition`, pro card do catálogo (ver nota de débito técnico acima). */
+export function getFeedWithDetails(params: FeedParams = {}): Promise<Paginated<ProductDetail>> {
+  return useMocks ? Promise.resolve(mockGetFeedWithDetails(params)) : apiGetFeedWithDetails(params);
 }
 
 export function getProduct(id: string): Promise<ProductDetail> {

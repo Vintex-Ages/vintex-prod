@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogError, getFeed, getProduct, getProducts, search } from './catalogService';
+import { CatalogError, getFeed, getFeedWithDetails, getProduct, getProducts, search } from './catalogService';
 import { products as mockProducts } from '@/mocks/products';
 
 const ACTIVE_COUNT = mockProducts.filter((product) => product.status === 'ativo').length;
@@ -35,6 +35,29 @@ describe('catalogService (mock)', () => {
       const page = await getFeed({ pageSize: 1 });
 
       expect(page.items[0].id).toBe('8');
+    });
+  });
+
+  describe('getFeedWithDetails', () => {
+    // Objetivo: card do catálogo precisa de category/condition, que o feed puro não traz.
+    it('retorna as peças ativas já com category e condition', async () => {
+      const page = await getFeedWithDetails({});
+
+      expect(page.items).toHaveLength(ACTIVE_COUNT);
+      expect(page.items.every((item) => typeof item.category === 'string')).toBe(true);
+      expect(page.items.every((item) => typeof item.condition === 'string')).toBe(true);
+    });
+
+    it('mantém a mesma ordenação e paginação de getFeed', async () => {
+      const [plain, withDetails] = await Promise.all([
+        getFeed({ page: 2, pageSize: 3 }),
+        getFeedWithDetails({ page: 2, pageSize: 3 }),
+      ]);
+
+      expect(withDetails.items.map((item) => item.id)).toEqual(plain.items.map((item) => item.id));
+      expect(withDetails.page).toBe(2);
+      expect(withDetails.pageSize).toBe(3);
+      expect(withDetails.total).toBe(ACTIVE_COUNT);
     });
   });
 
