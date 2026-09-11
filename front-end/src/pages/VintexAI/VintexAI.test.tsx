@@ -10,7 +10,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderPage(initialEntries: Array<{ pathname: string; state?: unknown }> = [{ pathname: '/vintex' }]) {
+function renderPage(
+  initialEntries: Array<{ pathname: string; state?: unknown }> = [{ pathname: '/vintex' }],
+) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <VintexAI />
