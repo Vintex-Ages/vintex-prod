@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@/types/vintex-ai';
-import { OutfitSuggestionCard } from '@/components/common/OutfitSuggestionCard';
+import { OutfitSuggestionCard } from '@/components/vintex-ai/OutfitSuggestionCard';
 
 interface ChatBubbleProps {
   message: ChatMessage;
