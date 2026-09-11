@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AppRoutes from './AppRoutes';
-import { paths } from './paths';
+import { paths, productDetail } from './paths';
 
 afterEach(cleanup);
 
@@ -18,7 +18,7 @@ describe('<AppRoutes />', () => {
   it.each([
     [paths.home, 'Início'],
     [paths.catalog, 'Catálogo'],
-    [paths.product, 'Produto'],
+    [productDetail('1'), 'Produto'],
     [paths.login, 'Entrar'],
     [paths.register, 'Criar conta'],
     [paths.onboarding, 'Onboarding'],

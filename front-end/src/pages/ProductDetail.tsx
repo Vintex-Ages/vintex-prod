@@ -1,5 +1,5 @@
 /** Placeholder da página de Produto — conteúdo real vem na task de tela correspondente. */
-function Product() {
+function ProductDetail() {
   return (
     <main>
       <h1>Produto</h1>
@@ -7,4 +7,4 @@ function Product() {
   );
 }
 
-export default Product;
+export default ProductDetail;
