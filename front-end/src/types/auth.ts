@@ -61,3 +61,25 @@ export interface ApiError {
  * catalogados — evite espalhar strings soltas, prefira uma constante.
  */
 export const AUTH_REQUIRED = 'AUTH_REQUIRED';
+
+/**
+ * Payload de cadastro de comprador (FE-US002-1). `phone` é opcional — decisão
+ * da Sprint 1 não incluir CPF nesta tela.
+ *
+ * SUPOSIÇÃO a alinhar com o backend: nomes de campo assumidos como
+ * `name`/`email`/`password`/`phone`, sem conversão de case (nenhum é
+ * multi-palavra). CEP não entra aqui — é resolvido só na tela (`cepService`),
+ * sem ir para o backend.
+ */
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+  phone?: string;
+}
+
+/** Resultado do cadastro: usuário autenticado + token, prontos para `useAuth().login()`. */
+export interface RegisterResult {
+  user: AuthUser;
+  token: string;
+}
