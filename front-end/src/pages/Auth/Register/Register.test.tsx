@@ -184,7 +184,8 @@ describe('<Register />', () => {
     expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBeNull();
   });
 
-  it('mostra a mensagem de erro do back e não navega quando o cadastro falha', async () => {
+  // Objetivo declarado do ticket: 409 do service aparece no campo e-mail (FE-US002-2).
+  it('mostra o erro de e-mail já cadastrado (409) no campo e-mail, não num banner solto', async () => {
     mockedRegister.mockRejectedValueOnce({
       code: 'EMAIL_TAKEN',
       message: 'Este e-mail já está cadastrado.',
@@ -196,8 +197,59 @@ describe('<Register />', () => {
     await preencherCamposObrigatorios(user);
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
-    expect(await screen.findByText('Este e-mail já está cadastrado.')).toBeTruthy();
+    const emailInput = await screen.findByLabelText('E-mail');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    const messageId = emailInput.getAttribute('aria-describedby');
+    expect(document.getElementById(messageId ?? '')).toHaveTextContent(
+      'Este e-mail já está cadastrado.',
+    );
     expect(screen.queryByText('Tela de onboarding')).toBeNull();
+  });
+
+  // Objetivo declarado do ticket: e-mail inválido e senha curta mostram erro no campo (validação cliente).
+  it('bloqueia o envio e mostra erro no campo quando o e-mail é inválido ou a senha não cumpre a política', async () => {
+    const user = userEvent.setup();
+    renderRegister();
+
+    await user.type(screen.getByLabelText('Nome completo'), 'Ana Compradora');
+    await user.type(screen.getByLabelText('E-mail'), 'email-sem-formato-valido');
+    await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
+    await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+    // Senha curta: tem letra e número, mas só 4 caracteres — não cumpre o mínimo de 8.
+    await user.type(screen.getByLabelText('Senha'), 'ab12');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+
+    expect(await screen.findByText('Informe um e-mail válido.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
+      ),
+    ).toBeTruthy();
+    expect(mockedRegister).not.toHaveBeenCalled();
+  });
+
+  // Objetivo declarado do ticket: mínimo da senha exige 1 letra + 1 número, não só o tamanho.
+  it('bloqueia o envio quando a senha tem 8+ caracteres mas só dígitos, sem letra', async () => {
+    const user = userEvent.setup();
+    renderRegister();
+
+    await user.type(screen.getByLabelText('Nome completo'), 'Ana Compradora');
+    await user.type(screen.getByLabelText('E-mail'), 'ana@exemplo.com');
+    await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
+    await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+    await user.type(screen.getByLabelText('Senha'), '12345678');
+    await user.click(screen.getByRole('checkbox'));
+
+    await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+
+    expect(
+      await screen.findByText(
+        'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
+      ),
+    ).toBeTruthy();
+    expect(mockedRegister).not.toHaveBeenCalled();
   });
 
   it('"JÁ TENHO CONTA" navega para a tela de login', async () => {
