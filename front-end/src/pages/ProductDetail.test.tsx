@@ -120,4 +120,46 @@ describe('<ProductDetail />', () => {
 
     expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?79,90/ })).toBeTruthy();
   });
+
+  it('peça vendida (status "vendido") mostra o selo "Já vendida"', async () => {
+    renderAt('/product/4');
+
+    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+
+    expect(screen.getByText('Já vendida')).toBeInTheDocument();
+  });
+
+  it('peça vendida desabilita o botão "Comprar Agora"', async () => {
+    renderAt('/product/4');
+
+    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
+  });
+
+  it('peça vendida mantém o botão de favoritar habilitado', async () => {
+    renderAt('/product/4');
+
+    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+
+    expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeEnabled();
+  });
+
+  it('peça vendida continua navegável — mostra o resto da ficha normalmente', async () => {
+    renderAt('/product/4');
+
+    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+
+    expect(screen.getByText('Zara')).toBeInTheDocument();
+    expect(screen.getAllByText(/R\$\s?149,90/).length).toBeGreaterThan(0);
+  });
+
+  it('peça ativa (status "ativo") NÃO mostra o selo e mantém "Comprar Agora" habilitado', async () => {
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+
+    expect(screen.queryByText('Já vendida')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+  });
 });
