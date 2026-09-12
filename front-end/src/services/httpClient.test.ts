@@ -11,6 +11,7 @@ import {
 function captureAdapter(store: { config?: InternalAxiosRequestConfig }) {
   return (config: InternalAxiosRequestConfig) => {
     store.config = config;
+
     return Promise.resolve({
       data: {},
       status: 200,
@@ -21,12 +22,21 @@ function captureAdapter(store: { config?: InternalAxiosRequestConfig }) {
   };
 }
 
-/** Adapter falso: sempre rejeita como um 401 vindo do backend. */
-function unauthorizedAdapter(code: string) {
+/**
+ * Adapter falso para simular o contrato real do backend:
+ * { error: { code, message, return_to } }
+ */
+function unauthorizedAdapter(code: string, returnTo?: string) {
   return (config: InternalAxiosRequestConfig) =>
     Promise.reject(
       new AxiosError('Request failed with status code 401', 'ERR_BAD_REQUEST', config, null, {
-        data: { code, message: 'Sessão expirada.' },
+        data: {
+          error: {
+            code,
+            message: 'É necessário entrar ou criar conta para esta ação.',
+            ...(returnTo ? { return_to: returnTo } : {}),
+          },
+        },
         status: 401,
         statusText: 'Unauthorized',
         headers: {},
@@ -68,32 +78,69 @@ describe('httpClient', () => {
     expect(store.config?.headers.has('Authorization')).toBe(false);
   });
 
-  it('no 401 com code AUTH_REQUIRED: guarda a rota de origem e dispara o handler', async () => {
-    window.history.pushState({}, '', '/catalogo?q=jaqueta');
-    const onAuthRequired = vi.fn();
-    setOnAuthRequired(onAuthRequired);
-    httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED');
+  it('envia X-Return-To com a rota atual', async () => {
+    window.history.pushState({}, '', '/catalog?categoria=roupas');
 
-    await expect(httpClient.get('/protegido')).rejects.toBeInstanceOf(AxiosError);
+    const store: { config?: InternalAxiosRequestConfig } = {};
+    httpClient.defaults.adapter = captureAdapter(store);
 
-    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBe('/catalogo?q=jaqueta');
-    expect(onAuthRequired).toHaveBeenCalledWith('/catalogo?q=jaqueta');
+    await httpClient.get('/favorites');
+
+    expect(store.config?.headers.get('X-Return-To')).toBe('/catalog?categoria=roupas');
   });
 
-  it('no 401 sem handler registrado: faz fallback para window.location.assign(/login)', async () => {
-    const assign = vi.fn();
-    vi.stubGlobal('location', { pathname: '/perfil', search: '', assign });
-    setOnAuthRequired(null);
+  it('no 401 AUTH_REQUIRED guarda o return_to devolvido pelo backend e dispara o handler', async () => {
+    window.history.pushState({}, '', '/outra-rota');
+
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+
+    httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED', '/catalog?categoria=roupas');
+
+    await expect(httpClient.get('/favorites')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBe('/catalog?categoria=roupas');
+
+    expect(onAuthRequired).toHaveBeenCalledWith('/catalog?categoria=roupas');
+  });
+
+  it('usa a rota atual como fallback quando AUTH_REQUIRED não traz return_to', async () => {
+    window.history.pushState({}, '', '/product?id=10');
+
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+
     httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED');
+
+    await expect(httpClient.get('/favorites')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBe('/product?id=10');
+
+    expect(onAuthRequired).toHaveBeenCalledWith('/product?id=10');
+  });
+
+  it('no 401 sem handler registrado faz fallback para /login', async () => {
+    const assign = vi.fn();
+
+    vi.stubGlobal('location', {
+      pathname: '/perfil',
+      search: '',
+      assign,
+    });
+
+    setOnAuthRequired(null);
+
+    httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED', '/perfil');
 
     await expect(httpClient.get('/protegido')).rejects.toBeInstanceOf(AxiosError);
 
     expect(assign).toHaveBeenCalledWith('/login');
   });
 
-  it('não dispara o fluxo de re-login para um 401 de outro code', async () => {
+  it('não dispara o fluxo de autenticação para um 401 de outro code', async () => {
     const onAuthRequired = vi.fn();
     setOnAuthRequired(onAuthRequired);
+
     httpClient.defaults.adapter = unauthorizedAdapter('INVALID_CREDENTIALS');
 
     await expect(httpClient.get('/login')).rejects.toBeInstanceOf(AxiosError);

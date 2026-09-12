@@ -3,19 +3,25 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
-import ProductCard, { type Product } from './ProductCard';
+import type { ProductDetail } from '@/types/product';
+import ProductCard from './ProductCard';
 
 afterEach(cleanup);
 
-const baseProduct: Product = {
+const baseProduct: ProductDetail = {
   id: 'prod-1',
-  title: 'Vestido floral',
-  category: 'vestidos',
-  storeName: 'Brechó Ana',
-  city: 'Porto Alegre',
+  name: 'Vestido floral',
+  store: { id: 'store-1', name: 'Brechó Ana', city: 'Porto Alegre' },
   price: 89.9,
   coverImageUrl: 'https://example.com/vestido.jpg',
-  condition: 'excelente',
+  category: 'Roupas',
+  size: 'M',
+  color: 'Floral',
+  brand: 'Farm',
+  condition: 'Seminovo',
+  description: 'Vestido floral, tamanho M. Estado: seminovo.',
+  status: 'ativo',
+  media: [{ type: 'image', url: 'https://example.com/vestido.jpg', position: 0 }],
 };
 
 // O ProductCard usa <Link> do react-router-dom, que precisa de um Router ancestral.
@@ -26,11 +32,11 @@ describe('<ProductCard />', () => {
   it('renderiza os campos do produto', () => {
     renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
 
-    expect(screen.getByText('vestidos')).toBeTruthy();
     expect(screen.getByText('Vestido floral')).toBeTruthy();
     expect(screen.getByText('Brechó Ana · Porto Alegre')).toBeTruthy();
-    expect(screen.getByText('excelente')).toBeTruthy();
     expect(screen.getByText(/R\$\s?89,90/)).toBeTruthy();
+    expect(screen.getByText('Roupas')).toBeTruthy();
+    expect(screen.getByText('Seminovo')).toBeTruthy();
 
     const image = screen.getByAltText('Vestido floral');
     expect(image.tagName).toBe('IMG');
@@ -38,7 +44,7 @@ describe('<ProductCard />', () => {
 
   // Objetivo: sem coverImageUrl, mostra um placeholder e não quebra a renderização.
   it('usa um placeholder quando não há coverImageUrl', () => {
-    const productWithoutImage: Product = { ...baseProduct, coverImageUrl: null };
+    const productWithoutImage: ProductDetail = { ...baseProduct, coverImageUrl: null };
     renderCard(<ProductCard product={productWithoutImage} onOpen={() => {}} />);
 
     const placeholder = screen.getByRole('img', { name: 'Vestido floral' });
