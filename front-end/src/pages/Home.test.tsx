@@ -47,6 +47,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('<Home />', () => {
+  it('mostra o estado vazio quando o feed retorna items vazio e total zero', async () => {
+    vi.mocked(getFeed).mockResolvedValue({ ...feed, items: [], total: 0 });
+    renderHome();
+
+    expect(await screen.findByText('Nenhuma peça encontrada no momento.')).toBeInTheDocument();
+    const region = screen.getByRole('region', { name: 'Feed de peças' });
+    expect(within(region).getByRole('status')).toHaveTextContent('Nenhuma peça encontrada');
+    expect(within(region).queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Carregar mais achados' })).not.toBeInTheDocument();
+  });
+
+  it('renderiza todos os itens recebidos sem filtrar por status', async () => {
+    const soldProduct = { ...feed.items[1], status: 'vendido' };
+    const items = [feed.items[0], soldProduct];
+    vi.mocked(getFeed).mockResolvedValue({ ...feed, items });
+    renderHome();
+
+    const region = screen.getByRole('region', { name: 'Feed de peças' });
+    expect(await within(region).findAllByRole('link')).toHaveLength(items.length);
+    for (const item of items) {
+      expect(within(region).getByRole('link', { name: item.name })).toBeInTheDocument();
+    }
+  });
+
   it('renderiza os dados do feed e preserva o placeholder para peças sem foto', async () => {
     vi.mocked(getFeed).mockResolvedValue(feed);
     renderHome();
