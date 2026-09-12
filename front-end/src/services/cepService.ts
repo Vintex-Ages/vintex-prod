@@ -4,7 +4,7 @@ import axios from 'axios';
  * Busca de endereço por CEP (FE-US002-1) — usa a API pública do ViaCEP
  * diretamente, sem passar pelo `httpClient` do back (não é o mesmo domínio,
  * não leva `Authorization`). Endereço resolvido é só para exibição na tela de
- * cadastro; não faz parte do `RegisterPayload` enviado ao backend.
+ * cadastro; não faz parte do `RegisterInput` enviado ao backend.
  *
  * Usage:
  *   import { lookupAddress, CepError } from '@/services/cepService';

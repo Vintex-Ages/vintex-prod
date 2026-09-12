@@ -25,6 +25,8 @@ const SAMPLE_USER: AuthUser = {
   id: 'u_1',
   name: 'Ana Brechó',
   email: 'ana@exemplo.com',
+  is_seller: false,
+  is_admin: false,
 };
 
 /**

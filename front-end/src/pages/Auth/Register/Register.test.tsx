@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import { AUTH_TOKEN_STORAGE_KEY } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
-import { AuthError, register } from '@/services/authService';
+import { register } from '@/services/authService';
 import { lookupAddress } from '@/services/cepService';
 import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
 import Register from './Register';
@@ -115,8 +115,14 @@ describe('<Register />', () => {
   // Objetivo declarado do ticket: sucesso guarda token e loga.
   it('cadastra com sucesso: chama register, loga a sessão e navega pro onboarding', async () => {
     mockedRegister.mockResolvedValueOnce({
-      user: { id: 'u_1', name: 'Ana Compradora', email: 'ana@exemplo.com' },
-      token: 'tok-abc',
+      user: {
+        id: 'u_1',
+        name: 'Ana Compradora',
+        email: 'ana@exemplo.com',
+        is_seller: false,
+        is_admin: false,
+      },
+      access_token: 'tok-abc',
     });
     const user = userEvent.setup();
     renderRegister();
@@ -137,8 +143,14 @@ describe('<Register />', () => {
   // Critério de aceite da FE-US002-3: retomar o fluxo interrompido pelo cadastro.
   it('retorna para a origem informada pelo fluxo de autenticação (location.state.from)', async () => {
     mockedRegister.mockResolvedValueOnce({
-      user: { id: 'u_1', name: 'Ana Compradora', email: 'ana@exemplo.com' },
-      token: 'tok-abc',
+      user: {
+        id: 'u_1',
+        name: 'Ana Compradora',
+        email: 'ana@exemplo.com',
+        is_seller: false,
+        is_admin: false,
+      },
+      access_token: 'tok-abc',
     });
     const user = userEvent.setup();
     renderRegister({ pathname: '/register', state: { from: '/catalog?category=roupas' } });
@@ -153,8 +165,14 @@ describe('<Register />', () => {
   it('usa a origem salva no sessionStorage quando não há state de navegação, e limpa a chave', async () => {
     window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, '/product?id=123');
     mockedRegister.mockResolvedValueOnce({
-      user: { id: 'u_1', name: 'Ana Compradora', email: 'ana@exemplo.com' },
-      token: 'tok-abc',
+      user: {
+        id: 'u_1',
+        name: 'Ana Compradora',
+        email: 'ana@exemplo.com',
+        is_seller: false,
+        is_admin: false,
+      },
+      access_token: 'tok-abc',
     });
     const user = userEvent.setup();
     renderRegister();
@@ -167,9 +185,11 @@ describe('<Register />', () => {
   });
 
   it('mostra a mensagem de erro do back e não navega quando o cadastro falha', async () => {
-    mockedRegister.mockRejectedValueOnce(
-      new AuthError('EMAIL_ALREADY_REGISTERED', 'Este e-mail já está cadastrado.'),
-    );
+    mockedRegister.mockRejectedValueOnce({
+      code: 'EMAIL_TAKEN',
+      message: 'Este e-mail já está cadastrado.',
+      field: 'email',
+    });
     const user = userEvent.setup();
     renderRegister();
 

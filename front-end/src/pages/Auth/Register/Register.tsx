@@ -6,9 +6,10 @@ import IconButton from '@/components/common/IconButton';
 import InputField from '@/components/common/InputField';
 import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
-import { AuthError, register } from '@/services/authService';
+import { register } from '@/services/authService';
 import { CepError, lookupAddress, type CepAddress } from '@/services/cepService';
 import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
+import type { ApiError } from '@/types/auth';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -147,7 +148,7 @@ function Register() {
     setSubmitError(null);
 
     try {
-      const { user, token } = await register({
+      const { user, access_token: token } = await register({
         name: name.trim(),
         email: email.trim(),
         password,
@@ -171,8 +172,12 @@ function Register() {
       }
       // else: havia origem em sessionStorage e login() já navegou pra lá — não mexe.
     } catch (error) {
+      // authService rejeita com ApiError puro (não uma classe de erro), ver @/types/auth.
+      const apiError = error as Partial<ApiError> | undefined;
       setSubmitError(
-        error instanceof AuthError ? error.message : 'Não foi possível criar sua conta agora.',
+        typeof apiError?.message === 'string'
+          ? apiError.message
+          : 'Não foi possível criar sua conta agora.',
       );
     } finally {
       setSubmitting(false);
