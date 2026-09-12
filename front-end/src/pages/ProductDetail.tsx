@@ -4,6 +4,7 @@ import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
+import Gallery from '@/components/product/Gallery';
 import { paths } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
@@ -47,9 +48,9 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  * e exibe a ficha completa — categoria, tamanho, cor, marca, conservação, cidade,
  * preço em destaque e descrição — mais o card da loja.
  *
- * Sem carrossel/lightbox de fotos (fica pra FE-US012-2, #85) — mostra a capa e as
- * demais imagens de `media` como miniaturas estáticas, sem interação. Sem
- * curadoria de IA (#127/#139) e sem carrinho/checkout real (pagamento real fora
+ * Galeria de fotos (carrossel + miniaturas, ordenada por `position`) é o
+ * componente `Gallery` (FE-US012-2, #85) — ver `@/components/product/Gallery`.
+ * Sem curadoria de IA (#127/#139) e sem carrinho/checkout real (pagamento real fora
  * do escopo do projeto) — o botão de ação final não tem função real por trás, é
  * só layout. Sem persistência de favorito (a ação com barreira de login é a
  * FE-US012-5, #88) — aqui é só toggle visual local.
@@ -120,7 +121,6 @@ function ProductDetail() {
   }
 
   const priceLabel = priceFormatter.format(product.price);
-  const extraMedia = product.media.filter((item) => item.url !== product.coverImageUrl);
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6 web:py-10">
@@ -148,54 +148,7 @@ function ProductDetail() {
       </nav>
 
       <div className="grid grid-cols-1 gap-8 web:grid-cols-2">
-        <div>
-          <div className="aspect-square w-full bg-linha web:aspect-[4/5]">
-            {product.coverImageUrl ? (
-              <img
-                src={product.coverImageUrl}
-                alt={product.name}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div
-                role="img"
-                aria-label={product.name}
-                className="flex h-full w-full items-center justify-center text-texto-auxiliar"
-              >
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 24 24"
-                  className="h-16 w-16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M4 16.5 8.5 12l3 3L16 10.5 20 15M4 6h16v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6Z"
-                  />
-                </svg>
-              </div>
-            )}
-          </div>
-
-          {extraMedia.length > 0 ? (
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              {extraMedia.map((item) => (
-                <div key={item.url} className="aspect-square bg-linha">
-                  {item.type === 'image' ? (
-                    <img
-                      src={item.url}
-                      alt={`${product.name} — foto adicional`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <Gallery media={product.media} productName={product.name} />
 
         <div className="flex flex-col pb-28 web:pb-0">
           <h1 className="font-display text-h2 text-tinta">{product.name}</h1>
