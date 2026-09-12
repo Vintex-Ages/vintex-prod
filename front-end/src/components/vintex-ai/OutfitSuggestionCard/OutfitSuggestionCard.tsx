@@ -4,7 +4,9 @@ import type { OutfitItemIcon, OutfitSuggestion } from '@/types/vintex-ai';
 
 interface OutfitSuggestionCardProps {
   suggestion: OutfitSuggestion;
+  /** Chamado ao clicar em "Salvar rascunho". */
   onSaveDraft?: () => void;
+  /** Chamado ao clicar em "Ver peças". */
   onViewItems?: () => void;
 }
 
@@ -112,12 +114,24 @@ export function OutfitSuggestionCard({
       <p className="mt-4 text-body text-texto-auxiliar">{suggestion.note}</p>
 
       <div className="mt-4 flex gap-2">
-        <Button variant="success" onClick={onSaveDraft} className="flex-1 whitespace-nowrap">
-          Salvar rascunho
-        </Button>
-        <Button variant="secondary" onClick={onViewItems} className="flex-1 whitespace-nowrap">
-          Ver peças
-        </Button>
+        <div className="flex-1 tablet:min-w-0">
+          <Button
+            variant="success"
+            onClick={onSaveDraft}
+            className="w-full tablet:whitespace-nowrap"
+          >
+            Salvar rascunho
+          </Button>
+        </div>
+        <div className="flex-1 tablet:min-w-0">
+          <Button
+            variant="secondary"
+            onClick={onViewItems}
+            className="w-full tablet:whitespace-nowrap"
+          >
+            Ver peças
+          </Button>
+        </div>
       </div>
     </div>
   );
