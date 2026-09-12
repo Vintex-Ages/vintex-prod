@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type MouseEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import Checkbox from '@/components/common/Checkbox';
 import IconButton from '@/components/common/IconButton';
@@ -8,6 +8,7 @@ import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
 import { AuthError, register } from '@/services/authService';
 import { CepError, lookupAddress, type CepAddress } from '@/services/cepService';
+import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -42,9 +43,34 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
 }
 
 /**
+ * Origem preservada por uma ação protegida (FE-US002-3, `useProtectedAction`/
+ * `httpClient`), quando o cadastro foi iniciado a partir dela.
+ *
+ * Prioriza `location.state.from` (vindo do redirecionamento explícito para
+ * `/register`); cai para o valor persistido em
+ * `sessionStorage[REDIRECT_STORAGE_KEY]` quando não há state (ex.: reload).
+ * Retorna `null` quando não existe nenhuma origem pendente — cadastro
+ * "orgânico", que segue para o onboarding normalmente.
+ */
+function getReturnTo(locationState: unknown): string | null {
+  const fromState = (locationState as { from?: string } | null)?.from;
+  if (fromState) return fromState;
+
+  try {
+    return window.sessionStorage.getItem(REDIRECT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Tela de cadastro de comprador (FE-US002-1). Monta os componentes de
  * formulário; a chamada de cadastro vive em `authService`, a resolução de
  * endereço por CEP em `cepService` (só exibição — não integra o payload).
+ *
+ * Quando o cadastro é iniciado a partir de uma ação protegida (FE-US002-3),
+ * ao concluir com sucesso o fluxo retorna para a origem preservada em vez de
+ * seguir para o onboarding — ver `getReturnTo`.
  *
  * Usage:
  *   import Register from '@/pages/Auth/Register/Register';
@@ -52,6 +78,7 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
  */
 function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
 
   const [name, setName] = useState('');
@@ -127,7 +154,18 @@ function Register() {
         phone: phone.trim() || undefined,
       });
       login(user, token);
-      navigate(paths.onboarding);
+
+      const returnTo = getReturnTo(location.state);
+      if (returnTo) {
+        try {
+          window.sessionStorage.removeItem(REDIRECT_STORAGE_KEY);
+        } catch {
+          // Storage indisponível: a navegação ainda pode continuar normalmente.
+        }
+        navigate(returnTo, { replace: true });
+      } else {
+        navigate(paths.onboarding);
+      }
     } catch (error) {
       setSubmitError(
         error instanceof AuthError ? error.message : 'Não foi possível criar sua conta agora.',

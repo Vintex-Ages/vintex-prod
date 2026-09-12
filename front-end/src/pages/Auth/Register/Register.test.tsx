@@ -7,6 +7,7 @@ import { AUTH_TOKEN_STORAGE_KEY } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
 import { AuthError, register } from '@/services/authService';
 import { lookupAddress } from '@/services/cepService';
+import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
 import Register from './Register';
 
 vi.mock('@/services/authService', async (importOriginal) => {
@@ -24,14 +25,24 @@ const mockedLookup = vi.mocked(lookupAddress);
 
 const SUBMIT_BUTTON_NAME = /criar conta e personalizar estilos/i;
 
-function renderRegister() {
+/**
+ * `initialEntry` aceita uma origem preservada (`state.from`), simulando o
+ * redirecionamento feito por uma ação protegida (FE-US002-3). As rotas
+ * extras representam os destinos possíveis do fluxo pós-cadastro:
+ * onboarding (padrão), login e a origem retomada.
+ */
+function renderRegister(
+  initialEntry: string | { pathname: string; state?: unknown } = '/register',
+) {
   return render(
-    <MemoryRouter initialEntries={['/register']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthProvider>
         <Routes>
           <Route path="/register" element={<Register />} />
           <Route path={paths.login} element={<div>Tela de login</div>} />
           <Route path={paths.onboarding} element={<div>Tela de onboarding</div>} />
+          <Route path="/catalog" element={<div>Tela de catálogo</div>} />
+          <Route path="/product" element={<div>Tela de produto</div>} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -121,6 +132,38 @@ describe('<Register />', () => {
       phone: undefined,
     });
     expect(window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe('tok-abc');
+  });
+
+  // Critério de aceite da FE-US002-3: retomar o fluxo interrompido pelo cadastro.
+  it('retorna para a origem informada pelo fluxo de autenticação (location.state.from)', async () => {
+    mockedRegister.mockResolvedValueOnce({
+      user: { id: 'u_1', name: 'Ana Compradora', email: 'ana@exemplo.com' },
+      token: 'tok-abc',
+    });
+    const user = userEvent.setup();
+    renderRegister({ pathname: '/register', state: { from: '/catalog?category=roupas' } });
+
+    await preencherCamposObrigatorios(user);
+    await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+
+    await waitFor(() => expect(screen.getByText('Tela de catálogo')).toBeTruthy());
+    expect(screen.queryByText('Tela de onboarding')).toBeNull();
+  });
+
+  it('usa a origem salva no sessionStorage quando não há state de navegação, e limpa a chave', async () => {
+    window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, '/product?id=123');
+    mockedRegister.mockResolvedValueOnce({
+      user: { id: 'u_1', name: 'Ana Compradora', email: 'ana@exemplo.com' },
+      token: 'tok-abc',
+    });
+    const user = userEvent.setup();
+    renderRegister();
+
+    await preencherCamposObrigatorios(user);
+    await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+
+    await waitFor(() => expect(screen.getByText('Tela de produto')).toBeTruthy());
+    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBeNull();
   });
 
   it('mostra a mensagem de erro do back e não navega quando o cadastro falha', async () => {
