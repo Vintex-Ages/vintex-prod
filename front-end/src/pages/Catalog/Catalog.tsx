@@ -55,7 +55,9 @@ function Catalog() {
 
       {result && (
         <ProductGrid
-          products={result.match_type === 'fallback' ? (result.suggestions?.items ?? []) : result.items}
+          products={
+            result.match_type === 'fallback' ? (result.suggestions?.items ?? []) : result.items
+          }
           onOpen={handleOpen}
         />
       )}

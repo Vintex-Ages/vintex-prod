@@ -13,7 +13,10 @@ type SuggestionBlockProps = {
 
 export function SuggestionBlock({ reason }: SuggestionBlockProps) {
   return (
-    <div role="status" className="border border-linha bg-papel-profundo p-4 text-body text-texto-auxiliar">
+    <div
+      role="status"
+      className="border border-linha bg-papel-profundo p-4 text-body text-texto-auxiliar"
+    >
       {reason}
     </div>
   );

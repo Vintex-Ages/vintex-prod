@@ -91,7 +91,9 @@ describe('<Catalog />', () => {
     await user.click(screen.getByRole('button', { name: 'Enviar busca' }));
 
     expect(
-      await screen.findByText('Nenhum resultado para "jaqueta xyz". Veja outras peças disponíveis.'),
+      await screen.findByText(
+        'Nenhum resultado para "jaqueta xyz". Veja outras peças disponíveis.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
     expect(screen.queryByText('Nenhuma peça encontrada no momento.')).not.toBeInTheDocument();
