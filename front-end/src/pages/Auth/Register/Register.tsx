@@ -42,24 +42,17 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
   event.preventDefault();
 }
 
-/**
- * Origem preservada por uma ação protegida (FE-US002-3, `useProtectedAction`/
- * `httpClient`), quando o cadastro foi iniciado a partir dela.
- *
- * Prioriza `location.state.from` (vindo do redirecionamento explícito para
- * `/register`); cai para o valor persistido em
- * `sessionStorage[REDIRECT_STORAGE_KEY]` quando não há state (ex.: reload).
- * Retorna `null` quando não existe nenhuma origem pendente — cadastro
- * "orgânico", que segue para o onboarding normalmente.
- */
-function getReturnTo(locationState: unknown): string | null {
-  const fromState = (locationState as { from?: string } | null)?.from;
-  if (fromState) return fromState;
+/** Origem enviada via `location.state.from` (ex.: link de "Já tenho conta" clicado a partir de uma ação protegida). */
+function getStateReturnTo(locationState: unknown): string | null {
+  return (locationState as { from?: string } | null)?.from ?? null;
+}
 
+/** `true` quando existe uma origem pendente em `sessionStorage`, sem consumi-la. */
+function hasStoredReturnTo(): boolean {
   try {
-    return window.sessionStorage.getItem(REDIRECT_STORAGE_KEY);
+    return Boolean(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY));
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -70,7 +63,14 @@ function getReturnTo(locationState: unknown): string | null {
  *
  * Quando o cadastro é iniciado a partir de uma ação protegida (FE-US002-3),
  * ao concluir com sucesso o fluxo retorna para a origem preservada em vez de
- * seguir para o onboarding — ver `getReturnTo`.
+ * seguir para o onboarding.
+ *
+ * `useAuth().login()` (#65, barreira de autenticação) já resolve sozinho o
+ * caso da origem guardada em `sessionStorage[REDIRECT_STORAGE_KEY]`: navega
+ * pra lá (ou pra Home, na ausência dela) e limpa a chave. Esta tela só precisa
+ * *sobrescrever* esse destino quando: (a) a origem veio por
+ * `location.state.from` (que `login()` não enxerga) ou (b) não havia origem
+ * nenhuma — cadastro "orgânico", que deve cair no onboarding e não na Home.
  *
  * Usage:
  *   import Register from '@/pages/Auth/Register/Register';
@@ -153,19 +153,23 @@ function Register() {
         password,
         phone: phone.trim() || undefined,
       });
+
+      // Captura ANTES de login(): a própria chamada consome (lê e remove)
+      // a chave de sessionStorage como parte do seu fluxo de redirecionamento.
+      const stateReturnTo = getStateReturnTo(location.state);
+      const hadStoredReturnTo = hasStoredReturnTo();
+
       login(user, token);
 
-      const returnTo = getReturnTo(location.state);
-      if (returnTo) {
-        try {
-          window.sessionStorage.removeItem(REDIRECT_STORAGE_KEY);
-        } catch {
-          // Storage indisponível: a navegação ainda pode continuar normalmente.
-        }
-        navigate(returnTo, { replace: true });
-      } else {
-        navigate(paths.onboarding);
+      if (stateReturnTo) {
+        // `login()` não conhece location.state; navega por cima do destino que ela aplicou.
+        navigate(stateReturnTo, { replace: true });
+      } else if (!hadStoredReturnTo) {
+        // Nada pendente em nenhuma fonte: login() foi para a Home por padrão,
+        // mas o cadastro "orgânico" deve seguir para o onboarding.
+        navigate(paths.onboarding, { replace: true });
       }
+      // else: havia origem em sessionStorage e login() já navegou pra lá — não mexe.
     } catch (error) {
       setSubmitError(
         error instanceof AuthError ? error.message : 'Não foi possível criar sua conta agora.',
