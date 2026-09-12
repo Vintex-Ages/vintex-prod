@@ -1,7 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import Landing from '@/pages/Landing/Landing';
 import Catalog from '@/pages/Catalog/Catalog';
-import Product from '@/pages/Product/Product';
+import ProductDetail from '@/pages/ProductDetail';
 import Login from '@/pages/Auth/Login/Login';
 import Register from '@/pages/Auth/Register/Register';
 import Onboarding from '@/pages/Onboarding/Onboarding';
@@ -18,7 +18,7 @@ function AppRoutes() {
     <Routes>
       <Route path={paths.home} element={<Landing />} />
       <Route path={paths.catalog} element={<Catalog />} />
-      <Route path={paths.product} element={<Product />} />
+      <Route path={paths.product} element={<ProductDetail />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.onboarding} element={<Onboarding />} />

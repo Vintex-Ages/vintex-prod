@@ -2,6 +2,7 @@ import axios from 'axios';
 import {
   AUTH_REQUIRED,
   type ApiError,
+  type ApiErrorResponse,
   type AuthUser,
   type LoginInput,
   type RegisterInput,
@@ -185,14 +186,26 @@ function toAuthUser(apiUser: ApiUser, isSeller: boolean): AuthUser {
   };
 }
 
-/** Normaliza qualquer erro de transporte para o `ApiError` do front. */
+/**
+ * Normaliza qualquer erro de transporte para o `ApiError` do front.
+ *
+ * O corpo de erro da API real chega envelopado (`ApiErrorResponse`, ver
+ * `@/types/auth` — contrato alinhado com a barreira de autenticação, #65):
+ * `{ error: { code, message, field?, return_to? } }`, não `{ code, message }`
+ * na raiz.
+ */
 function toApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
-    const body = (error.response?.data ?? {}) as Partial<ApiError>;
+    const body = (error.response?.data ?? {}) as Partial<ApiErrorResponse>;
+    const apiError = body.error;
     const code =
-      typeof body.code === 'string' && body.code.length > 0 ? body.code : GENERIC_API_ERROR;
+      typeof apiError?.code === 'string' && apiError.code.length > 0
+        ? apiError.code
+        : GENERIC_API_ERROR;
     const message =
-      typeof body.message === 'string' && body.message.length > 0 ? body.message : error.message;
+      typeof apiError?.message === 'string' && apiError.message.length > 0
+        ? apiError.message
+        : error.message;
 
     // Só o e-mail duplicado ganha um `field`; os demais códigos (inclusive
     // INVALID_CREDENTIALS) saem com `field: undefined` — sem pista de campo,
