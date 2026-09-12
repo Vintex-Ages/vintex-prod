@@ -3,30 +3,40 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ProductGrid } from './ProductGrid';
-import type { Product } from './ProductCard';
+import type { ProductDetail } from '@/types/product';
 
 afterEach(cleanup);
 
-const products: Product[] = [
+const products: ProductDetail[] = [
   {
     id: 'prod-1',
-    title: 'Vestido floral',
+    name: 'Vestido floral',
     category: 'vestidos',
-    storeName: 'Brechó Ana',
-    city: 'Porto Alegre',
+    store: { id: 'store-1', name: 'Brechó Ana', city: 'Porto Alegre' },
     price: 89.9,
     coverImageUrl: 'https://example.com/vestido.jpg',
     condition: 'excelente',
+    size: 'M',
+    color: 'floral',
+    brand: 'sem marca',
+    description: 'Vestido floral em ótimo estado.',
+    status: 'ativo',
+    media: [],
   },
   {
     id: 'prod-2',
-    title: 'Jaqueta jeans',
+    name: 'Jaqueta jeans',
     category: 'jaquetas',
-    storeName: 'Brechó Bia',
-    city: 'Canoas',
+    store: { id: 'store-2', name: 'Brechó Bia', city: 'Canoas' },
     price: 120,
     coverImageUrl: null,
     condition: 'bom',
+    size: 'G',
+    color: 'azul',
+    brand: 'sem marca',
+    description: 'Jaqueta jeans clássica.',
+    status: 'ativo',
+    media: [],
   },
 ];
 

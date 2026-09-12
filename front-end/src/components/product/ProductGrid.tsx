@@ -1,10 +1,11 @@
 import { EmptyState } from '@/components/common/EmptyState';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
-import ProductCard, { type Product } from '@/components/product/ProductCard';
+import ProductCard from '@/components/product/ProductCard';
 import { ProductCardSkeleton } from '@/components/product/ProductCardSkeleton';
+import type { ProductDetail } from '@/types/product';
 
 type ProductGridProps = {
-  products: Product[];
+  products: ProductDetail[];
   loading?: boolean;
   skeletonCount?: number;
   onOpen: (id: string) => void;
