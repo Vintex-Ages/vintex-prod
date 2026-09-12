@@ -1,23 +1,30 @@
 /**
- * Contratos de autenticação compartilhados (FE-FND-2).
+ * Contratos de autenticação compartilhados.
  *
  * Reúne o formato do usuário autenticado (`AuthUser`), os dados de entrada de
- * cadastro e login (`RegisterInput`, `LoginInput`) e o formato de erro padrão
- * da API (`ApiError`), consumidos nas próximas etapas pelo httpClient e pelo
- * AuthContext. São a fronteira com o backend: trate-os como contrato externo e
- * mantenha estados de erro/carregamento explícitos em quem os usa.
+ * cadastro e login (`RegisterInput`, `LoginInput`) e o formato de erro da API
+ * (`ApiErrorResponse`/`ApiError`), consumidos pelo httpClient, pelo
+ * AuthContext e pelos services de auth. São a fronteira com o backend: trate-os
+ * como contrato externo e mantenha estados de erro/carregamento explícitos em
+ * quem os usa.
  *
- * ATENÇÃO: não há contrato formal publicado no repositório. As formas abaixo
- * são uma suposição a alinhar com o time de backend antes de depender de
- * campos além do essencial.
+ * O formato de erro segue o contrato definido pelo backend para ações
+ * protegidas (FE-US · barreira de autenticação, #65): a resposta da API
+ * envelopa o erro em um objeto `error`, com código, mensagem, o campo do
+ * formulário associado (quando aplicável) e a rota de origem preservada pelo
+ * `httpClient` (quando aplicável).
+ *
+ * ATENÇÃO: não há contrato formal publicado no repositório para os campos de
+ * `AuthUser`/`RegisterInput`/`LoginInput` — são suposição a alinhar com o time
+ * de backend antes de depender de campos além do essencial.
  *
  * Usage:
- *   import type { ApiError, AuthUser } from '@/types/auth';
+ *   import type { ApiErrorResponse } from '@/types/auth';
  *   import { AUTH_REQUIRED } from '@/types/auth';
  *
- *   function onApiError(error: ApiError) {
- *     if (error.code === AUTH_REQUIRED) redirectToLogin();
- *     else showToast(error.message);
+ *   function onApiError(response: ApiErrorResponse) {
+ *     if (response.error.code === AUTH_REQUIRED) redirectToLogin();
+ *     else showToast(response.error.message);
  *   }
  *
  *   const user: AuthUser = {
@@ -44,7 +51,7 @@ export interface AuthUser {
    * API, não deste tipo.
    */
   id: string;
-  /** Nome de exibição. Já renderizado por `@/components/layout/AccountMenu` via `user.name`. */
+  /** Nome de exibição. */
   name: string;
   /** E-mail usado no login. */
   email: string;
@@ -76,28 +83,44 @@ export interface LoginInput {
 }
 
 /**
- * Formato de erro padrão devolvido pela API.
- *
- * SUPOSIÇÃO a alinhar com o backend: não há contrato de erro publicado no
- * repositório. Assume-se `{ code, message }`, em que `code` é um identificador
- * estável para o cliente ramificar e `message` é texto legível (log / fallback
- * de UI). Quando o erro é de validação de um campo específico, `field` indica
- * qual. Campos adicionais (ex.: `details`, `status`) podem ser incluídos quando
- * o contrato existir.
+ * Conteúdo do erro padronizado devolvido pela API, dentro do envelope
+ * `ApiErrorResponse`.
  */
 export interface ApiError {
-  /** Identificador estável do erro. Ex.: `AUTH_REQUIRED`. */
+  /** Código estável usado pelo frontend para identificar o erro. Ex.: `AUTH_REQUIRED`. */
   code: string;
-  /** Mensagem legível por humanos. */
+
+  /** Mensagem legível retornada pelo backend. */
   message: string;
-  /** Campo do formulário associado ao erro, quando aplicável. */
+
+  /** Campo do formulário associado ao erro, quando aplicável (ex.: `EMAIL_TAKEN`). */
   field?: 'email' | 'password';
+
+  /**
+   * Rota de origem enviada anteriormente no header `X-Return-To`.
+   * Presente no fluxo de ações protegidas que retornam AUTH_REQUIRED.
+   */
+  return_to?: string;
 }
 
 /**
- * Valor de `ApiError['code']` para requisição que exige sessão autenticada e
- * não a encontrou. Citado na issue FE-FND-2; será usado pelo httpClient /
- * AuthContext para disparar o fluxo de re-login. Demais códigos ainda não
- * catalogados — evite espalhar strings soltas, prefira uma constante.
+ * Estrutura externa da resposta de erro da API.
+ *
+ * Exemplo:
+ * {
+ *   error: {
+ *     code: 'EMAIL_TAKEN',
+ *     message: 'Este e-mail já está cadastrado.',
+ *     field: 'email'
+ *   }
+ * }
+ */
+export interface ApiErrorResponse {
+  error: ApiError;
+}
+
+/**
+ * Código retornado quando uma ação exige autenticação e não existe
+ * uma sessão válida.
  */
 export const AUTH_REQUIRED = 'AUTH_REQUIRED';

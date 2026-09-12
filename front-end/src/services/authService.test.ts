@@ -14,12 +14,17 @@ function successAdapter(status: number, data: unknown) {
     Promise.resolve({ data, status, statusText: 'OK', headers: {}, config });
 }
 
-/** Adapter falso: rejeita como um erro HTTP vindo do backend. */
-function errorAdapter(status: number, data: Partial<ApiError>) {
+/**
+ * Adapter falso: rejeita como um erro HTTP vindo do backend.
+ *
+ * `error` é o conteúdo de `ApiError`; o corpo da resposta é envelopado como
+ * `{ error }` (`ApiErrorResponse`, ver `@/types/auth`), igual ao contrato real.
+ */
+function errorAdapter(status: number, error: Partial<ApiError>) {
   return (config: InternalAxiosRequestConfig) =>
     Promise.reject(
       new AxiosError('Request failed', 'ERR_BAD_REQUEST', config, null, {
-        data,
+        data: { error },
         status,
         statusText: 'Error',
         headers: {},
