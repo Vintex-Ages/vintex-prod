@@ -1,10 +1,12 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
+import LoginInterceptor from '@/components/common/LoginInterceptor';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
 import SoldBadge from '@/components/product/SoldBadge';
+import { useProtectedAction } from '@/hooks/useProtectedAction';
 import { paths } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
@@ -50,14 +52,19 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  *
  * Sem carrossel/lightbox de fotos (fica pra FE-US012-2, #85) — mostra a capa e as
  * demais imagens de `media` como miniaturas estáticas, sem interação. Sem
- * curadoria de IA (#127/#139) e sem carrinho/checkout real (pagamento real fora
- * do escopo do projeto) — o botão de ação final não tem função real por trás, é
- * só layout. Sem persistência de favorito (a ação com barreira de login é a
- * FE-US012-5, #88) — aqui é só toggle visual local.
+ * curadoria de IA (#127/#139) — o botão "Comprar Agora" ainda não dispara
+ * checkout real (pagamento real fora do escopo do projeto), só a barreira de
+ * login (FE-US012-5, #88) importa por enquanto.
  *
- * Sinalização de peça vendida (FE-US012-4, #87): quando `status === 'vendido'`,
- * mostra o `SoldBadge` junto do título/preço e desabilita "Comprar Agora" —
- * favoritar continua liberado mesmo com a peça vendida.
+ * Barreira de login (FE-US012-5, #88): favoritar e comprar passam por
+ * `useProtectedAction` — deslogado abre `LoginInterceptor` (compartilhado
+ * entre os dois fluxos), logado executa a ação direto. O toggle de favorito
+ * continua só local (sem persistência real).
+ *
+ * Sinalização de peça vendida (FE-US012-4, #87 → revisto em FE-US012-5, #88):
+ * quando `status === 'vendido'`, mostra o `SoldBadge` junto do título/preço e
+ * desabilita TANTO "Comprar Agora" quanto favoritar — a #87 tinha deixado só
+ * o comprar desabilitado, decisão revertida pela #88.
  *
  * Usage:
  *   import ProductDetail from '@/pages/ProductDetail';
@@ -95,6 +102,33 @@ function ProductDetail() {
       active = false;
     };
   }, [id]);
+
+  const productId = product?.id ?? '';
+
+  /**
+   * `intent`/`action` precisam manter identidade estável entre renders: o
+   * `useEffect` de retomada do `useProtectedAction` roda de novo sempre que
+   * essas referências mudam, e um objeto/função inline recriada a cada
+   * render reexecutaria a ação já concluída (desfazendo o toggle).
+   */
+  const favoriteIntent = useMemo(
+    () => ({ type: 'favorite', payload: { productId } }),
+    [productId],
+  );
+  const toggleFavorite = useCallback(() => setFavorited((value) => !value), []);
+
+  const buyIntent = useMemo(() => ({ type: 'buy', payload: { productId } }), [productId]);
+  /** Não existe fluxo de compra real ainda (pagamento fora do escopo) — aqui só a barreira de login importa. */
+  const noopBuy = useCallback(() => {}, []);
+
+  const protectedFavorite = useProtectedAction({ intent: favoriteIntent, action: toggleFavorite });
+  const protectedBuy = useProtectedAction({ intent: buyIntent, action: noopBuy });
+
+  const activeIntercept = protectedFavorite.interceptorOpen
+    ? protectedFavorite
+    : protectedBuy.interceptorOpen
+      ? protectedBuy
+      : null;
 
   if (status === 'loading') {
     return (
@@ -250,18 +284,36 @@ function ProductDetail() {
           </dl>
 
           <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:border-0 web:p-0">
-            <FavoriteButton active={favorited} onToggle={() => setFavorited((value) => !value)} />
+            <FavoriteButton
+              active={favorited}
+              onToggle={() => {
+                void protectedFavorite.runProtectedAction();
+              }}
+              disabled={product.status === 'vendido'}
+            />
             <Button
               variant="primary"
               fullWidth
               className="uppercase tracking-wide"
               disabled={product.status === 'vendido'}
+              onClick={() => {
+                void protectedBuy.runProtectedAction();
+              }}
             >
               Comprar Agora • {priceLabel}
             </Button>
           </div>
         </div>
       </div>
+
+      <LoginInterceptor
+        open={activeIntercept !== null}
+        title="Entre para favoritar e comprar"
+        description="Faça login ou crie uma conta para favoritar peças e continuar sua compra."
+        onLogin={activeIntercept?.goToLogin ?? (() => {})}
+        onRegister={activeIntercept?.goToRegister ?? (() => {})}
+        onDismiss={activeIntercept?.dismissInterceptor ?? (() => {})}
+      />
     </main>
   );
 }

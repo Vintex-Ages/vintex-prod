@@ -1,17 +1,38 @@
-import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from '@/context/AuthContext';
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
+import type { AuthUser } from '@/types/auth';
 import ProductDetail from './ProductDetail';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.sessionStorage.clear();
+});
 
-function renderAt(path: string) {
+const SAMPLE_USER: AuthUser = {
+  id: 'u_1',
+  name: 'Ana Brechó',
+  email: 'ana@exemplo.com',
+  is_seller: false,
+  is_admin: false,
+};
+
+function renderAt(path: string, options?: { authenticated?: boolean }) {
+  if (options?.authenticated) {
+    window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+    window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+  }
+
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/product/:id" element={<ProductDetail />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetail />} />
+        </Routes>
+      </AuthProvider>
     </MemoryRouter>,
   );
 }
@@ -96,23 +117,6 @@ describe('<ProductDetail />', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/não encontrado/i));
   });
 
-  it('favoritar alterna o estado visual do FavoriteButton', async () => {
-    const user = userEvent.setup();
-    renderAt('/product/1');
-
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
-
-    const favoriteButton = screen.getByRole('button', { name: 'Adicionar aos favoritos' });
-    expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
-
-    await user.click(favoriteButton);
-
-    expect(screen.getByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-  });
-
   it('botão de ação final mostra "Comprar Agora" com o preço', async () => {
     renderAt('/product/1');
 
@@ -127,22 +131,6 @@ describe('<ProductDetail />', () => {
     await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
 
     expect(screen.getByText('Já vendida')).toBeInTheDocument();
-  });
-
-  it('peça vendida desabilita o botão "Comprar Agora"', async () => {
-    renderAt('/product/4');
-
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
-
-    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
-  });
-
-  it('peça vendida mantém o botão de favoritar habilitado', async () => {
-    renderAt('/product/4');
-
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
-
-    expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeEnabled();
   });
 
   it('peça vendida continua navegável — mostra o resto da ficha normalmente', async () => {
@@ -161,5 +149,88 @@ describe('<ProductDetail />', () => {
 
     expect(screen.queryByText('Já vendida')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+  });
+
+  /**
+   * FE-US012-5 (#88): a partir desta task, os DOIS botões (favoritar e
+   * comprar) ficam desabilitados quando a peça está vendida — revisão da
+   * decisão da FE-US012-4 (#87), que tinha deixado só o favoritar ativo.
+   * Critério explícito da #88, que cita a #87 como já cobrindo os dois.
+   */
+  it('peça vendida: favoritar e comprar ficam desabilitados, mesmo logado', async () => {
+    renderAt('/product/4', { authenticated: true });
+
+    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+
+    expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
+  });
+
+  describe('barreira de login (FE-US012-5, #88)', () => {
+    it('deslogado: favoritar abre a barreira de login', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('deslogado: comprar abre a barreira de login', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: /Comprar Agora/ }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('na barreira, "Entrar" navega para /login guardando a origem', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+      await screen.findByRole('dialog');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('na barreira, "Agora não" fecha sem navegar', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+      await screen.findByRole('dialog');
+      await user.click(screen.getByRole('button', { name: 'Agora não' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
+    });
+
+    it('logado: favoritar alterna o estado visual sem abrir a barreira', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1', { authenticated: true });
+
+      const favoriteButton = await screen.findByRole('button', { name: 'Adicionar aos favoritos' });
+      expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
+
+      await user.click(favoriteButton);
+
+      expect(screen.getByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('logado: comprar não abre a barreira', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1', { authenticated: true });
+
+      await user.click(await screen.findByRole('button', { name: /Comprar Agora/ }));
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 });
