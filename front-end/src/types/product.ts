@@ -9,6 +9,8 @@ export interface Store {
   name: string;
   city?: string;
   verified?: boolean;
+  /** URL do logo da loja. Usado no card da loja da página de detalhe (FE-US012-1). */
+  logoUrl?: string;
 }
 
 /**
@@ -44,6 +46,13 @@ export interface ProductDetail extends Product {
   description: string;
   status: 'ativo' | 'vendido' | 'despublicado';
   media: ProductMedia[];
+  /**
+   * Material e medidas da peça — PLACEHOLDER (FE-US012-1): pedidos no Figma
+   * mas sem contrato confirmado no back ainda. Opcionais de propósito; a
+   * tela de detalhe esconde a linha do atributo quando ausente.
+   */
+  material?: string;
+  measurements?: string;
 }
 
 /**

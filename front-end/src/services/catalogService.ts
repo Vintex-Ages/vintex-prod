@@ -147,13 +147,17 @@ function mockSearch(q: string, filters: FilterParams): SearchResult {
 // Contrato confirmado pelo time de back (mensagem de alinhamento das tasks
 // de service, 2026-09-11): `GET /products` devolve `FeedResponse` sem `q` e
 // `SearchResponse` (já com match_type/suggestions prontos) com `q`; `GET
-// /products/{id}` devolve o detalhe. `style` e `store.logo_url` existem na
-// resposta real mas não entram no tipo do front — a ticket não pede e não
-// há consumidor ainda.
+// /products/{id}` devolve o detalhe. `style` continua fora do tipo do front —
+// a ticket não pede e não há consumidor ainda. `store.logo_url`/`verified`
+// SUPOSIÇÃO a confirmar com o back: a FE-US012-1 (card da loja no detalhe)
+// passou a consumir os dois, mas não há contrato formal publicado pra eles —
+// tratamos como opcionais até confirmar.
 
 interface ApiStore {
   id: number | string;
   name: string;
+  logo_url?: string;
+  verified?: boolean;
 }
 
 interface ApiFeedItem {
@@ -184,7 +188,10 @@ interface ApiProductDetail {
   city: string;
   state: string;
   media: { type: 'image' | 'video'; url: string; position: number }[];
-  store: { id: number | string; name: string };
+  store: ApiStore;
+  /** PLACEHOLDER (ver nota em `types/product.ts`): sem contrato confirmado no back. */
+  material?: string;
+  measurements?: string;
 }
 
 interface ApiPage<T> {
@@ -206,7 +213,13 @@ interface ApiErrorEnvelope {
 }
 
 function mapStore(store: ApiStore, city?: string): Store {
-  return { id: String(store.id), name: store.name, city };
+  return {
+    id: String(store.id),
+    name: store.name,
+    city,
+    verified: store.verified,
+    logoUrl: store.logo_url,
+  };
 }
 
 function mapFeedItem(item: ApiFeedItem): Product {
@@ -236,6 +249,8 @@ function mapProductDetail(item: ApiProductDetail): ProductDetail {
     description: item.description,
     status: item.status,
     media: item.media,
+    material: item.material,
+    measurements: item.measurements,
   };
 }
 
