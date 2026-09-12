@@ -1,1 +1,2 @@
-export { VintexAIButton, default } from './VintexAIButton';
+export { VintexSearchSpotlight } from './VintexSearchSpotlight';
+export { VintexAIButton } from './VintexAIButton';
