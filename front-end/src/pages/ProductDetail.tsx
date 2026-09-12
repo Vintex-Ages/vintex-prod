@@ -111,10 +111,7 @@ function ProductDetail() {
    * essas referências mudam, e um objeto/função inline recriada a cada
    * render reexecutaria a ação já concluída (desfazendo o toggle).
    */
-  const favoriteIntent = useMemo(
-    () => ({ type: 'favorite', payload: { productId } }),
-    [productId],
-  );
+  const favoriteIntent = useMemo(() => ({ type: 'favorite', payload: { productId } }), [productId]);
   const toggleFavorite = useCallback(() => setFavorited((value) => !value), []);
 
   const buyIntent = useMemo(() => ({ type: 'buy', payload: { productId } }), [productId]);
