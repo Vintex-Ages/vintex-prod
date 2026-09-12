@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
 /**
@@ -5,14 +6,29 @@ import clsx from 'clsx';
  * (toggle, disabled). Nenhuma regra de negócio: quem chama decide o que
  * `checked`/`onChange` significam no fluxo da tela.
  *
+ * `label` aceita `ReactNode` (não só `string`) para rótulos com links
+ * embutidos (ex.: "Li e aceito os Termos de Uso e a Política de
+ * Privacidade") sem o componente precisar conhecer o conteúdo.
+ *
+ * ATENÇÃO: como o rótulo fica dentro de um `<label htmlFor={id}>`, clicar em
+ * qualquer elemento interativo embutido (ex. `<a>`) também ativa o input
+ * associado (comportamento nativo do `<label>`, não é bug do componente) —
+ * a ativação só é suprimida quando o clique chega ao `<label>` com
+ * `defaultPrevented` (spec do HTML). `stopPropagation()` sozinho NÃO
+ * resolve; é preciso `preventDefault()` no próprio link/elemento embutido.
+ *
  * Usage:
  *   import Checkbox from '@/components/common/Checkbox';
  *   <Checkbox id="terms" checked={accepted} onChange={setAccepted} label="Aceito os termos" />
+ *
+ *   <Checkbox id="terms" checked={accepted} onChange={setAccepted} label={
+ *     <>Li e aceito os <a href="/termos" onClick={(e) => e.preventDefault()}>Termos de Uso</a></>
+ *   } />
  */
 export type CheckboxProps = {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label?: string;
+  label?: ReactNode;
   disabled?: boolean;
   id: string;
 };

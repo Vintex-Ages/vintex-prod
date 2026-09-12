@@ -72,4 +72,71 @@ describe('<Checkbox />', () => {
     expect(screen.getByRole('checkbox')).toBeTruthy();
     expect(screen.queryByText(/./, { selector: 'label' })).toBeNull();
   });
+
+  // Objetivo: label aceita ReactNode (ex.: link embutido no texto dos termos).
+  it('aceita um label rico com link clicável', () => {
+    render(
+      <Checkbox
+        id="terms"
+        checked={false}
+        onChange={() => {}}
+        label={
+          <>
+            Li e aceito os <a href="/termos">Termos de Uso</a>
+          </>
+        }
+      />,
+    );
+
+    const link = screen.getByRole('link', { name: 'Termos de Uso' });
+    expect(link).toHaveAttribute('href', '/termos');
+  });
+
+  // Objetivo: documentar o comportamento nativo do <label> — clicar num link embutido
+  // também ativa o input associado, então o link precisa de stopPropagation pra não
+  // marcar/desmarcar o checkbox junto (ver JSDoc do componente).
+  it('link embutido sem stopPropagation também aciona o onChange do checkbox (nativo do <label>)', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
+    render(
+      <Checkbox
+        id="terms"
+        checked={false}
+        onChange={handleChange}
+        label={
+          <>
+            Li e aceito os <a href="/termos">Termos de Uso</a>
+          </>
+        }
+      />,
+    );
+
+    await user.click(screen.getByRole('link', { name: 'Termos de Uso' }));
+
+    expect(handleChange).toHaveBeenCalledWith(true);
+  });
+
+  it('link embutido com preventDefault não aciona o onChange do checkbox', async () => {
+    const user = userEvent.setup();
+    const handleChange = vi.fn();
+    render(
+      <Checkbox
+        id="terms"
+        checked={false}
+        onChange={handleChange}
+        label={
+          <>
+            Li e aceito os{' '}
+            <a href="/termos" onClick={(event) => event.preventDefault()}>
+              Termos de Uso
+            </a>
+          </>
+        }
+      />,
+    );
+
+    await user.click(screen.getByRole('link', { name: 'Termos de Uso' }));
+
+    expect(handleChange).not.toHaveBeenCalled();
+  });
 });
