@@ -11,6 +11,7 @@ export const paths = {
   register: '/register',
   onboarding: '/onboarding',
   styleGuide: '/style-guide',
+  styleSelection: '/style-guide/selection',
 } as const;
 
 /** Monta o link real pro detalhe de um produto (`paths.product` é só o padrão da rota). */

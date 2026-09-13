@@ -7,6 +7,7 @@ import Register from '@/pages/Auth/Register/Register';
 import Onboarding from '@/pages/Onboarding/Onboarding';
 import NotFound from '@/pages/NotFound/NotFound';
 import StyleGuide from '@/pages/StyleGuide/StyleGuide';
+import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import { paths } from './paths';
 
 /**
@@ -23,6 +24,7 @@ function AppRoutes() {
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.onboarding} element={<Onboarding />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
+      <Route path={paths.styleSelection} element={<StyleSelection />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
