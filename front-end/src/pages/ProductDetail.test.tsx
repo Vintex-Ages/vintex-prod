@@ -49,12 +49,14 @@ describe('<ProductDetail />', () => {
     expect(within(trilha).getByText('Nike Camiseta Preto')).toHaveAttribute('aria-current', 'page');
   });
 
-  it('mostra as demais fotos da peça como miniaturas abaixo da capa', async () => {
+  it('mostra a galeria de fotos da peça, com miniaturas de navegação', async () => {
     renderAt('/product/1');
 
     await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
 
-    expect(screen.getAllByAltText('Nike Camiseta Preto — foto adicional')).toHaveLength(2);
+    expect(screen.getByRole('group', { name: /Galeria de fotos/ })).toBeTruthy();
+    expect(screen.getByText('Foto 1 de 3')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Ver foto \d de 3/ })).toHaveLength(3);
   });
 
   it('mostra carregando antes do produto resolver', () => {
