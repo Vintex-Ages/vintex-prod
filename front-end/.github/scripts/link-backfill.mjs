@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import { parseClosingIssueNumbers } from './lib/closing-issues.mjs';
 
-const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
-const pr = event.pull_request;
 const token = process.env.GH_TOKEN;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
 const dryRun = process.env.DRY_RUN === 'true';
@@ -100,6 +98,7 @@ if (prNumberOverride) {
   // workflow_dispatch smoke-test path: run against an already-open PR by number.
   const targetPr = await api(`/repos/${owner}/${repo}/pulls/${prNumberOverride}`);
   await backfillForPullRequest(targetPr);
-} else if (pr) {
-  await backfillForPullRequest(pr);
+} else {
+  const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+  if (event.pull_request) await backfillForPullRequest(event.pull_request);
 }
