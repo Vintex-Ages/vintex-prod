@@ -2,10 +2,10 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import ProductCard from '@/components/product/ProductCard';
 import { ProductCardSkeleton } from '@/components/product/ProductCardSkeleton';
-import type { ProductDetail } from '@/types/product';
+import type { ProductCardProps } from '@/components/product/ProductCard';
 
 type ProductGridProps = {
-  products: ProductDetail[];
+  products: ProductCardProps['product'][];
   loading?: boolean;
   skeletonCount?: number;
   onOpen: (id: string) => void;

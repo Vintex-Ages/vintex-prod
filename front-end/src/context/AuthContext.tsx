@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { logout as authServiceLogout } from '@/services/authService';
 import {
   REDIRECT_STORAGE_KEY,
   setAuthTokenProvider,
@@ -138,6 +139,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * Encerra a sessão atual e remove os dados persistidos.
+   *
+   * A limpeza local (storage + estado) é síncrona e imediata: o usuário não
+   * espera a resposta do backend para sair da UI autenticada. A chamada a
+   * `authServiceLogout()` é disparada em paralelo, em modo "melhor esforço" —
+   * se o backend falhar (rede indisponível, token já expirado etc.), o
+   * usuário permanece deslogado localmente mesmo assim, sem ficar "preso" na
+   * UI à espera dessa chamada.
    */
   const logout = useCallback(() => {
     try {
@@ -150,6 +158,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(null);
     setToken(null);
+
+    void authServiceLogout().catch(() => {
+      // Melhor esforço: falha no backend não deve impedir o logout local.
+    });
   }, []);
 
   /**
