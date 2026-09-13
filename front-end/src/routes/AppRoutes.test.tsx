@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
@@ -22,7 +22,7 @@ describe('<AppRoutes />', () => {
     [paths.home, 'Início'],
     [paths.catalog, 'Catálogo'],
     [productDetail('1'), 'Nike Camiseta Preto'],
-    [paths.login, 'Entrar'],
+    [paths.login, 'Entre na Vintex'],
     [paths.register, 'Entre na sua conta'],
     [paths.onboarding, 'Onboarding'],
   ])('renders the page mapped to %s', async (path, heading) => {
