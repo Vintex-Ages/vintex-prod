@@ -45,4 +45,27 @@ describe('FilterPanel', () => {
       size: ['M'],
     });
   });
+
+  it('fecha o painel ao clicar fora dele (no fundo escurecido)', () => {
+    const onChange = vi.fn();
+
+    render(<FilterPanel filters={{}} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /mais filtros/i }));
+    expect(screen.getByText('Faixa de preço')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('drawer-backdrop'));
+    expect(screen.queryByText('Faixa de preço')).not.toBeInTheDocument();
+  });
+
+  it('não fecha o painel ao clicar dentro dele', () => {
+    const onChange = vi.fn();
+
+    render(<FilterPanel filters={{}} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /mais filtros/i }));
+    fireEvent.click(screen.getByText('Faixa de preço'));
+
+    expect(screen.getByText('Faixa de preço')).toBeInTheDocument();
+  });
 });

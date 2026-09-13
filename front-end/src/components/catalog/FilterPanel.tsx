@@ -23,6 +23,8 @@ const categories = [
 /**
  * Painel de filtros do catálogo.
  * Mantém somente o estado visual de abertura e envia alterações ao componente pai.
+ * No mobile (foco da Sprint 1), o painel aberto vira um drawer sobre o catálogo;
+ * em telas maiores continua inline, abaixo do toggle.
  */
 function FilterPanel({
   filters,
@@ -80,90 +82,99 @@ function FilterPanel({
       </div>
 
       {open && (
-        <div className="mt-4 grid gap-6 border border-linha bg-branco-quente p-4 tablet:grid-cols-2">
-          <fieldset className="flex flex-col gap-2">
-            <legend className="font-ui text-body font-semibold text-tinta">Faixa de preço</legend>
+        <div
+          data-testid="drawer-backdrop"
+          className="fixed inset-0 z-10 bg-tinta/40 tablet:static tablet:bg-transparent"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="fixed inset-x-0 bottom-0 z-20 grid gap-6 rounded-t-lg border border-linha bg-branco-quente p-4 tablet:static tablet:mt-4 tablet:grid-cols-2 tablet:rounded-none tablet:border"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <fieldset className="flex flex-col gap-2">
+              <legend className="font-ui text-body font-semibold text-tinta">Faixa de preço</legend>
 
-            <input
-              aria-label="Preço mínimo"
-              type="number"
-              min="0"
-              placeholder="Mínimo"
-              value={filters.minPrice ?? ''}
-              onChange={(event) =>
-                updateFilter(
-                  'minPrice',
-                  event.target.value ? Number(event.target.value) : undefined,
-                )
-              }
-              className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+              <input
+                aria-label="Preço mínimo"
+                type="number"
+                min="0"
+                placeholder="Mínimo"
+                value={filters.minPrice ?? ''}
+                onChange={(event) =>
+                  updateFilter(
+                    'minPrice',
+                    event.target.value ? Number(event.target.value) : undefined,
+                  )
+                }
+                className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+              />
+
+              <input
+                aria-label="Preço máximo"
+                type="number"
+                min="0"
+                placeholder="Máximo"
+                value={filters.maxPrice ?? ''}
+                onChange={(event) =>
+                  updateFilter(
+                    'maxPrice',
+                    event.target.value ? Number(event.target.value) : undefined,
+                  )
+                }
+                className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+              />
+            </fieldset>
+
+            <FilterCheckboxGroup
+              label="Tamanho"
+              options={sizeOptions}
+              selected={filters.size}
+              onToggle={(value, checked) => toggleOption('size', value, checked)}
             />
 
-            <input
-              aria-label="Preço máximo"
-              type="number"
-              min="0"
-              placeholder="Máximo"
-              value={filters.maxPrice ?? ''}
-              onChange={(event) =>
-                updateFilter(
-                  'maxPrice',
-                  event.target.value ? Number(event.target.value) : undefined,
-                )
-              }
-              className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
-            />
-          </fieldset>
-
-          <FilterCheckboxGroup
-            label="Tamanho"
-            options={sizeOptions}
-            selected={filters.size}
-            onToggle={(value, checked) => toggleOption('size', value, checked)}
-          />
-
-          <FilterCheckboxGroup
-            label="Marca"
-            options={brandOptions}
-            selected={filters.brand}
-            onToggle={(value, checked) => toggleOption('brand', value, checked)}
-          />
-
-          <FilterCheckboxGroup
-            label="Conservação"
-            options={conditionOptions}
-            selected={filters.condition}
-            onToggle={(value, checked) => toggleOption('condition', value, checked)}
-          />
-
-          <FilterCheckboxGroup
-            label="Cor"
-            options={colorOptions}
-            selected={filters.color}
-            onToggle={(value, checked) => toggleOption('color', value, checked)}
-          />
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="font-ui text-body font-semibold text-tinta">Localização</legend>
-
-            <input
-              aria-label="Cidade"
-              type="text"
-              placeholder="Cidade"
-              value={filters.city ?? ''}
-              onChange={(event) => updateFilter('city', event.target.value || undefined)}
-              className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+            <FilterCheckboxGroup
+              label="Marca"
+              options={brandOptions}
+              selected={filters.brand}
+              onToggle={(value, checked) => toggleOption('brand', value, checked)}
             />
 
-            <input
-              aria-label="Estado"
-              type="text"
-              placeholder="Estado"
-              value={filters.state ?? ''}
-              onChange={(event) => updateFilter('state', event.target.value || undefined)}
-              className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+            <FilterCheckboxGroup
+              label="Conservação"
+              options={conditionOptions}
+              selected={filters.condition}
+              onToggle={(value, checked) => toggleOption('condition', value, checked)}
             />
-          </fieldset>
+
+            <FilterCheckboxGroup
+              label="Cor"
+              options={colorOptions}
+              selected={filters.color}
+              onToggle={(value, checked) => toggleOption('color', value, checked)}
+            />
+
+            <fieldset className="flex flex-col gap-2">
+              <legend className="font-ui text-body font-semibold text-tinta">Localização</legend>
+
+              <input
+                aria-label="Cidade"
+                type="text"
+                placeholder="Cidade"
+                value={filters.city ?? ''}
+                onChange={(event) => updateFilter('city', event.target.value || undefined)}
+                className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+              />
+
+              <input
+                aria-label="Estado"
+                type="text"
+                placeholder="Estado"
+                value={filters.state ?? ''}
+                onChange={(event) => updateFilter('state', event.target.value || undefined)}
+                className="border border-linha bg-branco-quente px-3 py-2 text-tinta"
+              />
+            </fieldset>
+          </div>
         </div>
       )}
     </section>
