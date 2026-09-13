@@ -80,6 +80,7 @@ describe('<Gallery />', () => {
     expect(screen.getByText('Foto 3 de 3')).toBeTruthy();
   });
 
+  // Objetivo declarado do ticket (FE-US012-3): com mídia de vídeo, exibe o player.
   it('mídia de vídeo entra na trilha sem quebrar: vira principal com controles e a miniatura mostra o ícone de play', async () => {
     const user = userEvent.setup();
     const media: ProductMedia[] = [
@@ -93,5 +94,34 @@ describe('<Gallery />', () => {
     const video = screen.getByLabelText('Camiseta — vídeo 2 de 2');
     expect(video.tagName).toBe('VIDEO');
     expect(video).toHaveAttribute('src', 'https://example.com/0.mp4');
+  });
+
+  // Objetivo declarado do ticket (FE-US012-3): sem vídeo, galeria só com fotos, sem espaço quebrado.
+  it('sem vídeo na lista, mostra só as fotos — sem <video> nem miniatura de vídeo', () => {
+    render(<Gallery media={unordered} productName="Camiseta" />);
+
+    expect(document.querySelector('video')).toBeNull();
+    expect(screen.queryByRole('button', { name: /vídeo/ })).toBeNull();
+  });
+
+  // Critério de aceite da FE-US012-3: o player respeita a ordem de position, mesmo
+  // recebendo o vídeo fora de ordem (misturado com fotos) na lista de media.
+  it('o vídeo entra na posição certa da trilha, respeitando position mesmo fora de ordem', () => {
+    const mixed: ProductMedia[] = [
+      { type: 'image', url: 'https://example.com/1.jpg', position: 1 },
+      { type: 'video', url: 'https://example.com/0.mp4', position: 0 },
+      { type: 'image', url: 'https://example.com/2.jpg', position: 2 },
+    ];
+    render(<Gallery media={mixed} productName="Camiseta" />);
+
+    // position 0 é o vídeo: a galeria abre com ele como mídia principal.
+    expect(screen.getByLabelText('Camiseta — vídeo 1 de 3')).toBeTruthy();
+
+    const thumbnails = screen.getAllByRole('button', { name: /Ver (foto|vídeo) \d de 3/ });
+    expect(thumbnails.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Ver vídeo 1 de 3',
+      'Ver foto 2 de 3',
+      'Ver foto 3 de 3',
+    ]);
   });
 });

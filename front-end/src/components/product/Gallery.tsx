@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import IconButton from '@/components/common/IconButton';
+import VideoPlayer from '@/components/product/VideoPlayer';
 import type { ProductMedia } from '@/types/product';
 
 export type GalleryProps = {
@@ -61,9 +62,9 @@ function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
  * catálogo (`ProductCard`), sem quebrar o layout.
  *
  * Vídeo (`type: 'video'`) entra na mesma trilha das fotos: vira mídia
- * principal via `<video controls>` quando selecionado, e a miniatura mostra
- * um ícone de play sobre fundo neutro — `ProductMedia` não tem campo de
- * poster no contrato atual.
+ * principal via `VideoPlayer` (FE-US012-3) quando selecionado, e a miniatura
+ * mostra um ícone de play sobre fundo neutro — `ProductMedia` não tem campo
+ * de poster no contrato atual.
  *
  * Setas e miniaturas só aparecem quando há mais de um item (não faz sentido
  * navegar com uma peça só). O contador "FOTO X DE Y" acompanha a mídia
@@ -108,11 +109,9 @@ function Gallery({ media, productName }: GalleryProps) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <video
+          <VideoPlayer
             src={active.url}
-            controls
-            className="h-full w-full object-cover"
-            aria-label={`${productName} — vídeo ${activeIndex + 1} de ${items.length}`}
+            label={`${productName} — vídeo ${activeIndex + 1} de ${items.length}`}
           />
         )}
 
