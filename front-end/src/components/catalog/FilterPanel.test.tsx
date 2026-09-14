@@ -11,8 +11,10 @@ describe('FilterPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Roupas' }));
 
+    // O valor tem que ser o gravado no dado, não o rótulo em minúsculo: a
+    // comparação de categoria é por igualdade no mock e no backend.
     expect(onChange).toHaveBeenCalledWith({
-      category: 'roupas',
+      category: 'Roupas',
     });
   });
 
