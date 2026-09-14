@@ -35,4 +35,18 @@ describe('FavoriteButton', () => {
     expect(activeButton).toHaveAttribute('aria-pressed', 'true');
     expect(activeButton.querySelector('path')).toHaveAttribute('fill', 'currentColor');
   });
+
+  it('nao chama onToggle quando desabilitado', async () => {
+    const user = userEvent.setup();
+    const onToggle = vi.fn();
+
+    render(<FavoriteButton active={false} onToggle={onToggle} disabled />);
+
+    const button = screen.getByRole('button', { name: 'Adicionar aos favoritos' });
+    expect(button).toBeDisabled();
+
+    await user.click(button);
+
+    expect(onToggle).not.toHaveBeenCalled();
+  });
 });
