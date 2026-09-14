@@ -43,6 +43,33 @@ describe('<Header />', () => {
     window.sessionStorage.clear();
   });
 
+  /**
+   * O Header é montado pela rota-pai e não remonta quando a rota filha troca:
+   * sem fechar na navegação, o menu viajava aberto para a página seguinte.
+   */
+  it('fecha o menu de conta ao navegar para outra rota', async () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+    expect(screen.getByRole('button', { name: 'Criar conta' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'Catálogo' }));
+
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/catalog'));
+    expect(screen.queryByRole('button', { name: 'Criar conta' })).not.toBeInTheDocument();
+  });
+
+  it('fecha o menu de conta com Escape', () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+    expect(screen.getByRole('button', { name: 'Criar conta' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('button', { name: 'Criar conta' })).not.toBeInTheDocument();
+  });
+
   it('renders the brand link to home', () => {
     renderHeader();
 

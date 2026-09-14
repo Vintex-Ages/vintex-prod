@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { productDetail } from '@/routes/paths';
@@ -7,7 +6,6 @@ import { getFeed } from '@/services/catalogService';
 import type { Paginated, Product } from '@/types/product';
 
 function Home() {
-  const navigate = useNavigate();
   const [feed, setFeed] = useState<Paginated<Product> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -36,15 +34,34 @@ function Home() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-6">
-      <h1 className="mb-6 font-display text-h1 text-tinta">Início</h1>
-      {error && <p role="alert">Não foi possível carregar as peças.</p>}
+      <div className="mb-6">
+        <h1 className="font-display text-h1 text-tinta">Feed de achados</h1>
+        {/*
+          Contador do Figma (nó 592:1415). Só aparece com resultado: com zero,
+          empilharia "0 peças encontradas" logo acima do estado vazio.
+        */}
+        {feed && feed.total > 0 && (
+          <p className="mt-1 font-ui text-body text-texto-auxiliar">
+            {feed.total === 1 ? '1 peça encontrada' : `${feed.total} peças encontradas`}
+          </p>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="mb-4 font-ui text-body text-vermelho-escuro">
+          Não foi possível carregar as peças.
+        </p>
+      )}
       <section aria-label="Feed de peças" aria-busy={loading || loadingMore}>
         {(loading || loadingMore) && <p role="status">Carregando peças...</p>}
         {(feed || loading) && (
           <ProductGrid
             products={feed?.items ?? []}
             loading={loading}
-            onOpen={(id) => navigate(productDetail(id))}
+            productPath={productDetail}
+            // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
+            // aqui também empilharia duas entradas no histórico e o "voltar" não
+            // sairia da peça; `onOpen` fica como ponto de telemetria.
+            onOpen={() => {}}
           />
         )}
       </section>

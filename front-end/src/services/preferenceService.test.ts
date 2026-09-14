@@ -14,7 +14,7 @@ describe('preferenceService', () => {
     expect(styles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: 'style',
+          type: 'estilo',
           value: expect.any(String),
           label: expect.any(String),
         }),
@@ -25,15 +25,15 @@ describe('preferenceService', () => {
   // Objetivo: garantir o ciclo de substituir, salvar e ler as preferências.
   it('savePreferences substitui as preferências e getPreferences reflete a alteração', async () => {
     const initialPreferences = [
-      { type: 'style', value: 'casual' },
-      { type: 'style', value: 'vintage' },
+      { type: 'estilo', value: 'vintage-80-90' },
+      { type: 'estilo', value: 'y2k' },
     ];
 
     await savePreferences(initialPreferences);
 
     expect(await getPreferences()).toEqual(initialPreferences);
 
-    const newPreferences = [{ type: 'style', value: 'streetwear' }];
+    const newPreferences = [{ type: 'estilo', value: 'streetwear' }];
 
     await savePreferences(newPreferences);
 

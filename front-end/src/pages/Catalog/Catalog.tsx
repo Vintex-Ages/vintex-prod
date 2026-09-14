@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { SuggestionBlock } from '@/components/catalog/SuggestionBlock';
 import { ProductGrid } from '@/components/product/ProductGrid';
@@ -32,7 +31,6 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
 }
 
 function Catalog() {
-  const navigate = useNavigate();
   const [inputValue, setInputValue] = useState('');
   const [term, setTerm] = useState('');
   const [filters, setFilters] = useState<CatalogFilters>({});
@@ -99,7 +97,11 @@ function Catalog() {
         <ProductGrid
           products={items}
           loading={loading}
-          onOpen={(id) => navigate(productDetail(id))}
+          productPath={productDetail}
+          // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
+          // aqui também empilharia duas entradas no histórico e o "voltar" não
+          // sairia da peça; `onOpen` fica como ponto de telemetria.
+          onOpen={() => {}}
         />
       )}
     </main>
