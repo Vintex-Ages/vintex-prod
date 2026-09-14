@@ -25,8 +25,13 @@ type SearchBarProps = {
   value: string;
   onChange: (v: string) => void;
   onSubmit: (term: string) => void;
-  placeholder?: string;
   loading?: boolean;
+  /**
+   * Texto do campo vazio. O default e curto de proposito: a 390px sobram ~24
+   * caracteres ao lado do botao, e o texto longo truncava no meio da palavra.
+   * Onde ha espaco (a barra do cabecalho, so no desktop) passa-se um maior.
+   */
+  placeholder?: string;
   /** Verbo do botão. Default "Buscar"; a conversa com a Vintex usa "Enviar". */
   submitLabel?: string;
   /** `sm` encolhe a altura para caber na barra do cabeçalho. */
@@ -55,7 +60,7 @@ export function SearchBar({
   value,
   onChange,
   onSubmit,
-  placeholder = 'Busque por peça, marca ou brechó…',
+  placeholder = 'Busque por peça ou marca',
   loading = false,
   submitLabel = 'Buscar',
   size = 'md',

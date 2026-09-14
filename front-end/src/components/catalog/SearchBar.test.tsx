@@ -30,7 +30,7 @@ describe('SearchBar', () => {
   it('usa o placeholder padrão quando nenhum é informado', () => {
     render(<SearchBar value="" onChange={() => {}} onSubmit={() => {}} />);
 
-    expect(screen.getByPlaceholderText('Busque por peça, marca ou brechó…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Busque por peça ou marca')).toBeInTheDocument();
   });
 
   it('aceita um placeholder customizado', () => {

@@ -36,7 +36,7 @@ export function VintexAIButton({
   return (
     <div
       className={clsx(
-        'fixed right-5 z-40 h-11 w-11 overflow-hidden rounded-full',
+        'fixed right-5 z-20 h-11 w-11 overflow-hidden rounded-full',
         raised ? 'bottom-24 web:bottom-5' : 'bottom-5',
         'shadow-lg shadow-tinta/30',
         'transition-transform duration-150 ease-out active:scale-90',

@@ -65,6 +65,9 @@ function Header() {
     navigate(trimmed ? `${paths.catalog}?q=${encodeURIComponent(trimmed)}` : paths.catalog);
   }
 
+  /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
+  const showSearch = pathname !== paths.home && pathname !== paths.catalog;
+
   return (
     <header className="sticky top-0 z-30 border-b border-linha bg-papel">
       <Container className="flex items-center gap-4 py-3 tablet:gap-6 tablet:py-4">
@@ -83,7 +86,7 @@ function Header() {
               end={link.href === paths.home}
               className={({ isActive }) =>
                 [
-                  'font-ui text-body-sm text-tinta transition-colors tablet:text-body',
+                  'inline-flex min-h-touch items-center font-ui text-body-sm text-tinta transition-colors tablet:text-body',
                   'hover:text-vermelho-escuro focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro',
                   // A rota atual fica sublinhada em vez de mudar de cor: a
                   // paleta não tem um tom de "ativo" que não seja a cor de ação.
@@ -101,16 +104,27 @@ function Header() {
           de `tablet` ela sai da barra: com 390px o campo ficaria menor que o
           próprio placeholder — nesse tamanho quem busca entra pelo catálogo,
           que abre com a barra inteira no topo.
+
+          Nas rotas que já têm a própria busca em tamanho grande (a abertura da
+          home e o catálogo), a do cabeçalho não aparece: eram dois campos
+          idênticos empilhados a 300px um do outro, e o de cima competia com o
+          que a página oferece como ação principal.
         */}
-        <div className="hidden min-w-0 flex-1 tablet:block">
-          <SearchBar
-            value={term}
-            onChange={setTerm}
-            onSubmit={handleSearch}
-            size="sm"
-            placeholder="Busque por peça, marca ou brechó…"
-          />
-        </div>
+        {showSearch ? (
+          <div className="hidden min-w-0 flex-1 justify-center tablet:flex">
+            <div className="w-full max-w-md">
+              <SearchBar
+                value={term}
+                onChange={setTerm}
+                onSubmit={handleSearch}
+                size="sm"
+                placeholder="Busque por peça, marca ou brechó…"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="hidden flex-1 tablet:block" />
+        )}
 
         <div className="relative ml-auto shrink-0 tablet:ml-0">
           <AccountButton

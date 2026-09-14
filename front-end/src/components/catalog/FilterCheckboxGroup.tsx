@@ -25,18 +25,25 @@ function FilterCheckboxGroup({
   }
 
   return (
-    <fieldset className="flex flex-col gap-2">
-      <legend className="mb-1 font-ui text-h4 font-semibold text-tinta">{label}</legend>
+    <fieldset>
+      <legend className="mb-2 font-ui text-h4 font-semibold text-tinta">{label}</legend>
 
-      {options.map((option) => (
-        <Checkbox
-          key={option}
-          id={`filter-${label}-${option}`}
-          label={option}
-          checked={selected.includes(option)}
-          onChange={(checked) => onToggle(option, checked)}
-        />
-      ))}
+      {/*
+        As opcoes fluem e quebram em vez de empilhar uma por linha: tamanho, cor
+        e conservacao somam 17 valores, e numa coluna so a folha de filtros do
+        celular virava uma rolagem longa por rotulos de duas ou tres letras.
+      */}
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {options.map((option) => (
+          <Checkbox
+            key={option}
+            id={`filter-${label}-${option}`}
+            label={option}
+            checked={selected.includes(option)}
+            onChange={(checked) => onToggle(option, checked)}
+          />
+        ))}
+      </div>
     </fieldset>
   );
 }

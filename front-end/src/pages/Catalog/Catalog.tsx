@@ -137,6 +137,7 @@ function Catalog() {
           sizeOptions={[...SIZES]}
           conditionOptions={[...CONDITIONS]}
           colorOptions={[...COLORS]}
+          resultCount={loading ? undefined : total}
         />
 
         <ActiveFilters filters={filters} onChange={setFilters} total={total} loading={loading} />

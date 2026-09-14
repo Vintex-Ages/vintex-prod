@@ -36,9 +36,13 @@ function IntroPrompt() {
       <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-vermelho-escuro text-vermelho-escuro web:translate-y-1">
         <PlusIcon className="h-4 w-4" />
       </span>
-      <p className="font-display text-body font-semibold text-tinta web:whitespace-nowrap web:text-h2">
-        Vamos garimpar com intenção?
-      </p>
+      {/*
+        Um degrau só: era `text-body` (16px) no celular e `text-h2` (48px) a
+        partir de `web`, um salto de 3x entre dois tamanhos fixos, com
+        `whitespace-nowrap` segurando a linha. Com o `h2` fluido a mesma classe
+        cobre a faixa inteira e a frase pode quebrar quando precisar.
+      */}
+      <p className="font-display text-h2 text-tinta">Vamos garimpar com intenção?</p>
       <p className="col-start-2 mt-1 text-body text-texto-auxiliar">
         Me conte a ocasião, as cores que você gosta ou uma peça que já mora no seu armário.
       </p>
@@ -132,6 +136,8 @@ export default function VintexAI() {
     }
   }
 
+  const hasMessages = messages.length > 0;
+
   function handleSearchSubmit(term: string) {
     const trimmed = term.trim();
     if (!trimmed || isSending) return;
@@ -156,12 +162,22 @@ export default function VintexAI() {
         <h1 className="font-display text-body font-semibold text-tinta">Conversa com a Vintex</h1>
       </header>
 
-      <div className="vintex-chat-scroll flex-1 overflow-y-auto px-4 pb-6 pt-6 tablet:px-8 web:px-10">
+      {/*
+        Sem mensagem nenhuma, a abertura se centra no espaço livre: ela ficava
+        colada no topo com uns 700px de vazio até o campo, e a régua abaixo dela
+        anunciava uma seção que não existia ainda. Com a conversa em andamento o
+        bloco volta a rolar normalmente a partir do topo.
+      */}
+      <div
+        className={`vintex-chat-scroll flex flex-1 flex-col overflow-y-auto px-4 pb-6 pt-6 tablet:px-8 web:px-10 ${
+          hasMessages ? '' : 'justify-center'
+        }`}
+      >
         <div className="mx-auto w-full max-w-3xl">
           <IntroPrompt />
         </div>
 
-        <hr className="mx-auto max-w-3xl border-linha" />
+        {hasMessages ? <hr className="mx-auto mt-6 w-full max-w-3xl border-linha" /> : null}
 
         <div className="mx-auto w-full max-w-3xl space-y-4 pt-6">
           {messages.map((message) => (
@@ -190,7 +206,7 @@ export default function VintexAI() {
             value={draft}
             onChange={setDraft}
             onSubmit={handleSearchSubmit}
-            placeholder="Conte o que você quer vestir…"
+            placeholder="O que você quer vestir?"
             submitLabel="Enviar"
             loading={isSending}
           />

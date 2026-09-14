@@ -81,7 +81,7 @@ function Home() {
           eyebrow=""
           isOnline={false}
           suggestions={SUGGESTIONS}
-          placeholder="Busque por peça, marca ou brechó…"
+          placeholder="O que você procura?"
           onSubmit={(query) => navigate(`${paths.catalog}?q=${encodeURIComponent(query)}`)}
         />
       </Container>

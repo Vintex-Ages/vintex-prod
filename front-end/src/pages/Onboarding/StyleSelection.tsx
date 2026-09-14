@@ -149,13 +149,13 @@ function StyleSelection() {
             })}
           </ul>
 
-          <div className="flex flex-col gap-3 tablet:flex-row-reverse tablet:items-center tablet:justify-between">
-            <Button fullWidth className="tablet:w-auto" onClick={() => navigate(paths.home)}>
-              {count > 0
-                ? `Salvar ${count} ${count === 1 ? 'estilo' : 'estilos'} e abrir meu feed`
-                : 'Abrir meu feed'}
-            </Button>
-
+          {/*
+            A contagem vem ANTES do botão no DOM: no celular ela fica acima da
+            ação, que é a ordem em que se lê — "quantos escolhi" e depois "o que
+            faço". A partir de `tablet` a linha se abre e o botão vai para a
+            direita, sem trocar a ordem de leitura.
+          */}
+          <div className="flex flex-col gap-3 tablet:flex-row tablet:items-center tablet:justify-between">
             <p aria-live="polite" className="text-body-sm text-texto-auxiliar">
               {count === 0
                 ? 'Nenhum estilo escolhido ainda.'
@@ -163,6 +163,12 @@ function StyleSelection() {
                   ? `${count} escolhido. Escolha mais um para a curadoria ficar melhor.`
                   : `${count} escolhidos.`}
             </p>
+
+            <Button fullWidth className="tablet:w-auto" onClick={() => navigate(paths.home)}>
+              {count > 0
+                ? `Salvar ${count} ${count === 1 ? 'estilo' : 'estilos'} e abrir meu feed`
+                : 'Abrir meu feed'}
+            </Button>
           </div>
         </>
       )}
