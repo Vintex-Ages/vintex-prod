@@ -6,20 +6,12 @@ import IconButton from '@/components/common/IconButton';
 import InputField from '@/components/common/InputField';
 import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
-import { register } from '@/services/authService';
+import { isPasswordValid, PASSWORD_POLICY_MESSAGE, register } from '@/services/authService';
 import { CepError, lookupAddress, type CepAddress } from '@/services/cepService';
 import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
 import type { ApiError } from '@/types/auth';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
-const PASSWORD_ERROR_MESSAGE =
-  'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.';
-
-/** Espelha a política do backend (`isPasswordValid` em `authService`): mín. 8, 1 letra + 1 número. */
-function isPasswordValid(password: string): boolean {
-  return password.length >= MIN_PASSWORD_LENGTH && /[a-zA-Z]/.test(password) && /\d/.test(password);
-}
 
 type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
 type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep' | 'terms', string>>;
@@ -138,7 +130,7 @@ function Register() {
     if (!name.trim()) errors.name = 'Informe seu nome completo.';
     if (!EMAIL_PATTERN.test(email)) errors.email = 'Informe um e-mail válido.';
     if (!isPasswordValid(password)) {
-      errors.password = PASSWORD_ERROR_MESSAGE;
+      errors.password = PASSWORD_POLICY_MESSAGE;
     }
     if (cepStatus !== 'resolved') errors.cep = 'Informe um CEP válido.';
     if (!termsAccepted) errors.terms = 'É preciso aceitar os termos para continuar.';

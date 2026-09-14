@@ -7,6 +7,11 @@ import Footer from './Footer';
  * Toda página é renderizada dentro dele. Composição pura; sem regra de
  * negócio.
  *
+ * O contêiner do conteúdo é uma `<div>`, não um `<main>`: cada página do
+ * projeto já declara o próprio `<main>` (Home, Catálogo, Detalhe da peça e
+ * Onboarding), e dois landmarks aninhados deixariam a página sem um `main`
+ * inequívoco para leitor de tela.
+ *
  * Usage:
  *   import Layout from '@/components/layout/Layout';
  *   <Layout><Landing /></Layout>
@@ -15,7 +20,7 @@ function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-papel">
       <Header />
-      <main className="flex-1">{children}</main>
+      <div className="flex-1">{children}</div>
       <Footer />
     </div>
   );

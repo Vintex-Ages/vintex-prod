@@ -19,16 +19,42 @@ function renderAt(path: string) {
 
 describe('<AppRoutes />', () => {
   it.each([
-    [paths.home, 'Início'],
+    [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],
     [productDetail('1'), 'Nike Camiseta Preto'],
     [paths.login, 'Entre na Vintex'],
     [paths.register, 'Entre na sua conta'],
     [paths.onboarding, 'Qual é a sua estética?'],
+    [paths.vintexAi, 'Conversa com a Vintex'],
   ])('renders the page mapped to %s', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
   });
+
+  /**
+   * O `Layout` (#105) existia testado e não era montado por ninguém: nenhuma
+   * tela tinha marca, navegação, área de conta ou rodapé. Estes dois testes
+   * travam onde ele entra — e, principalmente, onde ele NÃO entra.
+   */
+  it.each([paths.home, paths.catalog, productDetail('1'), paths.onboarding])(
+    'veste %s com o esqueleto do app',
+    async (path) => {
+      renderAt(path);
+      expect(await screen.findByRole('banner')).toBeInTheDocument();
+      expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: 'Principal' })).toBeInTheDocument();
+    },
+  );
+
+  it.each([paths.vintexAi, paths.login, paths.register])(
+    'deixa %s fora do esqueleto, com o próprio cabeçalho',
+    async (path) => {
+      renderAt(path);
+      await screen.findByRole('heading', { level: 1 });
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+    },
+  );
 
   it('falls back to the 404 page for an unknown route', () => {
     renderAt('/rota-que-nao-existe');
@@ -47,7 +73,7 @@ describe('<AppRoutes />', () => {
    * ainda. As 3 rotas de descoberta já implementadas estão cobertas abaixo.
    */
   it.each([
-    [paths.home, 'Início'],
+    [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],
     [productDetail('1'), 'Nike Camiseta Preto'],
   ])('RN-26: %s continua acessível sem login', async (path, heading) => {

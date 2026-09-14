@@ -67,6 +67,22 @@ const GENERIC_API_ERROR = 'API_ERROR';
 /** `true` quando o módulo deve operar sobre o mock em memória. */
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
 
+/** Mínimo de caracteres da senha. */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Texto único do erro de senha — a tela de cadastro mostra o mesmo do serviço. */
+export const PASSWORD_POLICY_MESSAGE =
+  'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.';
+
+/**
+ * Política de senha assumida: mín. 8 caracteres, com ao menos 1 letra e 1
+ * número. Exportada porque a validação do formulário de cadastro precisa da
+ * mesma regra — mantê-la redeclarada lá deixava duas verdades sobre senha.
+ */
+export function isPasswordValid(password: string): boolean {
+  return password.length >= MIN_PASSWORD_LENGTH && /[a-zA-Z]/.test(password) && /\d/.test(password);
+}
+
 // ---------------------------------------------------------------------------
 // Modo MOCK — estado só em memória, reiniciado a cada import do módulo.
 // ---------------------------------------------------------------------------
@@ -84,11 +100,6 @@ let mockCurrentEmail: string | null = null;
 /** Sequência para gerar ids estáveis dentro de uma execução. */
 let mockIdSeq = 0;
 
-/** Política de senha assumida: mín. 8 caracteres, com ao menos 1 letra e 1 número. */
-function isPasswordValid(password: string): boolean {
-  return password.length >= 8 && /[a-zA-Z]/.test(password) && /\d/.test(password);
-}
-
 function makeMockToken(userId: string): string {
   return `mock.${userId}.${Date.now().toString(36)}`;
 }
@@ -102,7 +113,7 @@ async function mockRegister(input: RegisterInput): Promise<AuthResult> {
     return rejectApiError({
       code: INVALID_PASSWORD,
       field: 'password',
-      message: 'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
+      message: PASSWORD_POLICY_MESSAGE,
     });
   }
 

@@ -1,9 +1,11 @@
+import { paths } from '@/routes/paths';
+
 /**
  * Navegação principal, compartilhada entre `Header` e `Footer`.
- * Hrefs em inglês (convenção do projeto) e como `<a>` — o router ainda não
- * está montado (#106); trocar por `paths.*` + `<Link>` quando entrar.
+ * Os destinos saem de `paths` para não duplicar string de rota. O router
+ * está montado desde #106, então quem consome renderiza `<Link to={href}>`.
  */
 export const NAV_LINKS = [
-  { label: 'Home', href: '/' },
-  { label: 'Catálogo', href: '/catalog' },
+  { label: 'Home', href: paths.home },
+  { label: 'Catálogo', href: paths.catalog },
 ] as const;

@@ -15,6 +15,11 @@ export const paths = {
    * cadastro navegava para `/onboarding`, que renderizava um placeholder.
    */
   onboarding: '/onboarding',
+  /**
+   * Conversa com a assistente Vintex (#143). A tela existia pronta e sem
+   * rota: só se chegava nela importando o componente.
+   */
+  vintexAi: '/vintex',
   styleGuide: '/style-guide',
 } as const;
 

@@ -9,6 +9,16 @@ type ProductGridProps = {
   loading?: boolean;
   skeletonCount?: number;
   onOpen: (id: string) => void;
+  /**
+   * Monta a rota real da peça a partir do id (ex.: `productDetail`). Sem ela o
+   * cartão cai no placeholder `'#'` do `ProductCard`: ctrl+clique, botão do
+   * meio e "copiar endereço do link" ficam mortos.
+   *
+   * Com `productPath`, quem navega é o `<Link>` do cartão — então `onOpen`
+   * NÃO deve navegar também, senão empilha duas entradas no histórico e o
+   * "voltar" do navegador não sai da peça. Ver o JSDoc do `ProductCard`.
+   */
+  productPath?: (id: string) => string;
   onToggleFavorite?: (id: string) => void;
   isFavorite?: (id: string) => boolean;
 };
@@ -33,6 +43,7 @@ export function ProductGrid({
   loading = false,
   skeletonCount = 6,
   onOpen,
+  productPath,
   onToggleFavorite,
   isFavorite,
 }: ProductGridProps) {
@@ -57,6 +68,7 @@ export function ProductGrid({
           key={product.id}
           product={product}
           onOpen={onOpen}
+          productPath={productPath?.(product.id)}
           favoriteSlot={
             onToggleFavorite && isFavorite ? (
               <FavoriteButton
