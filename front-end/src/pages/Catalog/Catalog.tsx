@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '@/components/catalog/SearchBar';
+import { SuggestionBlock } from '@/components/catalog/SuggestionBlock';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import FilterPanel from '@/components/catalog/FilterPanel';
 import ActiveFilters from '@/components/catalog/ActiveFilters';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
 import { productDetail } from '@/routes/paths';
-import type { FilterParams, Product } from '@/types/product';
+import type { FilterParams, Product, SearchResult } from '@/types/product';
 
 /**
  * Converte os filtros do painel (múltipla escolha) para o formato aceito
@@ -37,6 +38,8 @@ function Catalog() {
   const [filters, setFilters] = useState<CatalogFilters>({});
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
+  /** Motivo das sugestões quando a busca não acha nada (RN-61). */
+  const [suggestionReason, setSuggestionReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -45,10 +48,15 @@ function Catalog() {
     setLoading(true);
 
     search(term, toFilterParams(filters))
-      .then((result) => {
+      .then((result: SearchResult) => {
         if (!active) return;
-        setItems(result.items);
+        // `fallback` traz a lista em `suggestions.items` e deixa `items` vazio.
+        // Renderizar as sugestões no mesmo grid garante a RN-61: nunca uma tela
+        // vazia enquanto houver catálogo.
+        const fallback = result.match_type === 'fallback' ? result.suggestions : undefined;
+        setItems(fallback ? (fallback.items ?? []) : result.items);
         setTotal(result.total);
+        setSuggestionReason(fallback ? fallback.reason : null);
         setError(false);
       })
       .catch(() => {
@@ -74,8 +82,12 @@ function Catalog() {
       <ActiveFilters filters={filters} onChange={setFilters} total={total} />
 
       {error && (
-        <p className="text-body text-vermelho-escuro">Não foi possível carregar os produtos.</p>
+        <p role="alert" className="text-body text-vermelho-escuro">
+          Não foi possível carregar os produtos.
+        </p>
       )}
+
+      {!error && suggestionReason && <SuggestionBlock reason={suggestionReason} />}
 
       {/*
         Grade do design system, em vez de <li> manual: traz foto, loja, preço em

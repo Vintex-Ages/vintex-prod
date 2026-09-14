@@ -66,4 +66,41 @@ describe('Catalog', () => {
       );
     });
   });
+  it('match_type "fallback": mostra o motivo e as sugestões no grid, nunca tela vazia', async () => {
+    vi.mocked(search).mockResolvedValue({
+      match_type: 'fallback',
+      items: [],
+      total: 0,
+      suggestions: {
+        reason: 'Nenhum resultado para "xyz". Veja outras peças disponíveis.',
+        items: [
+          {
+            id: '9',
+            name: 'Bota Chelsea',
+            price: 259,
+            coverImageUrl: null,
+            store: { id: '2', name: 'Brechó' },
+          },
+        ],
+      },
+    });
+
+    renderCatalog();
+
+    expect(
+      await screen.findByText('Nenhum resultado para "xyz". Veja outras peças disponíveis.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
+    expect(screen.queryByText('Nenhuma peça encontrada no momento.')).not.toBeInTheDocument();
+  });
+
+  it('avisa quando a busca falha, em vez de deixar a promessa rejeitar sem tratamento', async () => {
+    vi.mocked(search).mockRejectedValue(new Error('rede fora'));
+
+    renderCatalog();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar os produtos.',
+    );
+  });
 });
