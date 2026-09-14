@@ -19,7 +19,7 @@ export const paths = {
    * Conversa com a assistente Vintex (#143). A tela existia pronta e sem
    * rota: só se chegava nela importando o componente.
    */
-  vintexAi: '/vintex',
+  vintex: '/vintex',
   styleGuide: '/style-guide',
 } as const;
 

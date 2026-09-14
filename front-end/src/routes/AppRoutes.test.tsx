@@ -25,7 +25,7 @@ describe('<AppRoutes />', () => {
     [paths.login, 'Entre na Vintex'],
     [paths.register, 'Crie sua conta'],
     [paths.onboarding, 'Qual é a sua estética?'],
-    [paths.vintexAi, 'Conversa com a Vintex'],
+    [paths.vintex, 'Conversa com a Vintex'],
   ])('renders the page mapped to %s', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe('<AppRoutes />', () => {
     },
   );
 
-  it.each([paths.vintexAi, paths.login, paths.register])(
+  it.each([paths.vintex, paths.login, paths.register])(
     'deixa %s fora do esqueleto, com o próprio cabeçalho',
     async (path) => {
       renderAt(path);

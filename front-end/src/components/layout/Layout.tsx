@@ -63,7 +63,7 @@ function Layout({
 
       {bottomSpacer && <div aria-hidden className="h-28 web:hidden" />}
 
-      <VintexAIButton onClick={() => navigate(paths.vintexAi)} raised={bottomSpacer} />
+      <VintexAIButton onClick={() => navigate(paths.vintex)} raised={bottomSpacer} />
     </div>
   );
 }

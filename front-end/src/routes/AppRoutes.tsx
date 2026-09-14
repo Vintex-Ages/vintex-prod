@@ -49,7 +49,7 @@ function AppRoutes() {
         <Route path={paths.product} element={<ProductDetail />} />
         <Route path={paths.onboarding} element={<StyleSelection />} />
       </Route>
-      <Route path={paths.vintexAi} element={<VintexAI />} />
+      <Route path={paths.vintex} element={<VintexAI />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
