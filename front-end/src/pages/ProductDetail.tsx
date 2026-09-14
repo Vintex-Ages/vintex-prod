@@ -5,6 +5,7 @@ import Button from '@/components/common/Button';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Gallery from '@/components/product/Gallery';
+import SoldBadge from '@/components/product/SoldBadge';
 import { paths } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
@@ -54,6 +55,10 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  * do escopo do projeto) — o botão de ação final não tem função real por trás, é
  * só layout. Sem persistência de favorito (a ação com barreira de login é a
  * FE-US012-5, #88) — aqui é só toggle visual local.
+ *
+ * Sinalização de peça vendida (FE-US012-4, #87): quando `status === 'vendido'`,
+ * mostra o `SoldBadge` junto do título/preço e desabilita "Comprar Agora" —
+ * favoritar continua liberado mesmo com a peça vendida.
  *
  * Usage:
  *   import ProductDetail from '@/pages/ProductDetail';
@@ -151,6 +156,11 @@ function ProductDetail() {
         <Gallery media={product.media} productName={product.name} />
 
         <div className="flex flex-col pb-28 web:pb-0">
+          {product.status === 'vendido' ? (
+            <div className="mb-2">
+              <SoldBadge />
+            </div>
+          ) : null}
           <h1 className="font-display text-h2 text-tinta">{product.name}</h1>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
             <p className="text-2xl font-bold text-tinta">{priceLabel}</p>
@@ -194,7 +204,12 @@ function ProductDetail() {
 
           <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:border-0 web:p-0">
             <FavoriteButton active={favorited} onToggle={() => setFavorited((value) => !value)} />
-            <Button variant="primary" fullWidth className="uppercase tracking-wide">
+            <Button
+              variant="primary"
+              fullWidth
+              className="uppercase tracking-wide"
+              disabled={product.status === 'vendido'}
+            >
               Comprar Agora • {priceLabel}
             </Button>
           </div>
