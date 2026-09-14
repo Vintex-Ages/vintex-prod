@@ -29,6 +29,34 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
   event.preventDefault();
 }
 
+/**
+ * Marcador de localização do endereço resolvido pelo CEP.
+ *
+ * Era o emoji 📍 — o único do `src/` inteiro, contra 22 arquivos que desenham
+ * ícone como SVG inline. O sinal de "isto é um endereço" é bom e fica; emoji é
+ * que não serve aqui: renderiza nas cores do sistema (vermelho e branco no
+ * Windows) dentro de uma paleta fechada em 10 cores, muda de desenho por
+ * aparelho, e como texto literal o leitor de tela anuncia "pino redondo" antes
+ * do endereço. Em SVG ele herda `currentColor` e acompanha o texto.
+ */
+function PinIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-4 w-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </svg>
+  );
+}
+
 /** Origem enviada via `location.state.from` (ex.: link de "Já tenho conta" clicado a partir de uma ação protegida). */
 function getStateReturnTo(locationState: unknown): string | null {
   return (locationState as { from?: string } | null)?.from ?? null;
@@ -242,7 +270,8 @@ function Register() {
               disabled={submitting}
             />
             {cepStatus === 'resolved' && cepAddress ? (
-              <p className="mt-1 text-body-sm text-verde-rs">
+              <p className="mt-1.5 flex items-center gap-1.5 text-body-sm text-verde-rs">
+                <PinIcon />
                 {cepAddress.neighborhood}, {cepAddress.city} — {cepAddress.state}
               </p>
             ) : null}
