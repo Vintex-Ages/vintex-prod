@@ -1,4 +1,4 @@
-import { Outlet, Route, Routes } from 'react-router-dom';
+import { matchPath, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Home from '@/pages/Home';
 import Catalog from '@/pages/Catalog/Catalog';
@@ -24,8 +24,13 @@ import { paths } from './paths';
  * - `/style-guide`: documentação interna, não é tela de produto.
  */
 function WithLayout() {
+  const { pathname } = useLocation();
+  // O detalhe da peça ancora a barra de favoritar/comprar no rodapé da
+  // viewport abaixo de `web`. Só ela precisa da faixa extra no fim.
+  const hasFixedBottomBar = matchPath(paths.product, pathname) !== null;
+
   return (
-    <Layout>
+    <Layout bottomSpacer={hasFixedBottomBar}>
       <Outlet />
     </Layout>
   );
@@ -48,7 +53,13 @@ function AppRoutes() {
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
-      <Route path="*" element={<NotFound />} />
+      {/*
+        O 404 fica DENTRO do esqueleto: a página é só um título, e sem
+        cabeçalho quem erra a URL não tem nenhum caminho de volta.
+      */}
+      <Route element={<WithLayout />}>
+        <Route path="*" element={<NotFound />} />
+      </Route>
     </Routes>
   );
 }

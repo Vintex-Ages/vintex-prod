@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
 
@@ -92,5 +92,24 @@ describe('VintexAI page', () => {
         screen.getByText('Não consegui responder agora. Tenta de novo em instantes?'),
       ).toBeInTheDocument();
     });
+  });
+  /**
+   * `/vintex` ganhou rota (#178): dá para chegar por URL direta e por refresh.
+   * Nesse caso não há entrada anterior no histórico do app, e um
+   * `history.back()` sairia do site.
+   */
+  it('entrando por URL direta, o "Voltar" leva para a home', async () => {
+    render(
+      <MemoryRouter initialEntries={['/vintex']}>
+        <Routes>
+          <Route path="/vintex" element={<VintexAI />} />
+          <Route path="/" element={<h1>Feed de achados</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
   });
 });

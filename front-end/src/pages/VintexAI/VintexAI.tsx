@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type SVGProps } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChatBubble } from '@/components/vintex-ai/ChatBubble';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import IconButton from '@/components/common/IconButton';
 import { getOutfitSuggestion } from '@/services/vintexAiService';
+import { paths } from '@/routes/paths';
 import type { ChatMessage } from '@/types/vintex-ai';
 
 const SUGGESTION_CHIPS = ['Look para um jantar', 'Cores mais neutras', 'Até R$ 250'];
@@ -77,7 +78,19 @@ function createUserMessage(text: string): ChatMessage {
  */
 export default function VintexAI() {
   const location = useLocation();
+  const navigate = useNavigate();
   const incomingMessage = (location.state as { message?: string } | null)?.message;
+
+  /**
+   * Agora que `/vintex` tem rota (#178), dá para chegar aqui por URL direta ou
+   * por refresh. Nesse caso `location.key` é `'default'`: não há entrada
+   * anterior no histórico do app, e um `history.back()` sairia do site. Volta
+   * para a home quando não há de onde vir.
+   */
+  const handleBack = () => {
+    if (location.key === 'default') navigate(paths.home);
+    else navigate(-1);
+  };
 
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
     incomingMessage ? [createUserMessage(incomingMessage)] : [],
@@ -138,7 +151,7 @@ export default function VintexAI() {
         <IconButton
           icon={<BackIcon className="h-5 w-5" />}
           ariaLabel="Voltar"
-          onClick={() => window.history.back()}
+          onClick={handleBack}
         />
         <h1 className="font-display text-body font-semibold text-tinta">Conversa com a Vintex</h1>
       </header>

@@ -61,6 +61,14 @@ describe('<AppRoutes />', () => {
     expect(screen.getByRole('heading', { name: /não encontrada/i })).toBeInTheDocument();
   });
 
+  it('veste o 404 com o esqueleto, para quem errou a URL ter volta', () => {
+    renderAt('/rota-que-nao-existe');
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    // Cabeçalho e rodapé: dois caminhos de volta onde antes não havia nenhum.
+    expect(screen.getAllByRole('link', { name: 'Catálogo' })).toHaveLength(2);
+  });
+
   /**
    * RN-26 (FE-US005-3, #75): visitante sem cadastro explora o app sem
    * precisar logar. As rotas de descoberta continuam navegáveis mesmo depois
