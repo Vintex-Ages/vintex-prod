@@ -24,7 +24,7 @@ describe('<AppRoutes />', () => {
     [productDetail('1'), 'Nike Camiseta Preto'],
     [paths.login, 'Entre na Vintex'],
     [paths.register, 'Entre na sua conta'],
-    [paths.onboarding, 'Onboarding'],
+    [paths.onboarding, 'Qual é a sua estética?'],
   ])('renders the page mapped to %s', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
