@@ -1,11 +1,15 @@
 // src/pages/onboarding/StyleSelection.tsx
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
+import Button from '@/components/common/Button';
 import Checkbox from '@/components/common/Checkbox';
+import { paths } from '@/routes/paths';
 import { getStyles } from '@/services/preferenceService';
 import type { StyleOption } from '@/types/preference';
 
 function StyleSelection() {
+  const navigate = useNavigate();
   const [styles, setStyles] = useState<StyleOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,10 +49,20 @@ function StyleSelection() {
   }
 
   return (
-    <main className="flex flex-col gap-3 p-4">
-      <h1 className="font-display text-h2 text-tinta">Qual é a sua estética?</h1>
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-6">
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="font-display text-h2 text-tinta">Qual é a sua estética?</h1>
+        <button
+          type="button"
+          onClick={() => navigate(paths.home)}
+          className="shrink-0 text-label font-bold uppercase tracking-wide text-texto-auxiliar hover:text-tinta focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+        >
+          Pular
+        </button>
+      </div>
       <p className="text-body text-texto-auxiliar">
-        Selecione 2 ou mais estilos para calibrar a curadoria do seu feed.
+        Selecione 2 ou mais estilos para calibrar a curadoria inteligente do seu feed e as
+        recomendações da assistente.
       </p>
 
       <ul className="flex flex-col gap-3">
@@ -69,7 +83,12 @@ function StyleSelection() {
                   {style.label.charAt(0)}
                 </span>
 
-                <span className="flex-1 font-ui text-body font-bold text-tinta">{style.label}</span>
+                <span className="flex flex-1 flex-col gap-0.5">
+                  <span className="font-ui text-body font-bold text-tinta">{style.label}</span>
+                  {style.description && (
+                    <span className="text-label text-texto-auxiliar">{style.description}</span>
+                  )}
+                </span>
 
                 <Checkbox
                   id={inputId}
@@ -81,6 +100,10 @@ function StyleSelection() {
           );
         })}
       </ul>
+
+      <Button className="mt-3" fullWidth onClick={() => navigate(paths.home)}>
+        Salvar estilos e abrir meu feed
+      </Button>
     </main>
   );
 }

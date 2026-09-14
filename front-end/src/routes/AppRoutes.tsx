@@ -4,7 +4,6 @@ import Catalog from '@/pages/Catalog/Catalog';
 import ProductDetail from '@/pages/ProductDetail';
 import Login from '@/pages/Auth/Login/Login';
 import Register from '@/pages/Auth/Register/Register';
-import Onboarding from '@/pages/Onboarding/Onboarding';
 import NotFound from '@/pages/NotFound/NotFound';
 import StyleGuide from '@/pages/StyleGuide/StyleGuide';
 import StyleSelection from '@/pages/Onboarding/StyleSelection';
@@ -22,9 +21,8 @@ function AppRoutes() {
       <Route path={paths.product} element={<ProductDetail />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
-      <Route path={paths.onboarding} element={<Onboarding />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
-      <Route path={paths.styleSelection} element={<StyleSelection />} />
+      <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
