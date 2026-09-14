@@ -68,4 +68,22 @@ describe('FilterPanel', () => {
 
     expect(screen.getByText('Faixa de preço')).toBeInTheDocument();
   });
+  it('fecha o painel com a tecla Escape', () => {
+    render(<FilterPanel filters={{}} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /mais filtros/i }));
+    expect(screen.getByText('Faixa de preço')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByText('Faixa de preço')).not.toBeInTheDocument();
+  });
+
+  it('fecha o painel pelo botão dentro do drawer', () => {
+    render(<FilterPanel filters={{}} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /mais filtros/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar filtros' }));
+
+    expect(screen.queryByText('Faixa de preço')).not.toBeInTheDocument();
+  });
 });

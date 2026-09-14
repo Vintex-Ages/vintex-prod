@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import FilterToggle from '@/components/catalog/FilterToggle';
+import IconButton from '@/components/common/IconButton';
 import FilterCheckboxGroup from '@/components/catalog/FilterCheckboxGroup';
 import type { CatalogFilters } from '@/types/catalog';
 
@@ -35,6 +36,20 @@ function FilterPanel({
   colorOptions = [],
 }: FilterPanelProps) {
   const [open, setOpen] = useState(false);
+
+  /**
+   * Escape fecha o drawer, como o `LoginInterceptor` já faz. Sem isso, no
+   * celular o painel aberto só fecha tocando no fundo, e quem navega por
+   * teclado fica sem saída: o `FilterToggle` fica coberto pelo backdrop.
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
 
   const updateFilter = <K extends keyof CatalogFilters>(key: K, value: CatalogFilters[K]) => {
     onChange({ ...filters, [key]: value });
@@ -88,9 +103,31 @@ function FilterPanel({
           onClick={() => setOpen(false)}
         >
           <div
-            className="fixed inset-x-0 bottom-0 z-20 grid gap-6 rounded-t-lg border border-linha bg-branco-quente p-4 tablet:static tablet:mt-4 tablet:grid-cols-2 tablet:rounded-none tablet:border"
+            className="fixed inset-x-0 bottom-0 z-20 grid max-h-[85dvh] gap-6 overflow-y-auto rounded-none border border-linha bg-branco-quente p-4 tablet:static tablet:mt-4 tablet:max-h-none tablet:grid-cols-2 tablet:overflow-visible tablet:border"
             onClick={(event) => event.stopPropagation()}
           >
+            {/*
+              Botão de fechar só no drawer: a partir de `tablet:` o painel é
+              inline e quem fecha é o próprio `FilterToggle`, que ali não fica
+              coberto por backdrop nenhum.
+            */}
+            <div className="flex justify-end tablet:hidden">
+              <IconButton
+                icon={
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+                    <path
+                      d="M6 6l12 12M18 6L6 18"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                }
+                ariaLabel="Fechar filtros"
+                onClick={() => setOpen(false)}
+              />
+            </div>
+
             <fieldset className="flex flex-col gap-2">
               <legend className="font-ui text-body font-semibold text-tinta">Faixa de preço</legend>
 
