@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import type { AuthUser } from '@/types/auth';
@@ -9,6 +9,7 @@ import {
   setAuthTokenProvider,
   setOnAuthRequired,
 } from '@/services/httpClient';
+import { logout as authServiceLogout } from '@/services/authService';
 
 // Só as integrações com o httpClient são espionadas; o resto do módulo é real.
 vi.mock('@/services/httpClient', async (importOriginal) => {
@@ -20,6 +21,13 @@ vi.mock('@/services/httpClient', async (importOriginal) => {
     setOnAuthRequired: vi.fn(),
   };
 });
+
+// authService é totalmente substituído: só `logout` é usado pelo AuthContext.
+vi.mock('@/services/authService', () => ({
+  logout: vi.fn(),
+}));
+
+const mockedAuthServiceLogout = vi.mocked(authServiceLogout);
 
 const SAMPLE_USER: AuthUser = {
   id: 'u_1',
@@ -106,6 +114,7 @@ describe('AuthContext', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     vi.clearAllMocks();
+    mockedAuthServiceLogout.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -188,7 +197,7 @@ describe('AuthContext', () => {
 
   /**
    * Logout deve remover os dados persistidos e refletir imediatamente
-   * o estado anônimo no contexto.
+   * o estado anônimo no contexto — sem esperar a chamada ao backend.
    */
   it('logout limpa o estado e o sessionStorage', async () => {
     window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
@@ -212,6 +221,58 @@ describe('AuthContext', () => {
     expect(window.sessionStorage.getItem(AUTH_USER_STORAGE_KEY)).toBeNull();
 
     expect(window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
+  /**
+   * FE-US005-2: logout precisa encerrar a sessão no backend, não só
+   * localmente.
+   */
+  it('logout chama authService.logout() para encerrar a sessão no backend', async () => {
+    window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+
+    window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+
+    renderApp();
+
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('Ana Brechó'));
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'sair',
+      }),
+    );
+
+    await waitFor(() => expect(mockedAuthServiceLogout).toHaveBeenCalledTimes(1));
+  });
+
+  /**
+   * FE-US005-2: mesmo se a chamada ao backend falhar (rede indisponível,
+   * token já expirado etc.), a sessão local precisa continuar encerrada —
+   * o usuário não pode ficar "preso" logado na UI por causa de um erro
+   * de rede no logout.
+   */
+  it('logout limpa o estado local mesmo se authService.logout() falhar', async () => {
+    mockedAuthServiceLogout.mockRejectedValue(new Error('rede indisponível'));
+
+    window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+
+    window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+
+    renderApp();
+
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('Ana Brechó'));
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'sair',
+      }),
+    );
+
+    expect(screen.getByTestId('user')).toHaveTextContent('anon');
+
+    expect(screen.getByTestId('auth')).toHaveTextContent('false');
+
+    await waitFor(() => expect(mockedAuthServiceLogout).toHaveBeenCalledTimes(1));
   });
 
   /**
