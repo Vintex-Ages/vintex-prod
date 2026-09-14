@@ -127,6 +127,19 @@ describe('catalogService (mock)', () => {
       expect(result.suggestions?.items.length).toBeGreaterThan(0);
       expect(result.suggestions?.reason).toContain('bermuda cargo');
     });
+
+    it('combina o termo de busca com os filtros ativos, sem descartar nenhum', async () => {
+      const result = await search('nike', { category: 'Roupas' });
+      expect(result.match_type).toBe('exact');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].id).toBe('1');
+    });
+
+    it('não retorna itens que batem com o termo mas não com o filtro ativo', async () => {
+      const result = await search('nike', { category: 'Sapatos' });
+      expect(result.match_type).toBe('fallback');
+      expect(result.items).toEqual([]);
+    });
   });
 });
 

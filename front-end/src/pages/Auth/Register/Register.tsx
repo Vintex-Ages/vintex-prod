@@ -13,6 +13,13 @@ import type { ApiError } from '@/types/auth';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_ERROR_MESSAGE =
+  'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.';
+
+/** Espelha a política do backend (`isPasswordValid` em `authService`): mín. 8, 1 letra + 1 número. */
+function isPasswordValid(password: string): boolean {
+  return password.length >= MIN_PASSWORD_LENGTH && /[a-zA-Z]/.test(password) && /\d/.test(password);
+}
 
 type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
 type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep' | 'terms', string>>;
@@ -130,8 +137,8 @@ function Register() {
     const errors: FieldErrors = {};
     if (!name.trim()) errors.name = 'Informe seu nome completo.';
     if (!EMAIL_PATTERN.test(email)) errors.email = 'Informe um e-mail válido.';
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      errors.password = `A senha precisa de pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`;
+    if (!isPasswordValid(password)) {
+      errors.password = PASSWORD_ERROR_MESSAGE;
     }
     if (cepStatus !== 'resolved') errors.cep = 'Informe um CEP válido.';
     if (!termsAccepted) errors.terms = 'É preciso aceitar os termos para continuar.';
@@ -174,11 +181,19 @@ function Register() {
     } catch (error) {
       // authService rejeita com ApiError puro (não uma classe de erro), ver @/types/auth.
       const apiError = error as Partial<ApiError> | undefined;
-      setSubmitError(
+      const message =
         typeof apiError?.message === 'string'
           ? apiError.message
-          : 'Não foi possível criar sua conta agora.',
-      );
+          : 'Não foi possível criar sua conta agora.';
+
+      // Erro com `field` (ex.: EMAIL_TAKEN) vai pro campo certo, igual o Input já
+      // sabe exibir; sem `field`, cai no banner genérico do formulário.
+      if (apiError?.field) {
+        const field = apiError.field;
+        setFieldErrors((previous) => ({ ...previous, [field]: message }));
+      } else {
+        setSubmitError(message);
+      }
     } finally {
       setSubmitting(false);
     }
