@@ -36,10 +36,18 @@ describe('<ProductCard />', () => {
     expect(screen.getByText('Brechó Ana · Porto Alegre')).toBeTruthy();
     expect(screen.getByText(/R\$\s?89,90/)).toBeTruthy();
     expect(screen.getByText('Roupas')).toBeTruthy();
-    expect(screen.getByText('Seminovo')).toBeTruthy();
 
     const image = screen.getByAltText('Vestido floral');
     expect(image.tagName).toBe('IMG');
+  });
+
+  // A conservacao saiu do cartao na revisao visual: era a quinta linha de texto
+  // empilhada, em cinza pequeno, repetindo o que a ficha da peca ja informa. A
+  // prop continua aceita para nao quebrar quem passa.
+  it('não desenha a conservação, mesmo quando o produto a traz', () => {
+    renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
+
+    expect(screen.queryByText('Seminovo')).toBeNull();
   });
 
   // Objetivo: sem coverImageUrl, mostra um placeholder e não quebra a renderização.

@@ -35,8 +35,11 @@ export type CheckboxProps = {
 
 function Checkbox({ checked, onChange, label, disabled = false, id }: CheckboxProps) {
   return (
-    <div className="inline-flex items-center gap-2">
-      <span className="relative inline-flex h-4 w-4 shrink-0">
+    // `items-start` e nao `items-center`: com rotulo de duas linhas (o aceite
+    // dos termos no cadastro) a caixa ficava boiando no meio do paragrafo em
+    // vez de alinhada com a primeira linha.
+    <div className="inline-flex items-start gap-2">
+      <span className="relative mt-1 inline-flex h-4 w-4 shrink-0">
         <input
           type="checkbox"
           id={id}

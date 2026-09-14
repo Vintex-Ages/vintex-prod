@@ -58,13 +58,38 @@ export const fontFamily: Record<string, string[]> = {
 
 type FontSizeToken = [string, { lineHeight: string; letterSpacing?: string }];
 
-/** Escala V0 — Fraunces for `display`/`h1`/`h2`, Inter for `body`/`label`. */
+/**
+ * Escala V1 — Fraunces nos degraus editoriais (`display`/`h1`/`h2`/`h3`), Inter
+ * no texto de interface (`h4`/`body`/`body-sm`/`label`).
+ *
+ * Duas mudanças em relação à V0, ambas medidas no produto rodando:
+ *
+ * 1. **O meio da escala existe.** A V0 pulava de `h2` (48px) direto para `body`
+ *    (16px). Sem degrau intermediário, todo título de seção, nome de peça e
+ *    preço caía em `text-body` + peso — 61 usos de `text-body` contra 13 de
+ *    `text-h2` — e a página ficava plana. Foi também o que empurrou os dois
+ *    únicos valores fora de token do repositório (`text-lg` e `text-2xl`, no
+ *    detalhe da peça). `h3` e `h4` fecham o buraco; `body-sm` cobre o texto
+ *    auxiliar que hoje é forçado a `label`.
+ *
+ * 2. **Os degraus grandes são fluidos.** `display`/`h1`/`h2` eram fixos, então
+ *    o "Feed de achados" chegava a 72px num aparelho de 390px de largura,
+ *    ocupando a dobra inteira antes da primeira peça. O `clamp()` mantém o
+ *    valor de topo idêntico ao do style guide no desktop e reduz no celular —
+ *    o token não muda de nome nem de teto, só deixa de ser uma medida só.
+ *
+ * `label` sobe de 0.68rem (10.9px) para 0.75rem (12px): abaixo disso o nome do
+ * brechó e a trilha do detalhe ficam ilegíveis, e era o tamanho de 34 usos.
+ */
 export const fontSize: Record<string, FontSizeToken> = {
-  display: ['6rem', { lineHeight: '0.88' }],
-  h1: ['4.5rem', { lineHeight: '0.92' }],
-  h2: ['3rem', { lineHeight: '1' }],
+  display: ['clamp(2.5rem, 9vw, 6rem)', { lineHeight: '0.9' }],
+  h1: ['clamp(2rem, 6.5vw, 4.5rem)', { lineHeight: '0.95' }],
+  h2: ['clamp(1.625rem, 4vw, 3rem)', { lineHeight: '1.05' }],
+  h3: ['1.5rem', { lineHeight: '1.25' }],
+  h4: ['1.125rem', { lineHeight: '1.35' }],
   body: ['1rem', { lineHeight: '1.65' }],
-  label: ['0.68rem', { lineHeight: '1.4', letterSpacing: '0.04em' }],
+  'body-sm': ['0.875rem', { lineHeight: '1.55' }],
+  label: ['0.75rem', { lineHeight: '1.4', letterSpacing: '0.04em' }],
 };
 
 /**
@@ -106,6 +131,30 @@ export const screens: Record<string, string> = {
   tablet: '720px',
   web: '1050px',
 };
+
+/**
+ * Raio de canto — coleção `Vintex / Layout` do Figma (`378:4`), tokens
+ * `radius/none` = 0, `radius/sm` = 2 e `radius/full` = 999.
+ *
+ * São estes três e mais nenhum: fora da pílula, o máximo do sistema é 2px.
+ * Canto reto é identidade da marca, não descuido — e por isso a escala entra
+ * em `tailwind.config.ts` como **substituição**, e não como extensão. Assim
+ * `rounded-md`/`rounded-lg`/`rounded-xl` deixam de existir e não há como
+ * aplicá-los por hábito (era o caso de `rounded-lg` no onboarding e de
+ * `rounded-md` no guia de estilo).
+ */
+export const borderRadius: Record<string, string> = {
+  none: '0px',
+  sm: '2px',
+  full: '9999px',
+};
+
+/**
+ * Alvo mínimo de toque — `size/touch-min` = 44 na mesma coleção do Figma.
+ * Exposto como token para os componentes usarem `min-h-touch`/`min-w-touch`
+ * em vez de repetir o número.
+ */
+export const touchTarget = '2.75rem'; // 44px
 
 export interface ColorToken {
   /** Token name as written in the style guide. */
@@ -187,4 +236,4 @@ export const colorTokens: ColorToken[] = [
   },
 ];
 
-export const tokens = { colors, fontFamily, fontSize, spacing, screens };
+export const tokens = { colors, fontFamily, fontSize, spacing, screens, borderRadius, touchTarget };

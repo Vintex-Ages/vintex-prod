@@ -27,16 +27,16 @@ describe('VintexSearchSpotlight', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Blazer de lã' }));
 
-    expect(screen.getByRole('textbox', { name: 'Buscar' })).toHaveValue('Blazer de lã');
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue('Blazer de lã');
   });
 
   it('chama onSubmit com o termo sem espaços nas pontas e limpa o campo', () => {
     const onSubmit = vi.fn();
     render(<VintexSearchSpotlight onSubmit={onSubmit} />);
 
-    const input = screen.getByRole('textbox', { name: 'Buscar' });
+    const input = screen.getByRole('searchbox', { name: 'Buscar' });
     fireEvent.change(input, { target: { value: '  jeans vintage  ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar busca' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 
     expect(onSubmit).toHaveBeenCalledWith('jeans vintage');
     expect(input).toHaveValue('');
@@ -46,10 +46,10 @@ describe('VintexSearchSpotlight', () => {
     const onSubmit = vi.fn();
     render(<VintexSearchSpotlight onSubmit={onSubmit} />);
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
       target: { value: '   ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar busca' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar' }));
 
     expect(onSubmit).not.toHaveBeenCalled();
   });

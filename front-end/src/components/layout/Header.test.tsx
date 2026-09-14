@@ -84,12 +84,14 @@ describe('<Header />', () => {
     expect(screen.getByRole('link', { name: 'Catálogo' })).toHaveAttribute('href', '/catalog');
   });
 
-  it('hides the primary navigation on mobile and shows it from tablet up', () => {
+  it('mantém a navegação principal visível em todo tamanho de tela', () => {
     renderHeader();
 
+    // Antes a navegacao era `hidden tablet:flex`: abaixo de 720px os dois links
+    // sumiam e o catalogo so era alcancavel pelo rodape. Com a marca em `h3` em
+    // vez de `h2`, os dois cabem — e dois links nao justificam um menu sanfonado.
     const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).toHaveClass('hidden');
-    expect(nav).toHaveClass('tablet:flex');
+    expect(nav).not.toHaveClass('hidden');
   });
 
   it('anônimo: mostra o botão "Conta" fechado, sem o menu visível', () => {

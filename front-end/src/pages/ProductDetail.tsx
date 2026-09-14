@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactN
 import { Link, useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
+import ErrorState from '@/components/common/ErrorState';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import LoginInterceptor from '@/components/common/LoginInterceptor';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
+import Container from '@/components/layout/Container';
 import Gallery from '@/components/product/Gallery';
 import SoldBadge from '@/components/product/SoldBadge';
 import { useProtectedAction } from '@/hooks/useProtectedAction';
@@ -39,9 +41,9 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
 
 function Attribute({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <dt className="text-body text-texto-auxiliar">{label}</dt>
-      <dd className="text-body font-semibold text-tinta">{value}</dd>
+    <div className="flex items-baseline justify-between gap-4 py-3">
+      <dt className="shrink-0 text-body-sm text-texto-auxiliar">{label}</dt>
+      <dd className="text-right text-body font-semibold text-tinta">{value}</dd>
     </div>
   );
 }
@@ -130,39 +132,40 @@ function ProductDetail() {
 
   if (status === 'loading') {
     return (
-      <main className="mx-auto w-full max-w-5xl px-4 py-6">
-        <p className="text-body text-texto-auxiliar">Carregando produto...</p>
-      </main>
+      <Container as="main" className="py-10">
+        <p role="status" className="text-body text-texto-auxiliar">
+          Carregando produto...
+        </p>
+      </Container>
     );
   }
 
   if (status === 'not_found') {
     return (
-      <main className="mx-auto w-full max-w-5xl px-4 py-6">
-        <p role="alert" className="text-body text-tinta">
-          Produto não encontrado.
-        </p>
-      </main>
+      <Container as="main" className="py-10">
+        <ErrorState
+          title="Peça não encontrada"
+          message="Esta peça não está mais no ar, ou o endereço está errado."
+        />
+      </Container>
     );
   }
 
   if (status === 'error' || !product) {
     return (
-      <main className="mx-auto w-full max-w-5xl px-4 py-6">
-        <p role="alert" className="text-body text-tinta">
-          Não foi possível carregar este produto agora.
-        </p>
-      </main>
+      <Container as="main" className="py-10">
+        <ErrorState message="Não foi possível carregar esta peça agora." />
+      </Container>
     );
   }
 
   const priceLabel = priceFormatter.format(product.price);
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-6 web:py-10">
+    <Container as="main" className="py-6 web:py-10">
       <nav
         aria-label="Trilha"
-        className="mb-4 flex flex-wrap items-center gap-1 text-label text-texto-auxiliar"
+        className="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm text-texto-auxiliar"
       >
         <Link to={paths.home} className="hover:text-tinta hover:underline">
           Início
@@ -194,7 +197,7 @@ function ProductDetail() {
           ) : null}
           <h1 className="font-display text-h2 text-tinta">{product.name}</h1>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-2xl font-bold text-tinta">{priceLabel}</p>
+            <p className="font-ui text-h3 font-bold text-tinta">{priceLabel}</p>
             <p className="text-body text-texto-auxiliar">
               Tamanho: <span className="font-bold text-tinta">{sizeLabel(product.size)}</span>
             </p>
@@ -215,13 +218,18 @@ function ProductDetail() {
                 ) : null}
               </div>
             </div>
-            <span className="shrink-0 border border-linha px-3 py-2 text-label font-bold uppercase tracking-wide text-tinta">
+            <span className="shrink-0 border border-linha px-3 py-2 text-body-sm font-semibold text-tinta">
               Ver loja
             </span>
           </a>
 
-          <h2 className="mt-8 text-lg font-bold text-tinta">História da Peça</h2>
-          <p className="mt-2 text-body text-texto-auxiliar">{product.description}</p>
+          {/*
+            A historia da peca e o conteudo que vende a peca, nao legenda: sai do
+            cinza auxiliar e vai para a cor de texto principal, com medida de
+            linha limitada para nao virar uma faixa larga demais de leitura.
+          */}
+          <h2 className="mt-8 font-display text-h3 text-tinta">História da peça</h2>
+          <p className="mt-2 max-w-prose text-body text-tinta">{product.description}</p>
 
           <dl className="mt-6 divide-y divide-linha border-t border-linha">
             <Attribute label="Marca" value={product.brand} />
@@ -244,7 +252,6 @@ function ProductDetail() {
             <Button
               variant="primary"
               fullWidth
-              className="uppercase tracking-wide"
               disabled={product.status === 'vendido'}
               onClick={() => {
                 void protectedBuy.runProtectedAction();
@@ -264,7 +271,7 @@ function ProductDetail() {
         onRegister={activeIntercept?.goToRegister ?? (() => {})}
         onDismiss={activeIntercept?.dismissInterceptor ?? (() => {})}
       />
-    </main>
+    </Container>
   );
 }
 

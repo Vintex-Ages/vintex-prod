@@ -66,6 +66,10 @@ function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
  * mostra um ícone de play sobre fundo neutro — `ProductMedia` não tem campo
  * de poster no contrato atual.
  *
+ * A proporção é 3:4, a mesma do cartão do catálogo: era `aspect-square` no
+ * celular e `4/5` no web, então a mesma foto chegava cortada de três jeitos
+ * diferentes entre a grade e o detalhe.
+ *
  * Setas e miniaturas só aparecem quando há mais de um item (não faz sentido
  * navegar com uma peça só). O contador "FOTO X DE Y" acompanha a mídia
  * principal e é `aria-live` para leitor de tela acompanhar a troca.
@@ -80,7 +84,7 @@ function Gallery({ media, productName }: GalleryProps) {
 
   if (items.length === 0) {
     return (
-      <div className="aspect-square w-full bg-linha web:aspect-[4/5]">
+      <div className="aspect-[3/4] w-full bg-linha">
         <div
           role="img"
           aria-label={productName}
@@ -101,7 +105,7 @@ function Gallery({ media, productName }: GalleryProps) {
 
   return (
     <div role="group" aria-label={`Galeria de fotos — ${productName}`}>
-      <div className="relative aspect-square w-full bg-linha web:aspect-[4/5]">
+      <div className="relative aspect-[3/4] w-full bg-linha">
         {active.type === 'image' ? (
           <img
             src={active.url}

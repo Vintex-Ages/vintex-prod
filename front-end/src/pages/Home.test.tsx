@@ -67,10 +67,15 @@ describe('<Home />', () => {
     vi.mocked(getFeed).mockReturnValue(new Promise(() => {}));
     renderHome();
 
-    const region = screen.getByRole('region', { name: 'Feed de peças' });
+    // A secao do feed e nomeada pelo proprio titulo (`aria-labelledby`), entao
+    // o nome acessivel e o que a pessoa le na tela.
+    const region = screen.getByRole('region', { name: 'Feed de achados' });
     expect(region).toHaveAttribute('aria-busy', 'true');
-    expect(within(region).getByRole('status')).toHaveTextContent('Carregando peças...');
-    expect(region.querySelectorAll('[aria-hidden="true"]')).toHaveLength(6);
+    // O aviso continua existindo para leitor de tela, agora só fora da tela:
+    // os skeletons sao aria-hidden, entao sem ele a espera fica muda.
+    expect(within(region).getByRole('status')).toHaveTextContent('Carregando peças');
+    expect(within(region).getByRole('status')).toHaveClass('sr-only');
+    expect(region.querySelectorAll('[aria-hidden="true"]')).toHaveLength(8);
     expect(within(region).queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -89,7 +94,9 @@ describe('<Home />', () => {
     await screen.findByRole('link', { name: 'Vestido floral' });
     await user.click(screen.getByRole('button', { name: 'Carregar mais achados' }));
     expect(getFeed).toHaveBeenLastCalledWith({ page: 2 });
-    expect(screen.getByRole('button', { name: 'Carregar mais achados' })).toBeDisabled();
+    // Enquanto busca a proxima pagina o botao troca de rotulo, como o "Criando
+    // conta..." do cadastro: desabilitado e mudo nao dizia que algo acontecia.
+    expect(screen.getByRole('button', { name: 'Carregando…' })).toBeDisabled();
     expect(screen.getByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Jaqueta jeans' })).toBeInTheDocument();
 

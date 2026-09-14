@@ -7,7 +7,7 @@ describe('AuthHeader', () => {
   it('mostra a marca "Vintex"', () => {
     render(<AuthHeader onBack={() => {}} />);
 
-    expect(screen.getByText('Vintex')).toBeInTheDocument();
+    expect(screen.getByText('vintex')).toBeInTheDocument();
   });
 
   it('mostra um botao de voltar acessivel', () => {

@@ -1,11 +1,14 @@
 import { FilterChip } from '@/components/catalog/FilterChip';
 import type { CatalogFilters } from '@/types/catalog';
 import { CATEGORIES } from '@/components/catalog/categories';
+import { formatPieceCount } from '@/utils/format';
 
 type ActiveFiltersProps = {
   filters: CatalogFilters;
   onChange: (filters: CatalogFilters) => void;
   total: number;
+  /** Enquanto carrega, a contagem anterior não vale — some em vez de mentir. */
+  loading?: boolean;
 };
 
 type ActiveEntry = {
@@ -65,11 +68,11 @@ function getActiveEntries(filters: CatalogFilters): ActiveEntry[] {
   return entries;
 }
 
-function ActiveFilters({ filters, onChange, total }: ActiveFiltersProps) {
+function ActiveFilters({ filters, onChange, total, loading = false }: ActiveFiltersProps) {
   const entries = getActiveEntries(filters);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {entries.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {entries.map((entry) => (
@@ -78,13 +81,31 @@ function ActiveFilters({ filters, onChange, total }: ActiveFiltersProps) {
               label={entry.label}
               active
               removable
-              onToggle={() => onChange(entry.next)}
               onRemove={() => onChange(entry.next)}
             />
           ))}
+
+          {/*
+            Sair de uma combinação de filtros um chip por vez é trabalhoso a
+            partir de dois. Com um só, o próprio chip já é o "limpar".
+          */}
+          {entries.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onChange({})}
+              className="font-ui text-body-sm text-texto-auxiliar underline underline-offset-4 transition-colors hover:text-vermelho-escuro focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
+            >
+              Limpar filtros
+            </button>
+          )}
         </div>
       )}
-      <p className="font-ui text-body text-texto-auxiliar">{total} resultado(s)</p>
+
+      <p aria-live="polite" className="font-ui text-body-sm text-texto-auxiliar">
+        {loading
+          ? 'Buscando peças…'
+          : `${formatPieceCount(total)} ${total === 1 ? 'encontrada' : 'encontradas'}`}
+      </p>
     </div>
   );
 }

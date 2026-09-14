@@ -21,6 +21,12 @@ interface VintexSearchSpotlightProps {
   onSubmit?: (query: string) => void;
   /** Classes extras pro wrapper externo (ex: ajustar largura máxima). */
   className?: string;
+  /**
+   * Nível do título. Default `h2`. Quem usa o bloco como abertura da página
+   * passa `h1`, senão a página abre com um `h2` e o `h1` aparece depois — a
+   * ordem de títulos é a estrutura que o leitor de tela usa para navegar.
+   */
+  headingAs?: 'h1' | 'h2';
 }
 
 /**
@@ -51,6 +57,7 @@ export function VintexSearchSpotlight({
   isOnline = true,
   onSubmit,
   className,
+  headingAs: Heading = 'h2',
 }: VintexSearchSpotlightProps) {
   const [query, setQuery] = useState('');
 
@@ -66,25 +73,23 @@ export function VintexSearchSpotlight({
   }
 
   return (
-    <div className={clsx('w-full max-w-[820px] rounded-none bg-vermelho-escuro p-3', className)}>
-      <div className="flex min-h-[500px] flex-col border border-vermelho-suave p-8">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-label font-semibold uppercase tracking-wide text-branco-quente/80">
-            {eyebrow}
-          </p>
-          {isOnline ? (
-            <p className="flex flex-shrink-0 items-center gap-2 text-label font-semibold uppercase tracking-wide text-branco-quente/80">
-              <span className="h-2 w-2 rounded-full bg-dourado" aria-hidden="true" />
-              {onlineLabel}
-            </p>
-          ) : null}
-        </div>
+    <div className={clsx('w-full bg-vermelho-escuro p-2 tablet:p-3', className)}>
+      <div className="flex flex-col border border-vermelho-suave/40 p-6 tablet:p-8 web:p-10">
+        {eyebrow || isOnline ? (
+          <div className="mb-5 flex items-center justify-between gap-4">
+            {eyebrow ? <p className="text-label text-vermelho-suave">{eyebrow}</p> : <span />}
+            {isOnline ? (
+              <p className="flex flex-shrink-0 items-center gap-2 text-label text-vermelho-suave">
+                <span className="h-2 w-2 rounded-full bg-dourado" aria-hidden="true" />
+                {onlineLabel}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
-        <h2 className="mt-6 font-display text-h2 font-semibold leading-tight text-branco-quente">
-          {heading}
-        </h2>
+        <Heading className="max-w-2xl font-display text-h2 text-branco-quente">{heading}</Heading>
 
-        <div className="mt-8">
+        <div className="mt-6 max-w-2xl">
           <SearchBar
             value={query}
             onChange={setQuery}
@@ -94,7 +99,7 @@ export function VintexSearchSpotlight({
         </div>
 
         {suggestions.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-4 flex flex-wrap gap-2">
             {suggestions.map((suggestion) => (
               <FilterChip
                 key={suggestion}

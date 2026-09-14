@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import AuthHeader from '@/components/auth/AuthHeader';
 import AuthTabs from '@/components/auth/AuthTabs';
+import Container from '@/components/layout/Container';
 import Button from '@/components/common/Button';
 import InputField from '@/components/common/InputField';
 import { useAuth } from '@/context/useAuth';
@@ -53,10 +54,13 @@ function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-papel">
+    // O cabecalho fica FORA do <main>: um landmark `banner` dentro do `main`
+    // deixa a pagina sem um conteudo principal inequivoco. Mesma montagem do
+    // cadastro, para as duas telas do par serem a mesma tela.
+    <div className="flex min-h-screen flex-col bg-papel">
       <AuthHeader onBack={() => navigate(-1)} />
 
-      <div className="mx-auto flex max-w-md flex-col gap-6 px-4 py-8">
+      <Container as="main" width="narrow" className="flex flex-1 flex-col gap-6 py-8">
         <div className="flex flex-col gap-2">
           <h1 className="font-display text-h2 text-tinta">Entre na Vintex</h1>
           <p className="text-body text-texto-auxiliar">
@@ -71,7 +75,10 @@ function Login() {
           <InputField id="senha" label="Senha" type="password" value={senha} onChange={setSenha} />
 
           {erro ? (
-            <p role="alert" className="text-label text-vermelho-escuro">
+            <p
+              role="alert"
+              className="border border-vermelho-escuro bg-vermelho-suave px-4 py-3 text-body-sm text-vermelho-escuro"
+            >
               {erro}
             </p>
           ) : null}
@@ -83,7 +90,7 @@ function Login() {
           <a
             href="#"
             onClick={(event) => event.preventDefault()}
-            className="text-label text-tinta underline"
+            className="w-fit text-body-sm text-texto-auxiliar underline underline-offset-4 hover:text-vermelho-escuro focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
           >
             Esqueceu sua senha?
           </a>
@@ -92,8 +99,8 @@ function Login() {
             Entrar
           </Button>
         </form>
-      </div>
-    </main>
+      </Container>
+    </div>
   );
 }
 

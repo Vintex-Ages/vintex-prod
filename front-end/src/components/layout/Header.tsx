@@ -1,18 +1,36 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { SearchBar } from '@/components/catalog/SearchBar';
 import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
 import { AccountButton } from './AccountButton';
 import { AccountMenu } from './AccountMenu';
+import Container from './Container';
 import { NAV_LINKS } from './navLinks';
 
 /**
- * Cabeçalho do app — marca, navegação principal e área de conta.
- * Marca e navegação são composição pura sobre tokens, sem regra de negócio.
- * A área de conta é dinâmica: reage a `useAuth()` para mostrar o botão
- * "Conta" (anônimo) ou o nome do usuário (logado), abrindo um `AccountMenu`
- * com as ações correspondentes. Por isso precisa estar dentro de um
- * `<AuthProvider>` e de um `<Router>` (usa `useAuth` e `useNavigate`).
+ * Cabeçalho do app — marca, navegação principal, busca e área de conta.
+ * A área de conta é dinâmica: reage a `useAuth()` para mostrar o botão "Conta"
+ * (anônimo) ou o nome do usuário (logado), abrindo um `AccountMenu` com as
+ * ações correspondentes. Por isso precisa estar dentro de um `<AuthProvider>`
+ * e de um `<Router>`.
+ *
+ * Decisões da revisão visual:
+ *
+ * - **A marca deixa de ser um título.** Estava em `text-h2` (48px), que num
+ *   aparelho de 390px consumia a largura toda e foi o motivo de a navegação
+ *   ficar escondida abaixo de `tablet`. Em `text-h3` a marca continua sendo a
+ *   voz editorial (Fraunces, minúscula) e sobra espaço para o resto.
+ * - **A navegação aparece em todo tamanho de tela.** Eram dois links; abaixo
+ *   de 720px eles simplesmente sumiam e o catálogo só era alcançável pelo
+ *   rodapé. Dois links cabem — um menu sanfonado aqui seria complexidade sem
+ *   motivo.
+ * - **Busca no cabeçalho.** "Comprar" é a prioridade declarada da stakeholder
+ *   e a busca só existia dentro de `/catalog`. Agora ela parte de qualquer
+ *   tela e escreve o termo na URL (`/catalog?q=`), então o resultado tem
+ *   endereço próprio e o "voltar" do navegador funciona.
+ * - **Fixo no topo.** O feed é longo; sem isso a busca e a conta saem de
+ *   alcance depois da primeira rolagem.
  *
  * Usage:
  *   import Header from '@/components/layout/Header';
@@ -20,6 +38,7 @@ import { NAV_LINKS } from './navLinks';
  */
 function Header() {
   const [open, setOpen] = useState(false);
+  const [term, setTerm] = useState('');
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -41,29 +60,73 @@ function Header() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open]);
 
+  function handleSearch(value: string) {
+    const trimmed = value.trim();
+    navigate(trimmed ? `${paths.catalog}?q=${encodeURIComponent(trimmed)}` : paths.catalog);
+  }
+
+  /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
+  const showSearch = pathname !== paths.home && pathname !== paths.catalog;
+
   return (
-    <header className="border-b border-linha bg-papel">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+    <header className="sticky top-0 z-30 border-b border-linha bg-papel">
+      <Container className="flex items-center gap-4 py-3 tablet:gap-6 tablet:py-4">
         <Link
           to={paths.home}
-          className="font-display text-h2 text-tinta hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+          className="shrink-0 font-display text-h3 leading-none text-tinta hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
         >
           vintex
         </Link>
 
-        <nav aria-label="Principal" className="hidden gap-6 tablet:flex">
+        <nav aria-label="Principal" className="flex shrink-0 items-center gap-4 tablet:gap-6">
           {NAV_LINKS.map((link) => (
-            <Link
+            <NavLink
               key={link.href}
               to={link.href}
-              className="font-ui text-body text-tinta hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+              end={link.href === paths.home}
+              className={({ isActive }) =>
+                [
+                  'inline-flex min-h-touch items-center font-ui text-body-sm text-tinta transition-colors tablet:text-body',
+                  'hover:text-vermelho-escuro focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro',
+                  // A rota atual fica sublinhada em vez de mudar de cor: a
+                  // paleta não tem um tom de "ativo" que não seja a cor de ação.
+                  isActive ? 'underline decoration-2 underline-offset-8' : 'no-underline',
+                ].join(' ')
+              }
             >
               {link.label}
-            </Link>
+            </NavLink>
           ))}
         </nav>
 
-        <div className="relative">
+        {/*
+          A busca ocupa o espaço que sobra entre a navegação e a conta. Abaixo
+          de `tablet` ela sai da barra: com 390px o campo ficaria menor que o
+          próprio placeholder — nesse tamanho quem busca entra pelo catálogo,
+          que abre com a barra inteira no topo.
+
+          Nas rotas que já têm a própria busca em tamanho grande (a abertura da
+          home e o catálogo), a do cabeçalho não aparece: eram dois campos
+          idênticos empilhados a 300px um do outro, e o de cima competia com o
+          que a página oferece como ação principal.
+        */}
+        {showSearch ? (
+          <div className="hidden min-w-0 flex-1 justify-center tablet:flex">
+            <div className="w-full max-w-md">
+              <SearchBar
+                value={term}
+                onChange={setTerm}
+                onSubmit={handleSearch}
+                size="sm"
+                placeholder="Busque por peça, marca ou brechó…"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="hidden flex-1 tablet:block" />
+        )}
+
+        <div className="relative ml-auto shrink-0 tablet:ml-0">
           <AccountButton
             label={isAuthenticated ? (user?.name ?? 'Conta') : 'Conta'}
             open={open}
@@ -91,7 +154,7 @@ function Header() {
             </div>
           )}
         </div>
-      </div>
+      </Container>
     </header>
   );
 }

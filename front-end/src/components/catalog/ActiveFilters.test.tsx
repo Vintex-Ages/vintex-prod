@@ -8,7 +8,7 @@ describe('ActiveFilters', () => {
   it('mostra a contagem de resultados mesmo sem filtro ativo', () => {
     render(<ActiveFilters filters={{}} onChange={() => {}} total={12} />);
 
-    expect(screen.getByText('12 resultado(s)')).toBeInTheDocument();
+    expect(screen.getByText('12 peças encontradas')).toBeInTheDocument();
   });
 
   it('renderiza um chip por categoria ativa', () => {

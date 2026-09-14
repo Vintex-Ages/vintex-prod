@@ -10,7 +10,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} />);
 
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('searchbox');
     await user.type(input, '{Enter}');
 
     expect(onSubmit).toHaveBeenCalledWith('camiseta');
@@ -22,7 +22,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole('button', { name: 'Enviar busca' }));
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
 
     expect(onSubmit).toHaveBeenCalledWith('camiseta');
   });
@@ -30,7 +30,7 @@ describe('SearchBar', () => {
   it('usa o placeholder padrão quando nenhum é informado', () => {
     render(<SearchBar value="" onChange={() => {}} onSubmit={() => {}} />);
 
-    expect(screen.getByPlaceholderText('Busque por peça, marca ou brechó…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Busque por peça ou marca')).toBeInTheDocument();
   });
 
   it('aceita um placeholder customizado', () => {
@@ -47,7 +47,9 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="camiseta" onChange={() => {}} onSubmit={onSubmit} loading />);
 
-    const button = screen.getByRole('button', { name: 'Enviar busca' });
+    // Carregando, o botao troca o rotulo pelo giro mais um texto so de leitor
+    // de tela — por isso o nome acessivel deixa de ser "Buscar".
+    const button = screen.getByRole('button', { name: 'Buscando' });
     expect(button).toBeDisabled();
 
     await user.click(button);
@@ -60,7 +62,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar value="" onChange={onChange} onSubmit={() => {}} />);
 
-    await user.type(screen.getByRole('textbox'), 'a');
+    await user.type(screen.getByRole('searchbox'), 'a');
 
     expect(onChange).toHaveBeenCalledWith('a');
   });
