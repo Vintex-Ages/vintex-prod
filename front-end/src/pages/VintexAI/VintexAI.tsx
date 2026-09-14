@@ -146,7 +146,7 @@ export default function VintexAI() {
   }
 
   return (
-    <div className="mx-auto flex h-screen w-full max-w-md flex-col overflow-hidden bg-papel font-ui text-tinta tablet:max-w-2xl web:max-w-none">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-papel font-ui text-tinta">
       <header className="flex items-center gap-4 border-b border-linha px-4 py-4 tablet:px-8 web:px-10">
         <IconButton
           icon={<BackIcon className="h-5 w-5" />}
@@ -157,21 +157,19 @@ export default function VintexAI() {
       </header>
 
       <div className="vintex-chat-scroll flex-1 overflow-y-auto px-4 pb-6 pt-6 tablet:px-8 web:px-10">
-        <div className="mx-auto w-full max-w-md tablet:max-w-2xl web:max-w-6xl">
-          <div className="mx-auto w-full web:max-w-4xl">
-            <IntroPrompt />
-          </div>
+        <div className="mx-auto w-full max-w-3xl">
+          <IntroPrompt />
         </div>
 
-        <hr className="border-linha" />
+        <hr className="mx-auto max-w-3xl border-linha" />
 
-        <div className="mx-auto w-full max-w-md space-y-4 pt-6 tablet:max-w-2xl web:max-w-6xl">
+        <div className="mx-auto w-full max-w-3xl space-y-4 pt-6">
           {messages.map((message) => (
             <div
               key={message.id}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className="w-full tablet:max-w-[70%] web:max-w-[65%]">
+              <div className="w-full tablet:max-w-[75%]">
                 <ChatBubble message={message} />
               </div>
             </div>
@@ -181,8 +179,8 @@ export default function VintexAI() {
       </div>
 
       <div className="border-t border-linha bg-papel px-4 pb-4 pt-3 tablet:px-8 web:px-10">
-        <div className="mx-auto w-full max-w-md tablet:max-w-2xl web:max-w-6xl">
-          <div className="mb-3 flex gap-2 overflow-x-auto">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             {SUGGESTION_CHIPS.map((chip) => (
               <FilterChip key={chip} label={chip} onToggle={() => handleChipClick(chip)} />
             ))}
@@ -192,7 +190,8 @@ export default function VintexAI() {
             value={draft}
             onChange={setDraft}
             onSubmit={handleSearchSubmit}
-            placeholder="Conte o que você quer vestir..."
+            placeholder="Conte o que você quer vestir…"
+            submitLabel="Enviar"
             loading={isSending}
           />
         </div>

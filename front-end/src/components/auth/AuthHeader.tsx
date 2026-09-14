@@ -36,9 +36,18 @@ const ArrowLeftIcon = (
 function AuthHeader({ onBack }: AuthHeaderProps) {
   return (
     <header className={clsx('border-b border-linha bg-papel-profundo')}>
-      <div className={clsx('flex items-center gap-4 px-4 py-3')}>
+      <div
+        className={clsx(
+          'mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3 tablet:px-6 web:px-8',
+        )}
+      >
         <IconButton icon={ArrowLeftIcon} ariaLabel="Voltar" onClick={onBack} variant="primary" />
-        <span className={clsx('font-display text-h2 text-tinta')}>Vintex</span>
+        {/*
+          Mesmo tamanho da marca no `Header` do site (`h3`). Estava em `h2`, que
+          na escala fluida chega a 48px no desktop — a marca ficava maior que o
+          titulo da propria tela de login, logo abaixo dela.
+        */}
+        <span className={clsx('font-display text-h3 leading-none text-tinta')}>vintex</span>
       </div>
     </header>
   );

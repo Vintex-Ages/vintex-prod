@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent, type MouseEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import AuthHeader from '@/components/auth/AuthHeader';
+import AuthTabs from '@/components/auth/AuthTabs';
 import Button from '@/components/common/Button';
 import Checkbox from '@/components/common/Checkbox';
-import IconButton from '@/components/common/IconButton';
 import InputField from '@/components/common/InputField';
+import Container from '@/components/layout/Container';
 import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
 import { isPasswordValid, PASSWORD_POLICY_MESSAGE, register } from '@/services/authService';
@@ -20,21 +22,6 @@ type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep' | 'terms
 function formatCep(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
   return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
-}
-
-function BackIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" />
-    </svg>
-  );
 }
 
 /** Impede o link de navegar e de repassar o clique pro checkbox (ver JSDoc de `Checkbox`). */
@@ -201,38 +188,17 @@ function Register() {
           : undefined;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      <header className="relative flex items-center justify-center border-b border-linha bg-papel-profundo px-4 py-4">
-        <div className="absolute left-4">
-          <IconButton
-            icon={<BackIcon />}
-            ariaLabel="Voltar"
-            onClick={() => navigate(-1)}
-            variant="primary"
-          />
-        </div>
-        <span className="font-display text-h2 text-tinta">Vintex</span>
-      </header>
+    <div className="flex min-h-screen flex-col bg-papel">
+      <AuthHeader onBack={() => navigate(-1)} />
 
-      <main className="mx-auto w-full max-w-md flex-1 bg-white px-4 py-8">
-        <h1 className="font-display text-h2 text-tinta">Entre na sua conta</h1>
+      <Container as="main" width="narrow" className="flex-1 py-8">
+        <h1 className="font-display text-h2 text-tinta">Crie sua conta</h1>
         <p className="mt-2 text-body text-texto-auxiliar">
           Garimpe peças exclusivas ou desapegue do seu armário
         </p>
 
-        <div className="mt-6 flex border-b border-linha">
-          <span
-            aria-current="page"
-            className="flex-1 bg-tinta py-3 text-center text-label font-bold text-branco-quente"
-          >
-            CRIAR CONTA
-          </span>
-          <Link
-            to={paths.login}
-            className="flex-1 py-3 text-center text-label font-bold text-texto-auxiliar hover:text-tinta focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
-          >
-            JÁ TENHO CONTA
-          </Link>
+        <div className="mt-6">
+          <AuthTabs active="register" />
         </div>
 
         <form className="mt-6 flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
@@ -276,8 +242,8 @@ function Register() {
               disabled={submitting}
             />
             {cepStatus === 'resolved' && cepAddress ? (
-              <p className="mt-1 text-label text-vermelho-escuro">
-                📍 {cepAddress.neighborhood}, {cepAddress.city} — {cepAddress.state}
+              <p className="mt-1 text-body-sm text-verde-rs">
+                {cepAddress.neighborhood}, {cepAddress.city} — {cepAddress.state}
               </p>
             ) : null}
           </div>
@@ -328,22 +294,19 @@ function Register() {
           </div>
 
           {submitError ? (
-            <p role="alert" className="text-body text-vermelho-escuro">
+            <p
+              role="alert"
+              className="border border-vermelho-escuro bg-vermelho-suave px-4 py-3 text-body-sm text-vermelho-escuro"
+            >
               {submitError}
             </p>
           ) : null}
 
-          <Button
-            type="submit"
-            variant="primary"
-            fullWidth
-            disabled={submitting}
-            className="uppercase tracking-wide"
-          >
-            {submitting ? 'Criando conta...' : 'Criar conta e personalizar estilos'}
+          <Button type="submit" variant="primary" fullWidth disabled={submitting}>
+            {submitting ? 'Criando conta…' : 'Criar conta e personalizar estilos'}
           </Button>
         </form>
-      </main>
+      </Container>
     </div>
   );
 }

@@ -23,7 +23,7 @@ describe('<AppRoutes />', () => {
     [paths.catalog, 'Catálogo'],
     [productDetail('1'), 'Nike Camiseta Preto'],
     [paths.login, 'Entre na Vintex'],
-    [paths.register, 'Entre na sua conta'],
+    [paths.register, 'Crie sua conta'],
     [paths.onboarding, 'Qual é a sua estética?'],
     [paths.vintexAi, 'Conversa com a Vintex'],
   ])('renders the page mapped to %s', async (path, heading) => {
@@ -58,7 +58,7 @@ describe('<AppRoutes />', () => {
 
   it('falls back to the 404 page for an unknown route', () => {
     renderAt('/rota-que-nao-existe');
-    expect(screen.getByRole('heading', { name: /não encontrada/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /não existe/i })).toBeInTheDocument();
   });
 
   it('veste o 404 com o esqueleto, para quem errou a URL ter volta', () => {

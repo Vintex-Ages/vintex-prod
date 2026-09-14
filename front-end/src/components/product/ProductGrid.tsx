@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { EmptyState } from '@/components/common/EmptyState';
 import { FavoriteButton } from '@/components/common/FavoriteButton';
 import ProductCard from '@/components/product/ProductCard';
@@ -21,6 +22,13 @@ type ProductGridProps = {
   productPath?: (id: string) => string;
   onToggleFavorite?: (id: string) => void;
   isFavorite?: (id: string) => boolean;
+  /**
+   * Estado vazio da tela. A grade não sabe *por que* está vazia — "ainda não
+   * há peças" e "nenhuma peça com esses filtros" pedem textos e saídas
+   * diferentes, e isso é contexto da página (`.ai/coding-rules.md`). Sem a
+   * prop, cai num texto neutro.
+   */
+  emptyState?: ReactNode;
 };
 
 /**
@@ -38,18 +46,26 @@ type ProductGridProps = {
  *   isFavorite={(id) => favorites.includes(id)}
  * />
  */
+/**
+ * Colunas da grade, num lugar só para o skeleton e a lista não divergirem.
+ * `gap` cresce com a tela: 16px no celular, onde a margem lateral já é curta,
+ * e 24px a partir de `tablet`, onde cartões colados ficam densos demais.
+ */
+const gridClassName = 'grid grid-cols-2 gap-4 tablet:grid-cols-3 tablet:gap-6 web:grid-cols-4';
+
 export function ProductGrid({
   products,
   loading = false,
-  skeletonCount = 6,
+  skeletonCount = 8,
   onOpen,
   productPath,
   onToggleFavorite,
   isFavorite,
+  emptyState,
 }: ProductGridProps) {
   if (loading) {
     return (
-      <div className="grid grid-cols-2 gap-4 tablet:grid-cols-3 web:grid-cols-4">
+      <div className={gridClassName}>
         {Array.from({ length: skeletonCount }).map((_, index) => (
           <ProductCardSkeleton key={index} />
         ))}
@@ -58,11 +74,11 @@ export function ProductGrid({
   }
 
   if (products.length === 0) {
-    return <EmptyState message="Nenhuma peça encontrada no momento." />;
+    return <>{emptyState ?? <EmptyState message="Nenhuma peça encontrada no momento." />}</>;
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 tablet:grid-cols-3 web:grid-cols-4">
+    <div className={gridClassName}>
       {products.map((product) => (
         <ProductCard
           key={product.id}

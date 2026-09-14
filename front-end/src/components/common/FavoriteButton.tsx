@@ -21,7 +21,7 @@ export function FavoriteButton({ active, onToggle, ariaLabel, disabled }: Favori
       disabled={disabled}
       aria-pressed={active}
       aria-label={ariaLabel ?? (active ? 'Remover dos favoritos' : 'Adicionar aos favoritos')}
-      className="inline-flex items-center justify-center p-2 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex min-h-touch min-w-touch items-center justify-center bg-branco-quente/90 p-2 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta disabled:cursor-not-allowed disabled:opacity-50"
     >
       <svg
         viewBox="0 0 24 24"

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -37,7 +37,7 @@ describe('Catalog', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Camiseta')).toBeInTheDocument();
-      expect(screen.getByText('1 resultado(s)')).toBeInTheDocument();
+      expect(screen.getByText('1 peça encontrada')).toBeInTheDocument();
     });
 
     expect(search).toHaveBeenCalledWith('', {});
@@ -56,7 +56,7 @@ describe('Catalog', () => {
       expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'Roupas' }));
     });
 
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('searchbox');
     await user.type(input, 'camiseta{Enter}');
 
     await waitFor(() => {
@@ -99,8 +99,9 @@ describe('Catalog', () => {
 
     renderCatalog();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Não foi possível carregar os produtos.',
-    );
+    // O erro virou um `ErrorState` com titulo e acao, em vez de um <p> solto.
+    const alerta = await screen.findByRole('alert');
+    expect(alerta).toHaveTextContent('Não foi possível carregar as peças agora.');
+    expect(within(alerta).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
   });
 });

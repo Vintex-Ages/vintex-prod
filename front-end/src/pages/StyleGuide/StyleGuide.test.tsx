@@ -23,7 +23,12 @@ describe('<StyleGuide />', () => {
 
   it('shows the type scale and the three breakpoints', () => {
     render(<StyleGuide />);
-    expect(screen.getByText(/display · 6rem/i)).toBeTruthy();
+    // O guia mostra um exemplo por degrau da escala, com o valor do token ao
+    // lado. `display` e fluido, entao o valor e um clamp(), nao uma medida so.
+    for (const token of ['display', 'h1', 'h2', 'h3', 'h4', 'body', 'body-sm', 'label']) {
+      expect(screen.getByText(new RegExp(`${token} ·`, 'i'))).toBeTruthy();
+    }
+    expect(screen.getByText(/display · clamp\(/i)).toBeTruthy();
     for (const name of ['mobile', 'tablet', 'web']) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);
     }

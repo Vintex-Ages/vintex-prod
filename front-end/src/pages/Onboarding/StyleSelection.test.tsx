@@ -62,9 +62,7 @@ describe('StyleSelection', () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Salvar estilos e abrir meu feed' }),
-    );
+    await user.click(await screen.findByRole('button', { name: /abrir meu feed/i }));
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
   });
 

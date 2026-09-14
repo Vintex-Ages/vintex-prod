@@ -116,7 +116,7 @@ describe('<ProductDetail />', () => {
   it('mostra "produto não encontrado" para um id inexistente', async () => {
     renderAt('/product/inexistente');
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/não encontrado/i));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/não encontrada/i));
   });
 
   it('botão de ação final mostra "Comprar Agora" com o preço', async () => {

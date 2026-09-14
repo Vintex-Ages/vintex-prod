@@ -7,6 +7,14 @@ interface VintexAIButtonProps {
   onClick: () => void;
   /** Texto lido por leitores de tela. */
   ariaLabel?: string;
+  /**
+   * Sobe o botão acima de uma barra ancorada no rodapé da viewport (a de
+   * comprar/favoritar do detalhe da peça). Existe como prop, e não como classe
+   * passada por fora, porque `bottom-24` e o `bottom-5` da base são utilitários
+   * do mesmo grupo: quem vence é a ordem na folha de estilo, não a ordem na
+   * lista de classes, então sobrescrever por `className` é sorte, não regra.
+   */
+  raised?: boolean;
   className?: string;
 }
 
@@ -17,16 +25,19 @@ interface VintexAIButtonProps {
  * Usage:
  *   import { VintexAIButton } from '@/components/vintex-ai/VintexAIButton';
  *   <VintexAIButton onClick={() => navigate('/vintex')} />
+ *   <VintexAIButton onClick={abrir} raised />
  */
 export function VintexAIButton({
   onClick,
   ariaLabel = 'Abrir assistente Vintex',
+  raised = false,
   className,
 }: VintexAIButtonProps) {
   return (
     <div
       className={clsx(
-        'fixed bottom-5 right-5 z-50 h-11 w-11 overflow-hidden rounded-full',
+        'fixed right-5 z-40 h-11 w-11 overflow-hidden rounded-full',
+        raised ? 'bottom-24 web:bottom-5' : 'bottom-5',
         'shadow-lg shadow-tinta/30',
         'transition-transform duration-150 ease-out active:scale-90',
         'motion-reduce:transition-none motion-reduce:active:scale-100',

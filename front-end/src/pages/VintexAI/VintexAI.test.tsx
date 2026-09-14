@@ -33,7 +33,7 @@ describe('VintexAI page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Look para um jantar' }));
 
-    expect(screen.getByRole('textbox', { name: 'Buscar' })).toHaveValue('Look para um jantar');
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue('Look para um jantar');
   });
 
   it('enviar uma mensagem adiciona a bolha do usuário e, depois, a resposta da Vintex', async () => {
@@ -46,9 +46,9 @@ describe('VintexAI page', () => {
 
     renderPage();
 
-    const input = screen.getByRole('textbox', { name: 'Buscar' });
+    const input = screen.getByRole('searchbox', { name: 'Buscar' });
     fireEvent.change(input, { target: { value: 'quero um look de festa' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar busca' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
 
     expect(screen.getByText('quero um look de festa')).toBeInTheDocument();
     expect(input).toHaveValue('');
@@ -82,10 +82,10 @@ describe('VintexAI page', () => {
 
     renderPage();
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
       target: { value: 'algo' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar busca' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
 
     await waitFor(() => {
       expect(

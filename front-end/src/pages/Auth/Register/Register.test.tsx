@@ -54,7 +54,7 @@ async function preencherCamposObrigatorios(user: ReturnType<typeof userEvent.set
   await user.type(screen.getByLabelText('Nome completo'), 'Ana Compradora');
   await user.type(screen.getByLabelText('E-mail'), 'ana@exemplo.com');
   await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
-  await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
   await user.type(screen.getByLabelText('Senha'), 'senha1234');
   await user.click(screen.getByRole('checkbox'));
 }
@@ -88,7 +88,7 @@ describe('<Register />', () => {
 
     await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
 
-    await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
     expect(mockedLookup).toHaveBeenCalledWith('90035072');
   });
 
@@ -214,7 +214,7 @@ describe('<Register />', () => {
     await user.type(screen.getByLabelText('Nome completo'), 'Ana Compradora');
     await user.type(screen.getByLabelText('E-mail'), 'email-sem-formato-valido');
     await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
-    await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
     // Senha curta: tem letra e número, mas só 4 caracteres — não cumpre o mínimo de 8.
     await user.type(screen.getByLabelText('Senha'), 'ab12');
     await user.click(screen.getByRole('checkbox'));
@@ -238,7 +238,7 @@ describe('<Register />', () => {
     await user.type(screen.getByLabelText('Nome completo'), 'Ana Compradora');
     await user.type(screen.getByLabelText('E-mail'), 'ana@exemplo.com');
     await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
-    await waitFor(() => expect(screen.getByText('📍 Bom Fim, Porto Alegre — RS')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
     await user.type(screen.getByLabelText('Senha'), '12345678');
     await user.click(screen.getByRole('checkbox'));
 
@@ -252,11 +252,11 @@ describe('<Register />', () => {
     expect(mockedRegister).not.toHaveBeenCalled();
   });
 
-  it('"JÁ TENHO CONTA" navega para a tela de login', async () => {
+  it('"Já tenho conta" navega para a tela de login', async () => {
     const user = userEvent.setup();
     renderRegister();
 
-    await user.click(screen.getByRole('link', { name: 'JÁ TENHO CONTA' }));
+    await user.click(screen.getByRole('link', { name: 'Já tenho conta' }));
 
     expect(screen.getByText('Tela de login')).toBeTruthy();
   });

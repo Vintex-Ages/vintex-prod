@@ -20,10 +20,15 @@ const config: Config = {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     screens: tokens.screens,
+    // Substituicao, nao extensao: fora da pilula o sistema vai ate 2px
+    // (`radius/sm` no Figma), entao `rounded-md`/`lg`/`xl` nao devem existir.
+    borderRadius: tokens.borderRadius,
     extend: {
       colors: tokens.colors,
       fontFamily: tokens.fontFamily,
       fontSize: tokens.fontSize,
+      minHeight: { touch: tokens.touchTarget },
+      minWidth: { touch: tokens.touchTarget },
     },
   },
   plugins: [],

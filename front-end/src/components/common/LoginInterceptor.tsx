@@ -15,7 +15,7 @@ export type LoginInterceptorProps = {
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-const actionClassName = 'uppercase tracking-wide';
+const actionClassName = 'font-semibold';
 
 /**
  * Overlay que interrompe uma ação que exige login (FE-US001-2, FE-US012-5).
@@ -95,7 +95,11 @@ function LoginInterceptor({
         className="w-11/12 max-w-sm border border-linha bg-branco-quente p-6 web:max-w-md"
       >
         <div className="flex items-start justify-between gap-4">
-          <h2 id={titleId} className="font-display text-h2 text-tinta">
+          {/*
+            `h3`, nao `h2`: com 48px num cartao de 384px o titulo ocupava quatro
+            linhas e empurrava os botoes para fora da dobra no celular.
+          */}
+          <h2 id={titleId} className="font-display text-h3 text-tinta">
             {title}
           </h2>
 
@@ -130,7 +134,7 @@ function LoginInterceptor({
           <Button
             variant="outline"
             onClick={onRegister}
-            className={`${actionClassName} font-bold web:order-1 web:flex-1`}
+            className={`${actionClassName} web:order-1 web:flex-1`}
           >
             Criar conta
           </Button>
