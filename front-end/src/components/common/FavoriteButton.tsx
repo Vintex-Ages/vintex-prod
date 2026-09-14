@@ -2,24 +2,26 @@ type FavoriteButtonProps = {
   active: boolean;
   onToggle: () => void;
   ariaLabel?: string;
+  disabled?: boolean;
 };
 
 /**
  * Botão de favoritar — apenas apresentação e comportamento genérico (toggle).
- * Sem regra de negócio: quem chama decide o que active / onToggle significam.
+ * Sem regra de negócio: quem chama decide o que active / onToggle / disabled significam.
  *
  * Usage:
  * import { FavoriteButton } from '@/components/common/FavoriteButton';
  * <FavoriteButton active={isFavorito} onToggle={() => setFavorito((v) => !v)} />
  */
-export function FavoriteButton({ active, onToggle, ariaLabel }: FavoriteButtonProps) {
+export function FavoriteButton({ active, onToggle, ariaLabel, disabled }: FavoriteButtonProps) {
   return (
     <button
       type="button"
       onClick={onToggle}
+      disabled={disabled}
       aria-pressed={active}
       aria-label={ariaLabel ?? (active ? 'Remover dos favoritos' : 'Adicionar aos favoritos')}
-      className="inline-flex items-center justify-center p-2 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+      className="inline-flex items-center justify-center p-2 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta disabled:cursor-not-allowed disabled:opacity-50"
     >
       <svg
         viewBox="0 0 24 24"

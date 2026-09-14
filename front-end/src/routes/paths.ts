@@ -9,6 +9,11 @@ export const paths = {
   product: '/product/:id',
   login: '/login',
   register: '/register',
+  /**
+   * Onboarding: a seleção de estilos (FE-US004-1). Estava sob
+   * `/style-guide/selection`, aninhada na rota do guia interno, enquanto o
+   * cadastro navegava para `/onboarding`, que renderizava um placeholder.
+   */
   onboarding: '/onboarding',
   styleGuide: '/style-guide',
 } as const;
