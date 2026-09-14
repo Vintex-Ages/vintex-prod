@@ -1,5 +1,6 @@
 import { FilterChip } from '@/components/catalog/FilterChip';
 import type { CatalogFilters } from '@/types/catalog';
+import { CATEGORIES } from '@/components/catalog/categories';
 
 type ActiveFiltersProps = {
   filters: CatalogFilters;
@@ -13,11 +14,14 @@ type ActiveEntry = {
   next: CatalogFilters;
 };
 
-const categoryLabels: Record<string, string> = {
-  roupas: 'Roupas',
-  acessorios: 'Acessórios',
-  calcados: 'Calçados',
-};
+/**
+ * Rótulo do chip derivado da mesma lista que o `FilterPanel` envia, para os
+ * dois não divergirem. O valor gravado é o do dado ("Sapatos"), o rótulo é o
+ * da tela ("Calçados").
+ */
+const categoryLabels: Record<string, string> = Object.fromEntries(
+  CATEGORIES.filter((c) => c.value).map((c) => [c.value as string, c.label]),
+);
 
 function getActiveEntries(filters: CatalogFilters): ActiveEntry[] {
   const entries: ActiveEntry[] = [];

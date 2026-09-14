@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '@/components/catalog/SearchBar';
+import { ProductGrid } from '@/components/product/ProductGrid';
 import FilterPanel from '@/components/catalog/FilterPanel';
 import ActiveFilters from '@/components/catalog/ActiveFilters';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
+import { productDetail } from '@/routes/paths';
 import type { FilterParams, Product } from '@/types/product';
 
 /**
@@ -28,6 +31,7 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
 }
 
 function Catalog() {
+  const navigate = useNavigate();
   const [inputValue, setInputValue] = useState('');
   const [term, setTerm] = useState('');
   const [filters, setFilters] = useState<CatalogFilters>({});
@@ -73,18 +77,19 @@ function Catalog() {
         <p className="text-body text-vermelho-escuro">Não foi possível carregar os produtos.</p>
       )}
 
-      {!error && !loading && items.length === 0 && (
-        <p className="text-body text-texto-auxiliar">Nenhum produto encontrado.</p>
+      {/*
+        Grade do design system, em vez de <li> manual: traz foto, loja, preço em
+        pt-BR, skeleton de carregamento, estado vazio e link real para a peça.
+        O #169 relaxou o tipo do ProductCard para aceitar `Product`, então o
+        resultado da busca encaixa direto.
+      */}
+      {!error && (
+        <ProductGrid
+          products={items}
+          loading={loading}
+          onOpen={(id) => navigate(productDetail(id))}
+        />
       )}
-
-      <ul className="grid gap-4 tablet:grid-cols-2 web:grid-cols-3">
-        {items.map((item) => (
-          <li key={item.id} className="rounded-lg border border-linha bg-branco-quente p-3">
-            <p className="font-ui text-body font-bold text-tinta">{item.name}</p>
-            <p className="font-ui text-body text-texto-auxiliar">R$ {item.price.toFixed(2)}</p>
-          </li>
-        ))}
-      </ul>
     </main>
   );
 }

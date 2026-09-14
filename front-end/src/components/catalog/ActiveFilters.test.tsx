@@ -12,7 +12,7 @@ describe('ActiveFilters', () => {
   });
 
   it('renderiza um chip por categoria ativa', () => {
-    const filters: CatalogFilters = { category: 'roupas' };
+    const filters: CatalogFilters = { category: 'Roupas' };
     render(<ActiveFilters filters={filters} onChange={() => {}} total={3} />);
 
     expect(screen.getByText('Roupas')).toBeInTheDocument();
@@ -41,16 +41,23 @@ describe('ActiveFilters', () => {
   it('remove minPrice e maxPrice juntos ao clicar no chip de preço', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
-    const filters: CatalogFilters = { minPrice: 0, maxPrice: 200, category: 'roupas' };
+    const filters: CatalogFilters = { minPrice: 0, maxPrice: 200, category: 'Roupas' };
 
     render(<ActiveFilters filters={filters} onChange={onChange} total={5} />);
 
     await user.click(screen.getByRole('button', { name: 'Remover R$ 0 - R$ 200' }));
 
     expect(onChange).toHaveBeenCalledWith({
-      category: 'roupas',
+      category: 'Roupas',
       minPrice: undefined,
       maxPrice: undefined,
     });
+  });
+  it('mostra o rótulo da tela para o valor gravado no dado', () => {
+    // "Calçados" é o rótulo; o dado (mock e seed) grava "Sapatos". É o único
+    // mapeamento em que os dois não coincidem.
+    render(<ActiveFilters filters={{ category: 'Sapatos' }} onChange={vi.fn()} total={2} />);
+
+    expect(screen.getByText('Calçados')).toBeInTheDocument();
   });
 });

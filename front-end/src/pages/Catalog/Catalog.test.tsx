@@ -1,8 +1,21 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import Catalog from './Catalog';
 import { search } from '@/services/catalogService';
+
+/** A página navega para o detalhe, então precisa de contexto de router. */
+function renderCatalog() {
+  return render(
+    <MemoryRouter initialEntries={['/catalog']}>
+      <Routes>
+        <Route path="/catalog" element={<Catalog />} />
+        <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 vi.mock('@/services/catalogService', () => ({
   search: vi.fn(),
@@ -20,7 +33,7 @@ describe('Catalog', () => {
   it('busca produtos ao montar e mostra a contagem', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 
-    render(<Catalog />);
+    renderCatalog();
 
     await waitFor(() => {
       expect(screen.getByText('Camiseta')).toBeInTheDocument();
@@ -34,13 +47,13 @@ describe('Catalog', () => {
     vi.mocked(search).mockResolvedValue(mockResult);
     const user = userEvent.setup();
 
-    render(<Catalog />);
+    renderCatalog();
     await waitFor(() => expect(search).toHaveBeenCalled());
 
     await user.click(screen.getByRole('button', { name: 'Roupas' }));
 
     await waitFor(() => {
-      expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'roupas' }));
+      expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'Roupas' }));
     });
 
     const input = screen.getByRole('textbox');
@@ -49,7 +62,7 @@ describe('Catalog', () => {
     await waitFor(() => {
       expect(search).toHaveBeenLastCalledWith(
         'camiseta',
-        expect.objectContaining({ category: 'roupas' }),
+        expect.objectContaining({ category: 'Roupas' }),
       );
     });
   });

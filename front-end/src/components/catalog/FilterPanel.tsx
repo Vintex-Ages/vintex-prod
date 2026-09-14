@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FilterChip } from '@/components/catalog/FilterChip';
+import { CATEGORIES } from '@/components/catalog/categories';
 import FilterToggle from '@/components/catalog/FilterToggle';
 import FilterCheckboxGroup from '@/components/catalog/FilterCheckboxGroup';
 import type { CatalogFilters } from '@/types/catalog';
@@ -12,13 +13,6 @@ type FilterPanelProps = {
   conditionOptions?: string[];
   colorOptions?: string[];
 };
-
-const categories = [
-  { label: 'Tudo', value: undefined },
-  { label: 'Roupas', value: 'roupas' },
-  { label: 'Acessórios', value: 'acessorios' },
-  { label: 'Calçados', value: 'calcados' },
-];
 
 /**
  * Painel de filtros do catálogo.
@@ -63,7 +57,7 @@ function FilterPanel({
   return (
     <section aria-label="Filtros do catálogo">
       <div className="flex items-center gap-2 overflow-x-auto">
-        {categories.map((category) => (
+        {CATEGORIES.map((category) => (
           <FilterChip
             key={category.label}
             label={category.label}
