@@ -34,15 +34,42 @@ const SAMPLE_CART: Cart = {
     {
       store: { id: '1', name: 'Loja A' },
       items: [
-        { product: { id: '1', name: 'Peça 1', price: 10, coverImageUrl: null, store: { id: '1', name: 'Loja A' } }, addedAt: '2026-01-01T00:00:00Z' },
-        { product: { id: '2', name: 'Peça 2', price: 20, coverImageUrl: null, store: { id: '1', name: 'Loja A' } }, addedAt: '2026-01-01T00:00:00Z' },
+        {
+          product: {
+            id: '1',
+            name: 'Peça 1',
+            price: 10,
+            coverImageUrl: null,
+            store: { id: '1', name: 'Loja A' },
+          },
+          addedAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          product: {
+            id: '2',
+            name: 'Peça 2',
+            price: 20,
+            coverImageUrl: null,
+            store: { id: '1', name: 'Loja A' },
+          },
+          addedAt: '2026-01-01T00:00:00Z',
+        },
       ],
       subtotalCents: 3000,
     },
     {
       store: { id: '2', name: 'Loja B' },
       items: [
-        { product: { id: '3', name: 'Peça 3', price: 5, coverImageUrl: null, store: { id: '2', name: 'Loja B' } }, addedAt: '2026-01-01T00:00:00Z' },
+        {
+          product: {
+            id: '3',
+            name: 'Peça 3',
+            price: 5,
+            coverImageUrl: null,
+            store: { id: '2', name: 'Loja B' },
+          },
+          addedAt: '2026-01-01T00:00:00Z',
+        },
       ],
       subtotalCents: 500,
     },

@@ -174,7 +174,8 @@ function mapApiCartItem(item: ApiCartItem): CartItem {
 /** Normaliza erro do axios pro mesmo `ApiError` do authService — sem `field`, o carrinho não tem campo de formulário. */
 function toApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
-    const body = error.response?.data as { error?: { code?: string; message?: string } } | undefined;
+    const body = error.response?.data as
+      { error?: { code?: string; message?: string } } | undefined;
     const apiError = body?.error;
     return {
       code: apiError?.code && apiError.code.length > 0 ? apiError.code : 'API_ERROR',
