@@ -31,14 +31,7 @@ export type ToastProps = {
  *     onClose={() => {}}
  *   />
  */
-function Toast({
-  message,
-  kind = 'info',
-  action,
-  onClose,
-  onPause,
-  onResume,
-}: ToastProps) {
+function Toast({ message, kind = 'info', action, onClose, onPause, onResume }: ToastProps) {
   const role = kind === 'error' ? 'alert' : 'status';
 
   const borderClass = clsx({

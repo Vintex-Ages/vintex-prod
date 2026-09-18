@@ -1,20 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import Toast, {
-  type ToastAction,
-  type ToastKind,
-} from '@/components/common/Toast';
-import {
-  ToastContext,
-  type ToastContextValue,
-  type ToastOptions,
-} from './useToast';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Toast, { type ToastAction, type ToastKind } from '@/components/common/Toast';
+import { ToastContext, type ToastContextValue, type ToastOptions } from './useToast';
 
 type ToastItem = {
   id: number;
@@ -58,9 +44,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
     timers.current.delete(id);
 
-    setToasts((current) =>
-      current.filter((item) => item.id !== id),
-    );
+    setToasts((current) => current.filter((item) => item.id !== id));
   }, []);
 
   const startTimer = useCallback(
@@ -92,10 +76,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timers.current.set(id, {
       timeoutId: null,
       startedAt: timer.startedAt,
-      remainingMs: Math.max(
-        0,
-        timer.remainingMs - elapsed,
-      ),
+      remainingMs: Math.max(0, timer.remainingMs - elapsed),
     });
   }, []);
 
@@ -121,8 +102,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         id,
         message,
         kind: options.kind ?? 'info',
-        durationMs:
-          options.durationMs ?? DEFAULT_DURATION_MS,
+        durationMs: options.durationMs ?? DEFAULT_DURATION_MS,
         action: options.action,
       };
 
@@ -146,10 +126,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const value = useMemo<ToastContextValue>(
-    () => ({ toast }),
-    [toast],
-  );
+  const value = useMemo<ToastContextValue>(() => ({ toast }), [toast]);
 
   return (
     <ToastContext.Provider value={value}>
@@ -160,10 +137,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-label="Notificações"
       >
         {toasts.map((item) => (
-          <div
-            key={item.id}
-            className="pointer-events-auto motion-reduce:transition-none"
-          >
+          <div key={item.id} className="pointer-events-auto motion-reduce:transition-none">
             <Toast
               message={item.message}
               kind={item.kind}

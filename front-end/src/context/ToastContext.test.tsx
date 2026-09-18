@@ -40,10 +40,7 @@ describe('ToastProvider', () => {
 
     render(
       <ToastProvider>
-        <ToastTrigger
-          message="Peça adicionada ao carrinho"
-          durationMs={1000}
-        />
+        <ToastTrigger message="Peça adicionada ao carrinho" durationMs={1000} />
       </ToastProvider>,
     );
 
@@ -53,27 +50,20 @@ describe('ToastProvider', () => {
       }),
     );
 
-    expect(
-      screen.getByText('Peça adicionada ao carrinho'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Peça adicionada ao carrinho')).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1000);
     });
 
-    expect(
-      screen.queryByText('Peça adicionada ao carrinho'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Peça adicionada ao carrinho')).not.toBeInTheDocument();
   });
 
   // Objetivo: garantir a acessibilidade de mensagens de erro.
   it('usa role alert para toast de erro', () => {
     render(
       <ToastProvider>
-        <ToastTrigger
-          message="Não foi possível concluir a ação"
-          kind="error"
-        />
+        <ToastTrigger message="Não foi possível concluir a ação" kind="error" />
       </ToastProvider>,
     );
 
@@ -83,9 +73,7 @@ describe('ToastProvider', () => {
       }),
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Não foi possível concluir a ação',
-    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível concluir a ação');
   });
 
   it('pausa o auto-dismiss no hover e retoma ao sair', () => {
@@ -93,10 +81,7 @@ describe('ToastProvider', () => {
 
     render(
       <ToastProvider>
-        <ToastTrigger
-          message="Toast temporário"
-          durationMs={1000}
-        />
+        <ToastTrigger message="Toast temporário" durationMs={1000} />
       </ToastProvider>,
     );
 
