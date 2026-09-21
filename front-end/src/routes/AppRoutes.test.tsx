@@ -88,4 +88,43 @@ describe('<AppRoutes />', () => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
   });
+
+  // --- #207: pontos de entrada da Vintex (FAB) ---
+
+  it.each([paths.home, paths.catalog, productDetail('1')])(
+    'mostra o FAB da Vintex em %s (dentro do Layout)',
+    async (path) => {
+      renderAt(path);
+      expect(
+        await screen.findByRole('button', { name: 'Abrir assistente Vintex' }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it.each([paths.vintex, paths.login, paths.register])(
+    'não mostra o FAB da Vintex em %s (fora do Layout, de propósito)',
+    async (path) => {
+      renderAt(path);
+      await screen.findByRole('heading', { level: 1 });
+      expect(
+        screen.queryByRole('button', { name: 'Abrir assistente Vintex' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('no detalhe do produto, o FAB sobe (raised) para não sobrepor a barra fixa', async () => {
+    renderAt(productDetail('1'));
+
+    const fab = await screen.findByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-24');
+    expect(fab.parentElement).toHaveClass('web:bottom-5');
+  });
+
+  it('na Home (sem barra fixa), o FAB fica na posição padrão, não raised', async () => {
+    renderAt(paths.home);
+
+    const fab = await screen.findByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-5');
+    expect(fab.parentElement).not.toHaveClass('bottom-24');
+  });
 });
