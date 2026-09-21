@@ -1,8 +1,14 @@
 ﻿import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import Layout from './Layout';
+
+/** Só pra ler a rota atual do MemoryRouter depois do clique no FAB. */
+function LocationProbe() {
+  const location = useLocation();
+  return <p data-testid="location-probe">{location.pathname}</p>;
+}
 
 afterEach(cleanup);
 
@@ -52,5 +58,46 @@ describe('<Layout />', () => {
     // vez de `h2`, os dois cabem — e dois links nao justificam um menu sanfonado.
     const nav = screen.getByRole('navigation', { name: 'Principal' });
     expect(nav).not.toHaveClass('hidden');
+  });
+
+  // --- #207: FAB da Vintex só no mobile/tablet, spotlight assume no web ---
+
+  it('renderiza o FAB da Vintex escondido a partir do tablet (só mobile)', () => {
+    renderLayout(null);
+
+    const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('tablet:hidden');
+  });
+
+  it('sobe o FAB (raised) quando bottomSpacer é true, sem sobrepor a barra fixa', () => {
+    renderLayout(null, true);
+
+    const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-24');
+    expect(fab.parentElement).toHaveClass('web:bottom-5');
+  });
+
+  it('mantém o FAB na posição padrão quando bottomSpacer é false', () => {
+    renderLayout(null);
+
+    const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-5');
+    expect(fab.parentElement).not.toHaveClass('bottom-24');
+  });
+
+  it('clicar no FAB navega para /vintex', () => {
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Layout>
+            <LocationProbe />
+          </Layout>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir assistente Vintex' }));
+
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/vintex');
   });
 });
