@@ -72,18 +72,34 @@ function Home() {
   return (
     <main>
       <Container className="pt-6 tablet:pt-8">
-        <VintexSearchSpotlight
-          headingAs="h1"
-          heading="Garimpe a peça certa nos brechós do Rio Grande do Sul."
-          // Sem eyebrow e sem selo "Online": a assistente ainda não responde de
-          // verdade, e anunciar disponibilidade que não existe é promessa que a
-          // própria demonstração desmente.
-          eyebrow=""
-          isOnline={false}
-          suggestions={SUGGESTIONS}
-          placeholder="O que você procura?"
-          onSubmit={(query) => navigate(`${paths.catalog}?q=${encodeURIComponent(query)}`)}
-        />
+        {/*
+          A partir de #207: o spotlight é o caminho em destaque a partir do
+          `tablet` (RN-94) — no mobile o FAB (Layout) já cobre esse papel, e
+          um bloco vermelho ocupando a dobra inteira não cabe bem numa tela
+          estreita. Sem ele, a página perderia o `h1`, por isso o heading
+          equivalente fica visível só no mobile.
+        */}
+        <h1 className="font-display text-h2 text-tinta tablet:hidden">
+          Garimpe a peça certa nos brechós do Rio Grande do Sul.
+        </h1>
+
+        <div className="hidden tablet:block">
+          <VintexSearchSpotlight
+            headingAs="h1"
+            heading="Garimpe a peça certa nos brechós do Rio Grande do Sul."
+            // Sem eyebrow e sem selo "Online": a assistente ainda não responde de
+            // verdade, e anunciar disponibilidade que não existe é promessa que a
+            // própria demonstração desmente.
+            eyebrow=""
+            isOnline={false}
+            suggestions={SUGGESTIONS}
+            placeholder="O que você procura?"
+            // Enviar pelo spotlight é a via principal da IA (RN-94): leva direto
+            // para a conversa já com a pergunta, não para a busca tradicional do
+            // catálogo (#143 lê `location.state.message`).
+            onSubmit={(query) => navigate(paths.vintex, { state: { message: query } })}
+          />
+        </div>
       </Container>
 
       <Container
