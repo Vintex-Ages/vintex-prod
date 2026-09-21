@@ -26,11 +26,13 @@ const closingIssues = [
 
 if (base === "main" && head !== "develop")
   errors.push("main aceita somente Pull Requests de develop.");
+if (base === "deploy" && head !== "main")
+  errors.push("deploy aceita somente Pull Requests de main.");
 if (base === "develop" && !promotionMatch && !workBranch)
   errors.push(
     `Branch ${head} não é uma promoção nem uma branch de trabalho válida.`,
   );
-if (!["main", "develop"].includes(base))
+if (!["main", "develop", "deploy"].includes(base))
   errors.push(`Base ${base} não é permitida.`);
 
 const api = async (path) => {
