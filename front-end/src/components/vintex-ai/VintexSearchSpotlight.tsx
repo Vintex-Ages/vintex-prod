@@ -83,11 +83,7 @@ export function VintexSearchSpotlight({
 
   return (
     <div
-      className={clsx(
-        'w-full bg-vermelho-escuro',
-        compact ? 'p-2' : 'p-2 tablet:p-3',
-        className,
-      )}
+      className={clsx('w-full bg-vermelho-escuro', compact ? 'p-2' : 'p-2 tablet:p-3', className)}
     >
       <div
         className={clsx(
@@ -96,7 +92,9 @@ export function VintexSearchSpotlight({
         )}
       >
         {eyebrow || isOnline ? (
-          <div className={clsx('flex items-center justify-between gap-4', compact ? 'mb-3' : 'mb-5')}>
+          <div
+            className={clsx('flex items-center justify-between gap-4', compact ? 'mb-3' : 'mb-5')}
+          >
             {eyebrow ? <p className="text-label text-vermelho-suave">{eyebrow}</p> : <span />}
             {isOnline ? (
               <p className="flex flex-shrink-0 items-center gap-2 text-label text-vermelho-suave">
