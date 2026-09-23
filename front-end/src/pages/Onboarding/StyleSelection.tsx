@@ -6,8 +6,8 @@ import Checkbox from '@/components/common/Checkbox';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { paths } from '@/routes/paths';
-import { getStyles } from '@/services/preferenceService';
-import type { StyleOption } from '@/types/preference';
+import { getStyles, savePreferences } from '@/services/preferenceService';
+import type { Preference, StyleOption } from '@/types/preference';
 
 /** Quantos estilos a tela pede para a curadoria fazer sentido. */
 const RECOMMENDED = 2;
@@ -64,6 +64,23 @@ function StyleSelection() {
   }
 
   const count = selected.length;
+
+  async function handleContinue() {
+    if (count > 0) {
+      const prefs: Preference[] = selected.map((value) => {
+        const style = styles.find((item) => item.value === value);
+        return { type: style?.type ?? 'estilo', value };
+      });
+
+      try {
+        await savePreferences(prefs);
+      } catch {
+        // Falha ao salvar não pode travar o fluxo do onboarding.
+      }
+    }
+
+    navigate(paths.home);
+  }
 
   return (
     <Container as="main" className="flex flex-col gap-6 py-6 tablet:py-10">
@@ -164,7 +181,7 @@ function StyleSelection() {
                   : `${count} escolhidos.`}
             </p>
 
-            <Button fullWidth className="tablet:w-auto" onClick={() => navigate(paths.home)}>
+            <Button fullWidth className="tablet:w-auto" onClick={handleContinue}>
               {count > 0
                 ? `Salvar ${count} ${count === 1 ? 'estilo' : 'estilos'} e abrir meu feed`
                 : 'Abrir meu feed'}
