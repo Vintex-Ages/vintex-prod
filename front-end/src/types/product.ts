@@ -1,3 +1,4 @@
+export type ProductStatus = 'anunciada' | 'vendida' | 'pausada';
 /**
  * Contrato de dados do catálogo (FE-SVC-catalog). Único ponto de verdade para
  * o shape de produto consumido por home, filtros, busca e detalhe — quem
