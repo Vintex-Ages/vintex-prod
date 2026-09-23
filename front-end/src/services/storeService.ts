@@ -155,10 +155,19 @@ function mockGetStoreProducts(
 }
 
 // ---- API real ----
-// PROPOSTA do front — endpoints ainda sem contrato confirmado com o time de
-// back (ver "decisões pendentes" em `.ai/architecture.md`); estrutura
-// simétrica ao mock, pronta para ligar assim que o contrato for validado.
-// `POST /stores` vai como multipart quando há `logo`, JSON caso contrário.
+// Endpoints alinhados na revisão do PR #243 (comentário do Mauro): seguem a
+// convenção do backend (`.ai/adr/0001-fundacao-http-kit-api.md`, §4, no repo
+// do back) de que `/api/auth/*` é só para credencial e `/api/users/me/*` é
+// usado para todo recurso do usuário logado — mesmo formato que
+// `/users/me/preferences` (`preferenceService.ts`) já usa. Por isso a loja do
+// próprio vendedor vive em `/users/me/store` (criar, ler, verificar), nunca em
+// `/stores/me` — evita a armadilha de `/stores/me` colidir com `/stores/{id}`
+// por ordem de resolução de rota (se `{id}` for tratado como inteiro, "me" dá
+// 422; se for texto, "me" vira um id como outro qualquer).
+// `GET /stores/{id}` e `GET /stores/{id}/products` continuam como estavam —
+// são leitura pública, não mudam.
+// `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
+// contrário.
 
 interface ApiStoreMetrics {
   active_products: number;
@@ -276,10 +285,10 @@ function toStoreFormData(input: StoreInput): FormData {
 async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
   try {
     const { data } = input.logo
-      ? await httpClient.post<ApiStoreProfile>('/stores', toStoreFormData(input), {
+      ? await httpClient.post<ApiStoreProfile>('/users/me/store', toStoreFormData(input), {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
-      : await httpClient.post<ApiStoreProfile>('/stores', {
+      : await httpClient.post<ApiStoreProfile>('/users/me/store', {
           name: input.name,
           description: input.description,
           document_type: input.document.type,
@@ -296,7 +305,7 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
 
 async function apiGetMyStore(): Promise<StoreProfile | null> {
   try {
-    const { data } = await httpClient.get<ApiStoreProfile>('/stores/me');
+    const { data } = await httpClient.get<ApiStoreProfile>('/users/me/store');
     return mapStoreProfile(data);
   } catch (error) {
     const status = (error as { response?: { status?: number } }).response?.status;
@@ -309,7 +318,7 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
 
 async function apiRequestVerification(): Promise<StoreProfile> {
   try {
-    const { data } = await httpClient.post<ApiStoreProfile>('/stores/me/verification');
+    const { data } = await httpClient.post<ApiStoreProfile>('/users/me/store/verification');
     return mapStoreProfile(data);
   } catch (error) {
     throw toStoreError(error);
