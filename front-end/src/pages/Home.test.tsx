@@ -1,0 +1,167 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { getFeed } from '@/services/catalogService';
+import type { Paginated, Product } from '@/types/product';
+import Home from './Home';
+
+vi.mock('@/services/catalogService', () => ({ getFeed: vi.fn() }));
+
+const feed: Paginated<Product> = {
+  items: [
+    {
+      id: '1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: 'https://example.com/vestido.jpg',
+      store: { id: 'loja-1', name: 'Brechó Ana' },
+    },
+    {
+      id: '2',
+      name: 'Jaqueta jeans',
+      price: 120,
+      coverImageUrl: null,
+      store: { id: 'loja-2', name: 'Brechó Bia' },
+    },
+  ],
+  page: 1,
+  pageSize: 20,
+  total: 2,
+};
+
+/**
+ * Fica no lugar da tela de chat de verdade: mostra a mensagem recebida via
+ * `location.state`, confirmando tanto que a navegação aconteceu quanto que
+ * ela levou o texto certo, sem precisar mockar `useNavigate` (#207).
+ */
+function VintexProbe() {
+  const location = useLocation();
+  const message = (location.state as { message?: string } | null)?.message;
+  return <p>Vintex recebeu: {message}</p>;
+}
+
+function renderHome() {
+  return render(
+    <MemoryRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
+        <Route path="/vintex" element={<VintexProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => {
+  vi.mocked(getFeed).mockReset();
+});
+afterEach(cleanup);
+
+describe('<Home />', () => {
+  it('renderiza os dados do feed e preserva o placeholder para peças sem foto', async () => {
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    expect(await screen.findByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
+    expect(getFeed).toHaveBeenCalledWith();
+    expect(screen.getByRole('img', { name: 'Vestido floral' })).toHaveAttribute(
+      'src',
+      feed.items[0].coverImageUrl,
+    );
+    expect(screen.getByText(/R\$\s?89,90/)).toBeInTheDocument();
+    expect(screen.getByText('Brechó Ana')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Jaqueta jeans' }).tagName).toBe('DIV');
+    expect(screen.queryByRole('button', { name: 'Carregar mais achados' })).not.toBeInTheDocument();
+  });
+
+  it('mostra os skeletons existentes durante o carregamento', () => {
+    vi.mocked(getFeed).mockReturnValue(new Promise(() => {}));
+    renderHome();
+
+    // A secao do feed e nomeada pelo proprio titulo (`aria-labelledby`), entao
+    // o nome acessivel e o que a pessoa le na tela.
+    const region = screen.getByRole('region', { name: 'Feed de achados' });
+    expect(region).toHaveAttribute('aria-busy', 'true');
+    // O aviso continua existindo para leitor de tela, agora só fora da tela:
+    // os skeletons sao aria-hidden, entao sem ele a espera fica muda.
+    expect(within(region).getByRole('status')).toHaveTextContent('Carregando peças');
+    expect(within(region).getByRole('status')).toHaveClass('sr-only');
+    expect(region.querySelectorAll('[aria-hidden="true"]')).toHaveLength(8);
+    expect(within(region).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('concatena a próxima página e oculta o botão ao alcançar o total', async () => {
+    const user = userEvent.setup();
+    let resolveNext!: (page: Paginated<Product>) => void;
+    vi.mocked(getFeed)
+      .mockResolvedValueOnce({ ...feed, total: 3 })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveNext = resolve;
+        }),
+      );
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+    await user.click(screen.getByRole('button', { name: 'Carregar mais achados' }));
+    expect(getFeed).toHaveBeenLastCalledWith({ page: 2 });
+    // Enquanto busca a proxima pagina o botao troca de rotulo, como o "Criando
+    // conta..." do cadastro: desabilitado e mudo nao dizia que algo acontecia.
+    expect(screen.getByRole('button', { name: 'Carregando…' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Jaqueta jeans' })).toBeInTheDocument();
+
+    resolveNext({
+      ...feed,
+      items: [{ ...feed.items[0], id: '3', name: 'Camisa azul' }],
+      page: 2,
+      total: 3,
+    });
+    expect(await screen.findByRole('link', { name: 'Camisa azul' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Jaqueta jeans' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Carregar mais achados' })).not.toBeInTheDocument();
+  });
+
+  it('navega para a rota existente do detalhe ao abrir uma peça', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    await user.click(await screen.findByRole('link', { name: 'Vestido floral' }));
+    expect(screen.getByRole('heading', { name: 'Detalhe da peça' })).toBeInTheDocument();
+  });
+
+  // --- #207: pontos de entrada da Vintex ---
+
+  it('mostra o spotlight (web) e o heading de fallback (mobile/tablet) com o mesmo h1', async () => {
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+
+    // Dois h1 no DOM ao mesmo tempo é esperado: um fica escondido por classe
+    // (`web:hidden` / `hidden web:block`) conforme o breakpoint — jsdom não
+    // avalia media query, então o teste garante que cada um existe, não
+    // qual está visualmente visível numa largura específica.
+    const headings = screen.getAllByRole('heading', {
+      name: 'Garimpe a peça certa nos brechós do Rio Grande do Sul.',
+      level: 1,
+    });
+    expect(headings).toHaveLength(2);
+  });
+
+  it('enviar pelo spotlight leva para /vintex com a mensagem, não para o catálogo', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+
+    const input = screen.getByRole('searchbox', { name: 'Buscar' });
+    await user.type(input, 'jaqueta de couro{Enter}');
+
+    expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
+  });
+});

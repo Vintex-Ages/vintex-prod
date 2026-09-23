@@ -29,6 +29,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Verificar formatação
+        run: npm run format:check
+
       - name: Auditoria de dependências
         run: npm audit --audit-level=high
 
@@ -37,6 +40,16 @@ jobs:
 
       - name: Testes
         run: npm run test
+
+      - name: Cobertura de testes
+        run: npm run test:coverage
+
+      - name: Upload do relatório de cobertura
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          retention-days: 30
 
       - name: Build
         run: npm run build
