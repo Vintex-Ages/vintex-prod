@@ -54,7 +54,7 @@ function createUserMessage(text: string): ChatMessage {
   return {
     id: crypto.randomUUID(),
     role: 'user',
-    timestamp: 'agora',
+    createdAt: 'agora',
     text,
   };
 }
@@ -66,15 +66,16 @@ function createUserMessage(text: string): ChatMessage {
  * as mensagens, `SearchBar` (#120) para o composer, `FilterChip` (#134)
  * para os chips de sugestão e `IconButton` (#113) para o botão de voltar.
  * A resposta da Vintex vem do `vintexAiService` (#138); não há mock
- * inline aqui. Tipos vêm de `@/types/vintex-ai` (#138).
+ * inline aqui. Tipos vêm de `@/types/vintex-ai` (#138, evoluído em #199:
+ * `createdAt` no lugar do antigo `timestamp`).
  *
  * Responsiva (breakpoints `tablet:`/`web:` de `src/styles/tokens.ts`): a
  * partir do `web:`, o cabeçalho e a linha acima das mensagens ocupam a
  * largura toda da tela, enquanto as mensagens e o composer ficam num
  * bloco central mais largo.
  *
- * Fora de escopo: registrar a rota `/vintex` (fica para #106) e qualquer
- * IA real/streaming (backend de IA vive em repositório separado).
+ * Fora de escopo: qualquer IA real/streaming — a página ainda consome
+ * `getOutfitSuggestion` (mock), migra para `chat()` (streaming, #199) em #208.
  *
  * Usage:
  *   import VintexAI from '@/pages/VintexAI/VintexAI';
@@ -127,7 +128,7 @@ export default function VintexAI() {
         {
           id: crypto.randomUUID(),
           role: 'vintex',
-          timestamp: 'agora',
+          createdAt: 'agora',
           text: 'Não consegui responder agora. Tenta de novo em instantes?',
         },
       ]);
