@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { getFeed } from '@/services/catalogService';
 import type { Paginated, Product } from '@/types/product';
 import Home from './Home';
@@ -30,12 +30,24 @@ const feed: Paginated<Product> = {
   total: 2,
 };
 
+/**
+ * Fica no lugar da tela de chat de verdade: mostra a mensagem recebida via
+ * `location.state`, confirmando tanto que a navegação aconteceu quanto que
+ * ela levou o texto certo, sem precisar mockar `useNavigate` (#207).
+ */
+function VintexProbe() {
+  const location = useLocation();
+  const message = (location.state as { message?: string } | null)?.message;
+  return <p>Vintex recebeu: {message}</p>;
+}
+
 function renderHome() {
   return render(
     <MemoryRouter>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
+        <Route path="/vintex" element={<VintexProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -119,5 +131,37 @@ describe('<Home />', () => {
 
     await user.click(await screen.findByRole('link', { name: 'Vestido floral' }));
     expect(screen.getByRole('heading', { name: 'Detalhe da peça' })).toBeInTheDocument();
+  });
+
+  // --- #207: pontos de entrada da Vintex ---
+
+  it('mostra o spotlight (web) e o heading de fallback (mobile/tablet) com o mesmo h1', async () => {
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+
+    // Dois h1 no DOM ao mesmo tempo é esperado: um fica escondido por classe
+    // (`web:hidden` / `hidden web:block`) conforme o breakpoint — jsdom não
+    // avalia media query, então o teste garante que cada um existe, não
+    // qual está visualmente visível numa largura específica.
+    const headings = screen.getAllByRole('heading', {
+      name: 'Garimpe a peça certa nos brechós do Rio Grande do Sul.',
+      level: 1,
+    });
+    expect(headings).toHaveLength(2);
+  });
+
+  it('enviar pelo spotlight leva para /vintex com a mensagem, não para o catálogo', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getFeed).mockResolvedValue(feed);
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+
+    const input = screen.getByRole('searchbox', { name: 'Buscar' });
+    await user.type(input, 'jaqueta de couro{Enter}');
+
+    expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
   });
 });
