@@ -57,4 +57,14 @@ describe('<InputField />', () => {
 
     expect(screen.getByLabelText('Campo')).toBeDisabled();
   });
+
+  it('renderiza labelAdornment ao lado do label', () => {
+    renderField({ labelAdornment: <span>Opcional</span> });
+
+    const label = screen.getByText('Campo');
+    const adornment = screen.getByText('Opcional');
+    expect(label.parentElement).toContainElement(adornment);
+    expect(label).not.toContainElement(adornment);
+    expect(screen.getByLabelText('Campo')).toBeInTheDocument();
+  });
 });
