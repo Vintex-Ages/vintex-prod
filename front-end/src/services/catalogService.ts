@@ -346,6 +346,11 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
   const { data } = await httpClient.get<ApiSearchResponse>('/products', {
     params: toApiParams({ ...filters, q }),
   });
+
+  if (data.match_type !== 'exact' && data.match_type !== 'fallback') {
+    throw new Error('Resposta inválida da busca: match_type ausente ou desconhecido.');
+  }
+
   return {
     match_type: data.match_type,
     items: data.items.map(mapFeedItem),
