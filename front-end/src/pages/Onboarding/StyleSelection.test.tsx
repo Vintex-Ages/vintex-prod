@@ -1,13 +1,14 @@
-// src/pages/onboarding/StyleSelection.test.tsx
+﻿// src/pages/onboarding/StyleSelection.test.tsx
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import StyleSelection from './StyleSelection';
-import { getStyles } from '@/services/preferenceService';
+import { getStyles, savePreferences } from '@/services/preferenceService';
 
 vi.mock('@/services/preferenceService', () => ({
   getStyles: vi.fn(),
+  savePreferences: vi.fn(),
 }));
 
 const mockStyles = [
@@ -25,6 +26,10 @@ function renderScreen() {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  vi.mocked(savePreferences).mockReset().mockResolvedValue(undefined);
+});
 
 describe('StyleSelection', () => {
   it('renderiza a lista de estilos vinda do service', async () => {
@@ -50,6 +55,7 @@ describe('StyleSelection', () => {
     await user.click(checkbox);
     expect(checkbox).toBeChecked();
   });
+
   it('mostra a descrição de cada estilo, que o backend já devolve', async () => {
     vi.mocked(getStyles).mockResolvedValue(mockStyles);
     renderScreen();
@@ -57,21 +63,56 @@ describe('StyleSelection', () => {
     expect(await screen.findByText('Peças do dia a dia')).toBeInTheDocument();
   });
 
-  it('tem saída: o botão principal leva ao feed', async () => {
+  it('salvar grava as preferências selecionadas e vai pra home', async () => {
     vi.mocked(getStyles).mockResolvedValue(mockStyles);
     const user = userEvent.setup();
     renderScreen();
 
-    await user.click(await screen.findByRole('button', { name: /abrir meu feed/i }));
+    const checkbox = await screen.findByRole('checkbox', { name: /vintage/i });
+    await user.click(checkbox);
+
+    await user.click(screen.getByRole('button', { name: /salvar/i }));
+
+    await waitFor(() => {
+      expect(savePreferences).toHaveBeenCalledWith([{ type: 'estilo', value: 'vintage' }]);
+    });
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
   });
 
-  it('tem saída: pular também leva ao feed', async () => {
+  it('pular avança sem gravar preferências e sem erro', async () => {
     vi.mocked(getStyles).mockResolvedValue(mockStyles);
     const user = userEvent.setup();
     renderScreen();
 
     await user.click(await screen.findByRole('button', { name: 'Pular' }));
+
+    expect(savePreferences).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
+  });
+
+  it('sem seleção, o botão principal também avança sem gravar (nada para salvar)', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    const user = userEvent.setup();
+    renderScreen();
+
+    await user.click(await screen.findByRole('button', { name: /abrir meu feed/i }));
+
+    expect(savePreferences).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
+  });
+
+  it('se salvar falhar, ainda assim segue para a home (falha não pode travar a navegação)', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    vi.mocked(savePreferences).mockRejectedValue(new Error('falhou'));
+    const user = userEvent.setup();
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /vintage/i });
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: /salvar/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
+    });
   });
 });
