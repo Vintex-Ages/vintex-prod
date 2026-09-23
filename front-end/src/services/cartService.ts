@@ -18,11 +18,19 @@ import { httpClient } from './httpClient';
  *   - `'false'` → API real via `httpClient`.
  *   A leitura acontece uma única vez, em tempo de import do módulo.
  *
- * SUPOSIÇÃO (issue avisa que o formato exato da resposta do backend ainda não
- * está confirmado): a API real devolve uma lista FLAT de itens, já com
- * `unavailable` calculado; o agrupamento por loja é feito aqui no service,
- * client-side, reaproveitando a mesma função de agrupamento do modo mock
- * (`groupByStore`).
+ * API real (revisão do PR #228, comentário do Mauro): o agrupamento por loja
+ * vem PRONTO do backend (`#147`), não é recalculado aqui — o pagamento é Pix
+ * e a tela mostra a chave de cada vendedor, então o subtotal por grupo e a
+ * chave só existem se vierem do back; agrupar client-side (como o modo mock
+ * faz, sem outra opção) perderia a chave e recalcularia um subtotal que não
+ * é fonte de verdade. O valor do subtotal chega em reais (`decimal(10,2)`),
+ * não em centavos — convertido para centavos só ao entrar no `Cart` interno,
+ * pra manter os dois modos (mock e API) na mesma unidade.
+ *
+ * Rotas seguem a convenção `/api/users/me/*` para recurso do usuário logado
+ * (`.ai/adr/0001-fundacao-http-kit-api.md` §4, no repo do back):
+ * `GET /users/me/cart`, `POST /users/me/cart/items`,
+ * `DELETE /users/me/cart/items/{product_id}`.
  */
 
 /** `true` quando o módulo deve operar sobre o mock em `sessionStorage`. */
@@ -131,26 +139,46 @@ async function mockRemoveItem(productId: string): Promise<Cart> {
 // ---------------------------------------------------------------------------
 
 /**
- * Forma assumida do item devolvido por `GET /api/cart`, `POST /api/cart/items`
- * e `DELETE /api/cart/items/{product_id}` — os três devolvem a lista FLAT
- * atualizada do carrinho, já com `unavailable` calculado pelo backend.
+ * Forma assumida da resposta de `GET /users/me/cart`, `POST /users/me/cart/items`
+ * e `DELETE /users/me/cart/items/{product_id}` — os três devolvem a lista de
+ * grupos por loja JÁ atualizada, com `subtotal` (em reais, `decimal(10,2)`)
+ * calculado pelo backend, não uma lista flat de itens.
  */
+interface ApiCartStore {
+  id: number | string;
+  name: string;
+  city?: string;
+  verified?: boolean;
+  logo_url?: string;
+}
+
 interface ApiCartItem {
   product: {
     id: number | string;
     name: string;
     price: number;
     cover_image_url: string | null;
-    store: {
-      id: number | string;
-      name: string;
-      city?: string;
-      verified?: boolean;
-      logo_url?: string;
-    };
+    store: ApiCartStore;
   };
   added_at: string;
   unavailable: boolean;
+}
+
+interface ApiCartGroup {
+  store: ApiCartStore;
+  items: ApiCartItem[];
+  /** Em reais (`decimal(10,2)`), não em centavos — RN do back, ver comentário acima. */
+  subtotal: number;
+}
+
+function mapApiStore(store: ApiCartStore): Store {
+  return {
+    id: String(store.id),
+    name: store.name,
+    city: store.city,
+    verified: store.verified,
+    logoUrl: store.logo_url,
+  };
 }
 
 function mapApiCartItem(item: ApiCartItem): CartItem {
@@ -159,16 +187,19 @@ function mapApiCartItem(item: ApiCartItem): CartItem {
     name: item.product.name,
     price: item.product.price,
     coverImageUrl: item.product.cover_image_url,
-    store: {
-      id: String(item.product.store.id),
-      name: item.product.store.name,
-      city: item.product.store.city,
-      verified: item.product.store.verified,
-      logoUrl: item.product.store.logo_url,
-    },
+    store: mapApiStore(item.product.store),
   };
 
   return { product, addedAt: item.added_at, unavailable: item.unavailable };
+}
+
+/** Converte reais (`decimal(10,2)` do back) para centavos, unidade interna de `CartGroup.subtotalCents`. */
+function mapApiCartGroup(group: ApiCartGroup): CartGroup {
+  return {
+    store: mapApiStore(group.store),
+    items: group.items.map(mapApiCartItem),
+    subtotalCents: Math.round(group.subtotal * 100),
+  };
 }
 
 /** Normaliza erro do axios pro mesmo `ApiError` do authService — sem `field`, o carrinho não tem campo de formulário. */
@@ -193,8 +224,8 @@ function toApiError(error: unknown): ApiError {
 
 async function apiGetCart(): Promise<Cart> {
   try {
-    const { data } = await httpClient.get<ApiCartItem[]>('/cart');
-    return { groups: groupByStore(data.map(mapApiCartItem)) };
+    const { data } = await httpClient.get<ApiCartGroup[]>('/users/me/cart');
+    return { groups: data.map(mapApiCartGroup) };
   } catch (error) {
     throw toApiError(error);
   }
@@ -202,8 +233,10 @@ async function apiGetCart(): Promise<Cart> {
 
 async function apiAddItem(productId: string): Promise<Cart> {
   try {
-    const { data } = await httpClient.post<ApiCartItem[]>('/cart/items', { product_id: productId });
-    return { groups: groupByStore(data.map(mapApiCartItem)) };
+    const { data } = await httpClient.post<ApiCartGroup[]>('/users/me/cart/items', {
+      product_id: productId,
+    });
+    return { groups: data.map(mapApiCartGroup) };
   } catch (error) {
     throw toApiError(error);
   }
@@ -211,8 +244,8 @@ async function apiAddItem(productId: string): Promise<Cart> {
 
 async function apiRemoveItem(productId: string): Promise<Cart> {
   try {
-    const { data } = await httpClient.delete<ApiCartItem[]>(`/cart/items/${productId}`);
-    return { groups: groupByStore(data.map(mapApiCartItem)) };
+    const { data } = await httpClient.delete<ApiCartGroup[]>(`/users/me/cart/items/${productId}`);
+    return { groups: data.map(mapApiCartGroup) };
   } catch (error) {
     throw toApiError(error);
   }
