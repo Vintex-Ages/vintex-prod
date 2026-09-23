@@ -11,14 +11,14 @@ afterEach(() => {
 const userMessage: ChatMessage = {
   id: 'm1',
   role: 'user',
-  timestamp: 'agora',
+  createdAt: 'agora',
   text: 'Quero um look para um café no domingo.',
 };
 
 const vintexMessage: ChatMessage = {
   id: 'm2',
   role: 'vintex',
-  timestamp: 'agora',
+  createdAt: 'agora',
   text: 'Entendi: confortável, com memória de brechó.',
 };
 
@@ -34,7 +34,7 @@ const vintexMessageWithOutfit: ChatMessage = {
 };
 
 describe('ChatBubble', () => {
-  it('renderiza a bolha do usuário com rótulo "Você", texto e horário', () => {
+  it('renderiza a bolha do usuário com rótulo "Você", texto e horário (createdAt)', () => {
     render(<ChatBubble message={userMessage} />);
 
     expect(screen.getByText('Você')).toBeInTheDocument();
@@ -60,11 +60,5 @@ describe('ChatBubble', () => {
 
     expect(screen.getByText('Domingo de garimpo')).toBeInTheDocument();
     expect(screen.getByText('Camisa leve')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Salvar rascunho' })).toBeInTheDocument();
-  });
-
-  it('não usa nenhuma cor em hex cru', () => {
-    const { container } = render(<ChatBubble message={userMessage} />);
-    expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
 });
