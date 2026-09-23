@@ -35,6 +35,35 @@ export function setAuthTokenProvider(provider: AuthTokenProvider): void {
 }
 
 /**
+ * Token da sessão ativa, para chamadas que não passam pelo `httpClient`
+ * (Axios) — hoje só o streaming de `vintexAiService.chat()` (#199), que usa
+ * `fetch` nativo porque o navegador não lê uma resposta SSE progressivamente
+ * através do Axios.
+ */
+export function getAuthToken(): string | null | undefined {
+  return tokenProvider();
+}
+
+/**
+ * Reage a um 401 `AUTH_REQUIRED` fora do interceptor do Axios — mesma
+ * lógica usada por ele, extraída para ser reaproveitada por chamadas via
+ * `fetch` nativo. Não duplicar esse tratamento fora daqui.
+ */
+export function handleAuthRequired(from: string): void {
+  try {
+    window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, from);
+  } catch {
+    // Storage indisponível: o fluxo ainda pode continuar via handler.
+  }
+
+  if (onAuthRequired) {
+    onAuthRequired(from);
+  } else {
+    window.location.assign(LOGIN_ROUTE);
+  }
+}
+
+/**
  * Registra ou remove o handler executado quando a API responde
  * com `401 AUTH_REQUIRED`.
  */
@@ -89,19 +118,7 @@ httpClient.interceptors.response.use(
        *
        * Se por algum motivo ela não vier, usamos a rota atual como fallback.
        */
-      const from = apiError.return_to || getCurrentRoute();
-
-      try {
-        window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, from);
-      } catch {
-        // Storage indisponível: o fluxo ainda pode continuar via handler.
-      }
-
-      if (onAuthRequired) {
-        onAuthRequired(from);
-      } else {
-        window.location.assign(LOGIN_ROUTE);
-      }
+      handleAuthRequired(apiError.return_to || getCurrentRoute());
     }
 
     return Promise.reject(error);
