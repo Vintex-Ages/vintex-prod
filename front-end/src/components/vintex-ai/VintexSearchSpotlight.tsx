@@ -27,6 +27,13 @@ interface VintexSearchSpotlightProps {
    * ordem de títulos é a estrutura que o leitor de tela usa para navegar.
    */
   headingAs?: 'h1' | 'h2';
+  /**
+   * Densidade visual. `default` é o hero de abertura (Home). `compact`
+   * reduz o padding interno e o tamanho do título — pensado para viver
+   * acima de filtros/resultados (ex.: Catálogo), sem competir com o
+   * conteúdo da página.
+   */
+  size?: 'default' | 'compact';
 }
 
 /**
@@ -58,8 +65,10 @@ export function VintexSearchSpotlight({
   onSubmit,
   className,
   headingAs: Heading = 'h2',
+  size = 'default',
 }: VintexSearchSpotlightProps) {
   const [query, setQuery] = useState('');
+  const compact = size === 'compact';
 
   function handleSearchSubmit(term: string) {
     const trimmed = term.trim();
@@ -73,10 +82,19 @@ export function VintexSearchSpotlight({
   }
 
   return (
-    <div className={clsx('w-full bg-vermelho-escuro p-2 tablet:p-3', className)}>
-      <div className="flex flex-col border border-vermelho-suave/40 p-6 tablet:p-8 web:p-10">
+    <div
+      className={clsx('w-full bg-vermelho-escuro', compact ? 'p-2' : 'p-2 tablet:p-3', className)}
+    >
+      <div
+        className={clsx(
+          'flex flex-col border border-vermelho-suave/40',
+          compact ? 'p-5 web:p-6' : 'p-6 tablet:p-8 web:p-10',
+        )}
+      >
         {eyebrow || isOnline ? (
-          <div className="mb-5 flex items-center justify-between gap-4">
+          <div
+            className={clsx('flex items-center justify-between gap-4', compact ? 'mb-3' : 'mb-5')}
+          >
             {eyebrow ? <p className="text-label text-vermelho-suave">{eyebrow}</p> : <span />}
             {isOnline ? (
               <p className="flex flex-shrink-0 items-center gap-2 text-label text-vermelho-suave">
@@ -87,9 +105,16 @@ export function VintexSearchSpotlight({
           </div>
         ) : null}
 
-        <Heading className="max-w-2xl font-display text-h2 text-branco-quente">{heading}</Heading>
+        <Heading
+          className={clsx(
+            'max-w-2xl font-display text-branco-quente',
+            compact ? 'text-h3' : 'text-h2',
+          )}
+        >
+          {heading}
+        </Heading>
 
-        <div className="mt-6 max-w-2xl">
+        <div className={clsx('max-w-2xl', compact ? 'mt-4' : 'mt-6')}>
           <SearchBar
             value={query}
             onChange={setQuery}
