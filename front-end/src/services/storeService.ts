@@ -1,4 +1,4 @@
-import { markCurrentAccountAsSeller } from '@/services/authService';
+import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product } from '@/types/product';
@@ -14,13 +14,6 @@ const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
 
 /** Mesmo default do back (`app/core/pagination.py`, BE-kit-api). */
 const DEFAULT_PAGE_SIZE = 20;
-
-/**
- * Chave de `sessionStorage` com a loja do vendedor atual — loja por sessão,
- * não por id de usuário: só existe uma sessão mock ativa por vez, então não
- * há necessidade de vincular por usuário.
- */
-const STORE_STORAGE_KEY = 'vintex.store.mine';
 
 interface StoreProductsParams {
   page?: number;
@@ -61,31 +54,78 @@ function toStoreProduct({ id, name, price, coverImageUrl, store }: Product): Pro
 
 // ---- mock ----
 
-let mockIdSeq = 0;
+/**
+ * Armazenamento mock em duas partes, pra separar o perfil público do dono:
+ * - `STORES_STORAGE_KEY`: todas as lojas criadas no mock, indexadas pelo id da
+ *   loja — é o que `getStore(id)` consulta, sem depender de quem está logado.
+ * - `storeOwnerKey(userId)`: id da loja de cada usuário do mock de auth, no
+ *   mesmo padrão por usuário do carrinho (`cart:${userId}`). Uma chave fixa
+ *   fazia o usuário B ver a loja do A depois de um logout (revisão do PR #243,
+ *   ponto 3).
+ */
+const STORES_STORAGE_KEY = 'vintex.stores';
 
-function nextMockId(): string {
-  mockIdSeq += 1;
-  return `store-mock-${mockIdSeq}`;
+function storeOwnerKey(userId: string): string {
+  return `store:${userId}`;
 }
 
-function readStoredStore(): StoreProfile | null {
+function readStores(): Record<string, StoreProfile> {
   try {
-    const raw = window.sessionStorage.getItem(STORE_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as StoreProfile) : null;
+    const raw = window.sessionStorage.getItem(STORES_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoreProfile>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStores(stores: Record<string, StoreProfile>): void {
+  try {
+    window.sessionStorage.setItem(STORES_STORAGE_KEY, JSON.stringify(stores));
+  } catch {
+    // Sem storage disponível: loja mockada não é persistida.
+  }
+}
+
+function saveStore(store: StoreProfile): void {
+  writeStores({ ...readStores(), [store.id]: store });
+}
+
+function readOwnedStore(userId: string): StoreProfile | null {
+  try {
+    const storeId = window.sessionStorage.getItem(storeOwnerKey(userId));
+    return storeId ? (readStores()[storeId] ?? null) : null;
   } catch {
     return null;
   }
 }
 
-function writeStoredStore(store: StoreProfile): void {
+function writeStoreOwner(userId: string, storeId: string): void {
   try {
-    window.sessionStorage.setItem(STORE_STORAGE_KEY, JSON.stringify(store));
+    window.sessionStorage.setItem(storeOwnerKey(userId), storeId);
   } catch {
-    // Sem storage disponível: loja mockada fica só em memória.
+    // Sem storage disponível: loja mockada não é persistida.
   }
 }
 
-function mockCreateStore(input: StoreInput): StoreProfile {
+let mockIdSeq = 0;
+
+/**
+ * `mockIdSeq` volta a 0 num reload, mas as lojas continuam no
+ * `sessionStorage` — pula ids já usados pra não sobrescrever a loja de outro
+ * usuário.
+ */
+function nextMockId(): string {
+  const stores = readStores();
+  let id: string;
+  do {
+    mockIdSeq += 1;
+    id = `store-mock-${mockIdSeq}`;
+  } while (id in stores);
+  return id;
+}
+
+async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
+  const user = await me();
   const store: StoreProfile = {
     id: nextMockId(),
     name: input.name,
@@ -96,34 +136,38 @@ function mockCreateStore(input: StoreInput): StoreProfile {
     verification: 'pendente',
     createdAt: new Date().toISOString(),
   };
-  writeStoredStore(store);
+  saveStore(store);
+  writeStoreOwner(user.id, store.id);
   return store;
 }
 
-function mockGetMyStore(): StoreProfile | null {
-  return readStoredStore();
+async function mockGetMyStore(): Promise<StoreProfile | null> {
+  const user = await me();
+  return readOwnedStore(user.id);
 }
 
-function mockRequestVerification(): StoreProfile {
-  const store = readStoredStore();
+async function mockRequestVerification(): Promise<StoreProfile> {
+  const user = await me();
+  const store = readOwnedStore(user.id);
   if (!store) {
     throw storeNotCreated();
   }
   const verified: StoreProfile = { ...store, verification: 'confiavel' };
-  writeStoredStore(verified);
+  saveStore(verified);
   return verified;
 }
 
 /**
- * Sem loja própria com esse `id`, procura em `mocks/products.ts` um produto
- * cujo `store.id` bata — o perfil público é montado a partir do `Store`
- * embutido no produto, já que o mock de catálogo não tem uma lista de lojas
- * separada.
+ * Perfil público: não exige login. Procura primeiro nas lojas criadas no mock
+ * (de qualquer usuário); sem nenhuma com esse `id`, procura em
+ * `mocks/products.ts` um produto cujo `store.id` bata — o perfil é montado a
+ * partir do `Store` embutido no produto, já que o mock de catálogo não tem uma
+ * lista de lojas separada.
  */
 function mockGetStore(id: string): StoreProfile {
-  const mine = readStoredStore();
-  if (mine && mine.id === id) {
-    return mine;
+  const created = readStores()[id];
+  if (created) {
+    return created;
   }
 
   const product = mockProducts.find((item) => item.store.id === id);
@@ -360,7 +404,7 @@ export async function createStore(input: StoreInput): Promise<StoreProfile> {
   if (!useMocks) {
     return apiCreateStore(input);
   }
-  const store = mockCreateStore(input);
+  const store = await mockCreateStore(input);
   // Na API real o back marca `is_seller` ao criar a loja; no mock, quem faz
   // isso é o authService — senão `refreshUser()` nunca vê a conta como vendedora.
   await markCurrentAccountAsSeller();
