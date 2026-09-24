@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createStore,
   getMyStore,
@@ -7,7 +7,7 @@ import {
   requestVerification,
 } from './storeService';
 import { logout, me, register } from './authService';
-import type { StoreInput } from '@/types/store';
+import type { StoreInput, StoreProfile } from '@/types/store';
 
 const input: StoreInput = {
   name: 'Brechó da Ceci',
@@ -37,6 +37,10 @@ describe('storeService', () => {
     window.sessionStorage.clear();
     await logout();
     await registerNewUser('Vendedora');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('sem loja criada, getMyStore devolve null', async () => {
@@ -91,13 +95,30 @@ describe('storeService', () => {
     expect(await getStore(created.id)).toEqual(created);
   });
 
-  it('requestVerification muda verification de pendente para confiavel', async () => {
+  it('requestVerification só grava confiavel depois de ~500ms: antes disso a loja segue pendente', async () => {
     await createStore(input);
+    vi.useFakeTimers();
 
-    const verified = await requestVerification();
+    let verified: StoreProfile | undefined;
+    const pending = requestVerification().then((store) => {
+      verified = store;
+    });
 
-    expect(verified.verification).toBe('confiavel');
+    // Estado intermediário que a tela (FE-US007-1) precisa conseguir exibir.
+    await vi.advanceTimersByTimeAsync(499);
+    expect(verified).toBeUndefined();
+    expect((await getMyStore())?.verification).toBe('pendente');
+
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(verified?.verification).toBe('confiavel');
     expect((await getMyStore())?.verification).toBe('confiavel');
+  });
+
+  it('requestVerification sem loja falha na hora, sem esperar o delay', async () => {
+    vi.useFakeTimers();
+
+    await expect(requestVerification()).rejects.toMatchObject({ code: 'STORE_NOT_FOUND' });
   });
 
   it('getStoreProducts devolve só peças ativas da loja', async () => {
@@ -117,5 +138,25 @@ describe('storeService', () => {
     expect(store.id).toBe('1');
     expect(store.name).toBe('Brechó Mercado Público');
     expect(store.verification).toBe('confiavel');
+  });
+
+  it('getStore de loja do catálogo traz métricas fictícias, com peças ativas batendo com getStoreProducts', async () => {
+    const store = await getStore('1');
+    const products = await getStoreProducts('1');
+
+    expect(store.metrics).toMatchObject({
+      activeProducts: products.total,
+      soldProducts: expect.any(Number),
+      monthsOnPlatform: expect.any(Number),
+      shippingWithoutComplaintRate: expect.any(Number),
+      rating: expect.any(Number),
+    });
+  });
+
+  it('loja criada no mock já nasce com métricas zeradas (sem avaliação ainda, RN-74)', async () => {
+    const created = await createStore(input);
+
+    expect(created.metrics).toEqual({ activeProducts: 0, soldProducts: 0, monthsOnPlatform: 0 });
+    expect((await getStore(created.id)).metrics).toEqual(created.metrics);
   });
 });
