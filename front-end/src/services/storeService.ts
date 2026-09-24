@@ -1,3 +1,4 @@
+import { markCurrentAccountAsSeller } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product } from '@/types/product';
@@ -356,7 +357,14 @@ async function apiGetStoreProducts(
 // ---- API pública do service ----
 
 export async function createStore(input: StoreInput): Promise<StoreProfile> {
-  return useMocks ? mockCreateStore(input) : apiCreateStore(input);
+  if (!useMocks) {
+    return apiCreateStore(input);
+  }
+  const store = mockCreateStore(input);
+  // Na API real o back marca `is_seller` ao criar a loja; no mock, quem faz
+  // isso é o authService — senão `refreshUser()` nunca vê a conta como vendedora.
+  await markCurrentAccountAsSeller();
+  return store;
 }
 
 export async function getMyStore(): Promise<StoreProfile | null> {
