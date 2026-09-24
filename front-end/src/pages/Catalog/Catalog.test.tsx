@@ -1,9 +1,20 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import Catalog from './Catalog';
 import { search } from '@/services/catalogService';
+
+/**
+ * Fica no lugar da tela de chat de verdade: mostra a mensagem recebida via
+ * `location.state`, confirmando tanto que a navegação aconteceu quanto que
+ * ela levou o texto certo, sem precisar mockar `useNavigate` (#207).
+ */
+function VintexProbe() {
+  const location = useLocation();
+  const message = (location.state as { message?: string } | null)?.message;
+  return <p>Vintex recebeu: {message}</p>;
+}
 
 /** A página navega para o detalhe, então precisa de contexto de router. */
 function renderCatalog() {
@@ -12,6 +23,7 @@ function renderCatalog() {
       <Routes>
         <Route path="/catalog" element={<Catalog />} />
         <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
+        <Route path="/vintex" element={<VintexProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -56,7 +68,11 @@ describe('Catalog', () => {
       expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'Roupas' }));
     });
 
-    const input = screen.getByRole('searchbox');
+    // #207: agora existem duas caixas de busca na tela (a tradicional e a
+    // de dentro do spotlight, que só aparece no `web`). A primeira
+    // (`getAllByRole(...)[0]`) é a tradicional do catálogo — antes bastava
+    // `getByRole('searchbox')` porque só havia uma.
+    const [input] = screen.getAllByRole('searchbox');
     await user.type(input, 'camiseta{Enter}');
 
     await waitFor(() => {
@@ -103,5 +119,38 @@ describe('Catalog', () => {
     const alerta = await screen.findByRole('alert');
     expect(alerta).toHaveTextContent('Não foi possível carregar as peças agora.');
     expect(within(alerta).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+  });
+
+  // --- #207: pontos de entrada da Vintex ---
+
+  it('renderiza o spotlight compacto acima dos filtros, além da busca tradicional', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    expect(
+      screen.getByRole('heading', { name: 'Prefere descrever o que procura?' }),
+    ).toBeInTheDocument();
+
+    // As duas barras de busca (a tradicional e a de dentro do spotlight)
+    // usam o mesmo aria-label "Buscar" hoje — débito técnico do SearchBar
+    // (#93), fora do escopo desta issue.
+    expect(screen.getAllByRole('searchbox')).toHaveLength(2);
+  });
+
+  it('enviar pelo spotlight leva para /vintex com a mensagem, não repete a busca tradicional', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    vi.mocked(search).mockClear();
+
+    const [, spotlightInput] = screen.getAllByRole('searchbox');
+    await user.type(spotlightInput, 'vestido floral{Enter}');
+
+    expect(await screen.findByText('Vintex recebeu: vestido floral')).toBeInTheDocument();
+    expect(search).not.toHaveBeenCalled();
   });
 });

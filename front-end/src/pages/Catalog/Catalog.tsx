@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ActiveFilters from '@/components/catalog/ActiveFilters';
 import { CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
 import FilterPanel from '@/components/catalog/FilterPanel';
@@ -10,7 +10,8 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
-import { productDetail } from '@/routes/paths';
+import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
+import { paths, productDetail } from '@/routes/paths';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
 import type { FilterParams, Product, SearchResult } from '@/types/product';
@@ -55,6 +56,7 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  * - **Vazio e erro têm saída** — limpar os filtros e tentar de novo.
  */
 function Catalog() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const term = searchParams.get('q') ?? '';
 
@@ -127,6 +129,25 @@ function Catalog() {
           onChange={setInputValue}
           onSubmit={handleSubmit}
           loading={loading}
+        />
+      </div>
+
+      {/*
+        #207: caminho em destaque para a IA, a partir do `tablet`
+        (RN-94/RN-54) — no mobile o FAB já cobre esse papel. A SearchBar
+        tradicional acima continua visível em todo breakpoint: a IA é um
+        caminho a mais, não o único.
+      */}
+      <div className="hidden tablet:block">
+        <VintexSearchSpotlight
+          size="compact"
+          headingAs="h2"
+          heading="Prefere descrever o que procura?"
+          eyebrow=""
+          isOnline={false}
+          suggestions={[]}
+          placeholder="Descreva a peça ou o estilo..."
+          onSubmit={(query) => navigate(paths.vintex, { state: { message: query } })}
         />
       </div>
 
