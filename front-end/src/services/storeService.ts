@@ -114,7 +114,11 @@ function writeStoreOwner(userId: string, storeId: string): void {
 const MOCK_VERIFICATION_DELAY_MS = 500;
 
 /** Loja recém-criada não tem histórico: contadores zerados e, pela RN-74, sem `rating`/taxa. */
-const EMPTY_STORE_METRICS: StoreMetrics = { activeProducts: 0, soldProducts: 0, monthsOnPlatform: 0 };
+const EMPTY_STORE_METRICS: StoreMetrics = {
+  activeProducts: 0,
+  soldProducts: 0,
+  monthsOnPlatform: 0,
+};
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
