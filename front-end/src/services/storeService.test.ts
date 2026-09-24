@@ -6,7 +6,7 @@ import {
   getStoreProducts,
   requestVerification,
 } from './storeService';
-import { me, register } from './authService';
+import { logout, me, register } from './authService';
 import type { StoreInput } from '@/types/store';
 
 const input: StoreInput = {
@@ -24,9 +24,19 @@ const input: StoreInput = {
   pixKey: 'ceci@vintex.com',
 };
 
+/** O mock de auth vive em memória entre os testes: cada cadastro precisa de e-mail novo. */
+let userSeq = 0;
+
+async function registerNewUser(name: string): Promise<void> {
+  userSeq += 1;
+  await register({ name, email: `loja${userSeq}@vintex.com`, password: 'senha123' });
+}
+
 describe('storeService', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     window.sessionStorage.clear();
+    await logout();
+    await registerNewUser('Vendedora');
   });
 
   it('sem loja criada, getMyStore devolve null', async () => {
@@ -58,6 +68,27 @@ describe('storeService', () => {
     await createStore(input);
 
     expect((await me()).is_seller).toBe(true);
+  });
+
+  it('a loja é do usuário que a criou: outro usuário logado depois não a vê', async () => {
+    // Cenário do review do PR #243: A cria a loja, sai, B se cadastra.
+    await registerNewUser('Usuária A');
+    await createStore(input);
+    await logout();
+    await registerNewUser('Usuária B');
+
+    expect(await getMyStore()).toBeNull();
+  });
+
+  it('getStore é público: a loja criada por A aparece para B e para quem não está logado', async () => {
+    await registerNewUser('Usuária A');
+    const created = await createStore(input);
+    await logout();
+
+    expect(await getStore(created.id)).toEqual(created);
+
+    await registerNewUser('Usuária B');
+    expect(await getStore(created.id)).toEqual(created);
   });
 
   it('requestVerification muda verification de pendente para confiavel', async () => {
