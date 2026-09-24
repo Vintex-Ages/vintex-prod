@@ -6,6 +6,7 @@ import {
   getStoreProducts,
   requestVerification,
 } from './storeService';
+import { me, register } from './authService';
 import type { StoreInput } from '@/types/store';
 
 const input: StoreInput = {
@@ -46,6 +47,17 @@ describe('storeService', () => {
     expect(created.id.length).toBeGreaterThan(0);
 
     expect(await getMyStore()).toEqual(created);
+  });
+
+  it('createStore marca a conta logada como vendedora (me() passa a ter is_seller = true)', async () => {
+    // E-mail próprio deste teste: o mock de auth vive em memória e não é
+    // reiniciado entre os testes do arquivo.
+    await register({ name: 'Ceci', email: 'ceci.loja@vintex.com', password: 'senha123' });
+    expect((await me()).is_seller).toBe(false);
+
+    await createStore(input);
+
+    expect((await me()).is_seller).toBe(true);
   });
 
   it('requestVerification muda verification de pendente para confiavel', async () => {
