@@ -15,7 +15,7 @@ import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
-import { RequireAuth, RequireRole } from './guards';
+import { RequireAuth, RequireStore } from './guards';
 import { paths } from './paths';
 
 /**
@@ -47,8 +47,9 @@ function WithLayout() {
  * Rotas da Sprint 1 (FE-FND-1c, #106) e Sprint 2 (FE-FND-4, #205).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
- * exigem sessão (`RequireAuth`); `/seller` e as duas rotas de peça exigem o
- * papel `seller` (`RequireRole`); `/store/:id` é pública, de propósito
+ * exigem sessão (`RequireAuth`); `/seller` e as duas rotas de peça exigem
+ * loja (`RequireStore`, FE-US006-2 #213 — sem loja, vai a `/sell` com aviso);
+ * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
  *
  * Todas as rotas novas entram dentro do `WithLayout`, com placeholder mínimo
@@ -73,25 +74,25 @@ function AppRoutes() {
         <Route
           path={paths.seller}
           element={
-            <RequireRole role="seller">
+            <RequireStore>
               <SellerAdmin />
-            </RequireRole>
+            </RequireStore>
           }
         />
         <Route
           path={paths.sellerProductNew}
           element={
-            <RequireRole role="seller">
+            <RequireStore>
               <SellerProductForm />
-            </RequireRole>
+            </RequireStore>
           }
         />
         <Route
           path={paths.sellerProduct}
           element={
-            <RequireRole role="seller">
+            <RequireStore>
               <SellerProductForm />
-            </RequireRole>
+            </RequireStore>
           }
         />
         <Route
