@@ -1,9 +1,15 @@
-﻿import { describe, expect, it } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
+import { ToastProvider } from '@/context/ToastContext';
+import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
-import { RequireAuth, RequireRole } from './guards';
+import type { StoreProfile } from '@/types/store';
+import { RequireAuth, RequireRole, RequireStore } from './guards';
+
+vi.mock('@/services/storeService', () => ({ getMyStore: vi.fn() }));
 
 const BUYER: AuthUser = {
   id: 'u_1',
@@ -155,5 +161,102 @@ describe('RequireRole', () => {
     );
 
     expect(screen.getByText('Área do comprador')).toBeInTheDocument();
+  });
+});
+
+const STORE: StoreProfile = {
+  id: 'store-1',
+  name: 'Brechó da Ana',
+  description: 'Peças garimpadas.',
+  logoUrl: null,
+  city: 'Porto Alegre',
+  state: 'RS',
+  verification: 'pendente',
+  createdAt: '2026-09-01T00:00:00.000Z',
+};
+
+/** Como `renderProtected`, mas com `ToastProvider` e `/sell` como alvo do redirect de quem não tem loja. */
+function renderStoreProtected(authValue: AuthContextValue) {
+  return render(
+    <AuthContext.Provider value={authValue}>
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/protegido']}>
+          <Routes>
+            <Route
+              path="/protegido"
+              element={
+                <RequireStore>
+                  <p>Painel do vendedor</p>
+                </RequireStore>
+              }
+            />
+            <Route path="/login" element={<p>Página de login</p>} />
+            <Route path="/sell" element={<p>Quero vender</p>} />
+          </Routes>
+          <PathProbe />
+        </MemoryRouter>
+      </ToastProvider>
+    </AuthContext.Provider>,
+  );
+}
+
+describe('RequireStore (RN-31, FE-US006-2 #213)', () => {
+  beforeEach(() => {
+    vi.mocked(getMyStore).mockReset();
+  });
+
+  it('critério 1: logado sem loja é levado a /sell com toast informativo', async () => {
+    vi.mocked(getMyStore).mockResolvedValue(null);
+
+    renderStoreProtected(makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+    expect(await screen.findByText('Quero vender')).toBeInTheDocument();
+    expect(screen.getByTestId('path')).toHaveTextContent('/sell');
+    expect(screen.getByRole('status')).toHaveTextContent('Para anunciar, crie sua loja');
+    expect(screen.queryByText('Painel do vendedor')).not.toBeInTheDocument();
+  });
+
+  it('critério 2: visitante anônimo cai em /login, sem consultar a loja', () => {
+    renderStoreProtected(makeAuthValue({ isAuthenticated: false, user: null }));
+
+    expect(screen.getByTestId('path')).toHaveTextContent('/login');
+    expect(getMyStore).not.toHaveBeenCalled();
+    expect(screen.queryByText('Para anunciar, crie sua loja')).not.toBeInTheDocument();
+  });
+
+  it('logado com loja: renderiza o conteúdo, sem toast', async () => {
+    vi.mocked(getMyStore).mockResolvedValue(STORE);
+
+    renderStoreProtected(makeAuthValue({ isAuthenticated: true, user: SELLER }));
+
+    expect(await screen.findByText('Painel do vendedor')).toBeInTheDocument();
+    expect(screen.getByTestId('path')).toHaveTextContent('/protegido');
+    expect(screen.queryByText('Para anunciar, crie sua loja')).not.toBeInTheDocument();
+  });
+
+  it('enquanto verifica a loja: mostra carregando, sem redirecionar nem mostrar o conteúdo', () => {
+    vi.mocked(getMyStore).mockReturnValue(new Promise(() => {}));
+
+    renderStoreProtected(makeAuthValue({ isAuthenticated: true, user: SELLER }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Verificando sua loja…');
+    expect(screen.getByTestId('path')).toHaveTextContent('/protegido');
+    expect(screen.queryByText('Painel do vendedor')).not.toBeInTheDocument();
+  });
+
+  it('falha ao verificar a loja: mostra erro com "Tentar de novo", sem redirecionar', async () => {
+    vi.mocked(getMyStore).mockRejectedValueOnce(new Error('rede')).mockResolvedValueOnce(STORE);
+
+    renderStoreProtected(makeAuthValue({ isAuthenticated: true, user: SELLER }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível verificar sua loja.',
+    );
+    expect(screen.getByTestId('path')).toHaveTextContent('/protegido');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(await screen.findByText('Painel do vendedor')).toBeInTheDocument();
+    expect(getMyStore).toHaveBeenCalledTimes(2);
   });
 });

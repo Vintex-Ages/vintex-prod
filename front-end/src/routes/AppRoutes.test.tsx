@@ -1,11 +1,35 @@
-﻿import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { ToastProvider } from '@/context/ToastContext';
+import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
+import type { StoreProfile } from '@/types/store';
 import AppRoutes from './AppRoutes';
 import { paths, productDetail, sellerProductPath, storeProfile } from './paths';
+
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  getMyStore: vi.fn(),
+}));
+
+const STORE: StoreProfile = {
+  id: 'store-1',
+  name: 'Brechó da Ana',
+  description: 'Peças garimpadas.',
+  logoUrl: null,
+  city: 'Porto Alegre',
+  state: 'RS',
+  verification: 'pendente',
+  createdAt: '2026-09-01T00:00:00.000Z',
+};
+
+beforeEach(() => {
+  // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
+  vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
+});
 
 afterEach(cleanup);
 
@@ -13,7 +37,9 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -46,9 +72,11 @@ function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
 function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
     <AuthContext.Provider value={authValue}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </ToastProvider>
     </AuthContext.Provider>,
   );
 }
@@ -192,11 +220,18 @@ describe('<AppRoutes />', () => {
     await screen.findByText('Entre na Vintex');
   });
 
-  it('/seller logado sem papel seller é redirecionado, não mostra o painel', async () => {
-    renderAtWithAuth(paths.seller, makeAuthValue({ isAuthenticated: true, user: BUYER }));
-    expect(await screen.findByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
-  });
+  it.each([paths.seller, paths.sellerProductNew, sellerProductPath('1')])(
+    'RN-31 (#213): %s logado sem loja vai a /sell com o aviso, não mostra a área do vendedor',
+    async (path) => {
+      vi.mocked(getMyStore).mockResolvedValue(null);
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
+      expect(screen.getByText('Para anunciar, crie sua loja')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    },
+  );
 
   it('/store/:id abre sem login (leitura pública)', async () => {
     renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
