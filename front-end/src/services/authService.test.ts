@@ -143,6 +143,19 @@ describe('authService (mock, VITE_USE_MOCKS padrão)', () => {
       code: AUTH_REQUIRED,
     });
   });
+
+  it('markCurrentAccountAsSeller: marca is_seller = true na conta logada (usado por storeService.createStore)', async () => {
+    await authService.register({ name: 'Ana', email: 'ana@exemplo.com', password: 'senha123' });
+
+    await authService.markCurrentAccountAsSeller();
+
+    const me = await authService.me();
+    expect(me.is_seller).toBe(true);
+  });
+
+  it('markCurrentAccountAsSeller: sem sessão ativa, não faz nada (não lança)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
+  });
 });
 
 describe('authService (API real, VITE_USE_MOCKS=false)', () => {
@@ -250,5 +263,9 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     await expect(authService.me()).rejects.toMatchObject({
       code: AUTH_REQUIRED,
     });
+  });
+
+  it('markCurrentAccountAsSeller: no modo API real é um no-op (o backend marca is_seller ao criar a loja)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
   });
 });
