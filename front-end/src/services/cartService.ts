@@ -2,7 +2,6 @@ import axios from 'axios';
 import type { ApiError } from '@/types/auth';
 import type { Cart, CartGroup, CartItem } from '@/types/cart';
 import type { Product, Store } from '@/types/product';
-import { me } from './authService';
 import { getProduct } from './catalogService';
 import { httpClient } from './httpClient';
 
@@ -31,6 +30,14 @@ import { httpClient } from './httpClient';
  * (`.ai/adr/0001-fundacao-http-kit-api.md` §4, no repo do back):
  * `GET /users/me/cart`, `POST /users/me/cart/items`,
  * `DELETE /users/me/cart/items/{product_id}`.
+ *
+ * `userId` (revisão do PR #228, ponto 1): todas as funções recebem o id do
+ * usuário logado, vindo do `AuthContext` (`useAuth().user.id`). O modo mock usa
+ * esse id pra isolar o carrinho no `sessionStorage`; ele NÃO pergunta ao
+ * `authService.me()`, porque o mock de auth guarda a sessão só em memória e
+ * perde tudo num F5 — enquanto o `AuthContext` restaura a sessão do
+ * `sessionStorage`. O modo API ignora o `userId`: o back identifica o usuário
+ * pelo token em `/users/me/*`.
  */
 
 /** `true` quando o módulo deve operar sobre o mock em `sessionStorage`. */
@@ -109,28 +116,25 @@ async function buildCartFromSaved(saved: StoredCartItem[]): Promise<Cart> {
   return { groups: groupByStore(items) };
 }
 
-async function mockGetCart(): Promise<Cart> {
-  const user = await me();
-  return buildCartFromSaved(readStoredItems(user.id));
+async function mockGetCart(userId: string): Promise<Cart> {
+  return buildCartFromSaved(readStoredItems(userId));
 }
 
 /** RN-46: adicionar uma peça já presente no carrinho é no-op. */
-async function mockAddItem(productId: string): Promise<Cart> {
-  const user = await me();
-  const saved = readStoredItems(user.id);
+async function mockAddItem(userId: string, productId: string): Promise<Cart> {
+  const saved = readStoredItems(userId);
 
   if (!saved.some((item) => item.productId === productId)) {
     saved.push({ productId, addedAt: new Date().toISOString() });
-    writeStoredItems(user.id, saved);
+    writeStoredItems(userId, saved);
   }
 
   return buildCartFromSaved(saved);
 }
 
-async function mockRemoveItem(productId: string): Promise<Cart> {
-  const user = await me();
-  const saved = readStoredItems(user.id).filter((item) => item.productId !== productId);
-  writeStoredItems(user.id, saved);
+async function mockRemoveItem(userId: string, productId: string): Promise<Cart> {
+  const saved = readStoredItems(userId).filter((item) => item.productId !== productId);
+  writeStoredItems(userId, saved);
   return buildCartFromSaved(saved);
 }
 
@@ -231,7 +235,7 @@ async function apiGetCart(): Promise<Cart> {
   }
 }
 
-async function apiAddItem(productId: string): Promise<Cart> {
+async function apiAddItem(_userId: string, productId: string): Promise<Cart> {
   try {
     const { data } = await httpClient.post<ApiCartGroup[]>('/users/me/cart/items', {
       product_id: productId,
@@ -242,7 +246,7 @@ async function apiAddItem(productId: string): Promise<Cart> {
   }
 }
 
-async function apiRemoveItem(productId: string): Promise<Cart> {
+async function apiRemoveItem(_userId: string, productId: string): Promise<Cart> {
   try {
     const { data } = await httpClient.delete<ApiCartGroup[]>(`/users/me/cart/items/${productId}`);
     return { groups: data.map(mapApiCartGroup) };
@@ -255,13 +259,15 @@ async function apiRemoveItem(productId: string): Promise<Cart> {
 // Seleção do modo — resolvida uma vez, no import do módulo.
 // ---------------------------------------------------------------------------
 
-/** Devolve o carrinho atual, agrupado por loja. */
-export const getCart: () => Promise<Cart> = useMocks ? mockGetCart : apiGetCart;
+/** Devolve o carrinho atual do usuário `userId`, agrupado por loja. */
+export const getCart: (userId: string) => Promise<Cart> = useMocks ? mockGetCart : apiGetCart;
 
 /** Adiciona a peça ao carrinho (no-op se já estiver presente, RN-46) e devolve o carrinho atualizado. */
-export const addItem: (productId: string) => Promise<Cart> = useMocks ? mockAddItem : apiAddItem;
+export const addItem: (userId: string, productId: string) => Promise<Cart> = useMocks
+  ? mockAddItem
+  : apiAddItem;
 
 /** Remove a peça do carrinho e devolve o carrinho atualizado. */
-export const removeItem: (productId: string) => Promise<Cart> = useMocks
+export const removeItem: (userId: string, productId: string) => Promise<Cart> = useMocks
   ? mockRemoveItem
   : apiRemoveItem;

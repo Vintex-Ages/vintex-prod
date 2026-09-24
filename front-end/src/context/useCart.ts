@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { ApiError } from '@/types/auth';
 import type { Cart } from '@/types/cart';
 
 /**
@@ -21,11 +22,13 @@ export interface CartContextValue {
   count: number;
   /** `true` enquanto o Provider busca o carrinho. */
   loading: boolean;
+  /** Erro da última carga (`refresh`), ou `null`. Limpo ao recarregar com sucesso ou deslogar. */
+  error: ApiError | null;
   /** Adiciona a peça ao carrinho e substitui `cart` pelo resultado devolvido. */
   add: (productId: string) => Promise<void>;
   /** Remove a peça do carrinho e substitui `cart` pelo resultado devolvido. */
   remove: (productId: string) => Promise<void>;
-  /** Recarrega o carrinho a partir do backend/mock. */
+  /** Recarrega o carrinho a partir do backend/mock. Não rejeita: falhas vão para `error`. */
   refresh: () => Promise<void>;
 }
 
