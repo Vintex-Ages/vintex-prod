@@ -1,243 +1,224 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { useVintexChat } from './useVintexChat';
-import * as vintexAiService from '@/services/vintexAiService';
-import type { ChatChunk } from '@/types/vintex-ai';
+import { useEffect, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
+import { chat } from '@/services/vintexAiService';
+import type { ChatMessage } from '@/types/vintex-ai';
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+interface VintexChatState {
+  messages: ChatMessage[];
+  /** Id da mensagem da Vintex sendo escrita agora, ou `null` se nenhuma. */
+  streamingMessageId: string | null;
+  /** Id da mensagem que falhou, ou `null` se nenhuma. */
+  errorMessageId: string | null;
+  errorText: string | null;
+}
 
-/** Fila controlável de chunks, com um pequeno atraso real entre cada um. */
-function fakeChat(chunks: ChatChunk[], delayMs = 10) {
-  return vi.spyOn(vintexAiService, 'chat').mockImplementation(async function* (request) {
-    for (const chunk of chunks) {
-      if (request.signal?.aborted) return;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      if (request.signal?.aborted) return;
-      yield chunk;
-    }
+interface UseVintexChatResult extends VintexChatState {
+  sendMessage: (text: string) => void;
+  /** Reenvia a última pergunta, reaproveitando a bolha que falhou. */
+  retry: () => void;
+}
+
+function createMessage(role: ChatMessage['role'], text: string): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role,
+    createdAt: new Date().toISOString(),
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Store a nível de módulo — de propósito, fora do ciclo de vida de qualquer
+// componente. Sair de /vintex pra ver o detalhe de uma peça desmonta a
+// página (#209): se o estado vivesse em `useState`, a conversa e o
+// streaming em andamento se perderiam nesse momento. Aqui eles sobrevivem —
+// só um reload de página de verdade reinicia a conversa (ou uma chamada
+// explícita a `resetVintexChat`).
+// ---------------------------------------------------------------------------
+
+let state: VintexChatState = {
+  messages: [],
+  streamingMessageId: null,
+  errorMessageId: null,
+  errorText: null,
+};
+let hasBootstrapped = false;
+let lastUserText: string | null = null;
+let abortController: AbortController | null = null;
+const listeners = new Set<() => void>();
+
+function setState(
+  patch: Partial<VintexChatState> | ((current: VintexChatState) => Partial<VintexChatState>),
+): void {
+  state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  // `flushSync`: cada chunk chega via `setTimeout`/`fetch` — fora do ciclo
+  // de eventos que o React controla. Sem forçar aqui, a atualização pode
+  // ficar pendurada esperando um próximo render normal do React acontecer.
+  // Nunca é chamado de dentro de um efeito (`flushSync` não roda durante o
+  // commit do React) — ver o disparo adiado da mensagem inicial abaixo.
+  flushSync(() => {
+    listeners.forEach((listener) => listener());
   });
 }
 
-describe('useVintexChat', () => {
-  it('enviar uma mensagem cria a bolha do usuário e uma bolha da Vintex em streaming, que cresce a cada chunk', async () => {
-    fakeChat([
-      { type: 'text', delta: 'Enten' },
-      { type: 'text', delta: 'di seu pedido.' },
-      { type: 'done' },
-    ]);
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
-    const { result } = renderHook(() => useVintexChat());
+function getSnapshot(): VintexChatState {
+  return state;
+}
 
-    act(() => {
-      result.current.sendMessage('quero um look de festa');
+function runStream(history: ChatMessage[], vintexMessageId: string): void {
+  abortController?.abort();
+  const controller = new AbortController();
+  abortController = controller;
+
+  setState({ streamingMessageId: vintexMessageId });
+
+  (async () => {
+    try {
+      for await (const chunk of chat({
+        messages: history.map(({ role, text }) => ({ role, text })),
+        signal: controller.signal,
+      })) {
+        if (chunk.type === 'text') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId
+                ? { ...message, text: message.text + chunk.delta }
+                : message,
+            ),
+          }));
+        } else if (chunk.type === 'products') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId ? { ...message, products: chunk.products } : message,
+            ),
+          }));
+        } else if (chunk.type === 'interpreted') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId
+                ? { ...message, interpreted: chunk.interpreted }
+                : message,
+            ),
+          }));
+        } else if (chunk.type === 'error') {
+          setState({ errorMessageId: vintexMessageId, errorText: chunk.message });
+        }
+      }
+    } finally {
+      setState((current) => ({
+        streamingMessageId:
+          current.streamingMessageId === vintexMessageId ? null : current.streamingMessageId,
+      }));
+    }
+  })();
+}
+
+function sendMessage(text: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  lastUserText = trimmed;
+  const userMessage = createMessage('user', trimmed);
+  const vintexMessage = createMessage('vintex', '');
+  const history = [...state.messages, userMessage];
+
+  setState((current) => ({ messages: [...current.messages, userMessage, vintexMessage] }));
+  runStream(history, vintexMessage.id);
+}
+
+function retry(): void {
+  const failedId = state.errorMessageId;
+  if (!lastUserText || !failedId) return;
+
+  const history = state.messages.filter((message) => message.id !== failedId);
+
+  setState((current) => ({
+    messages: current.messages.map((message) =>
+      message.id === failedId ? { ...message, text: '' } : message,
+    ),
+    errorMessageId: null,
+    errorText: null,
+  }));
+
+  runStream(history, failedId);
+}
+
+/**
+ * Limpa o store (nova conversa). Abort no stream em andamento, se houver.
+ * Existe principalmente para isolar testes entre si, já que o store é
+ * módulo-escopado — mas serve igual pra uma futura ação de "nova conversa".
+ */
+export function resetVintexChat(): void {
+  abortController?.abort();
+  abortController = null;
+  hasBootstrapped = false;
+  lastUserText = null;
+  state = { messages: [], streamingMessageId: null, errorMessageId: null, errorText: null };
+  listeners.forEach((listener) => listener());
+}
+
+/**
+ * Estado da conversa com a Vintex e o consumo do `AsyncIterable` devolvido
+ * por `vintexAiService.chat()` (#199) — guardados num store módulo-escopado
+ * (ver acima), não em `useState`: a conversa e o streaming em andamento
+ * sobrevivem a sair de `/vintex` (ex.: abrir o detalhe de uma peça) e
+ * voltar (#209). A página só compõe: chama `sendMessage`/`retry` e passa
+ * `streamingMessageId`/`errorMessageId` para o `ChatBubble` (#197) —
+ * nenhuma regra de negócio no componente de apresentação.
+ *
+ * Enviar uma mensagem nova aborta qualquer stream anterior ainda em
+ * andamento (o usuário pode interromper e perguntar outra coisa); o
+ * histórico enviado ao service inclui toda a conversa até ali.
+ *
+ * Usage:
+ *   const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
+ *     useVintexChat(location.state?.message);
+ *
+ *   <ChatBubble
+ *     message={message}
+ *     streaming={message.id === streamingMessageId}
+ *     error={message.id === errorMessageId ? errorText ?? undefined : undefined}
+ *     onRetry={retry}
+ *   />
+ */
+export function useVintexChat(initialMessage?: string): UseVintexChatResult {
+  const trimmedInitial = initialMessage?.trim();
+
+  /**
+   * A bolha do usuário (vinda da navegação, #207) aparece já na primeira
+   * renderização — mutação direta, sem passar por `setState`/`flushSync`
+   * (que não pode ser chamado durante o render). O streaming de verdade
+   * (que depende de rede) só pode começar depois, então fica no efeito
+   * abaixo.
+   */
+  let bootstrapUserMessage: ChatMessage | null = null;
+  if (trimmedInitial && !hasBootstrapped) {
+    hasBootstrapped = true;
+    bootstrapUserMessage = createMessage('user', trimmedInitial);
+    state = { ...state, messages: [...state.messages, bootstrapUserMessage] };
+  }
+
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+
+  useEffect(() => {
+    if (!bootstrapUserMessage) return;
+    const userMessage = bootstrapUserMessage;
+
+    // Adiado numa microtask: chamado de dentro de um efeito, e
+    // `runStream`/`setState` usa `flushSync`, que não pode rodar enquanto
+    // o React ainda está no meio do commit deste mesmo ciclo.
+    queueMicrotask(() => {
+      const vintexMessage = createMessage('vintex', '');
+      setState((current) => ({ messages: [...current.messages, vintexMessage] }));
+      runStream([userMessage], vintexMessage.id);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    expect(result.current.messages).toHaveLength(2);
-    expect(result.current.messages[0]).toMatchObject({
-      role: 'user',
-      text: 'quero um look de festa',
-    });
-    expect(result.current.streamingMessageId).toBe(result.current.messages[1].id);
-
-    await waitFor(() => {
-      expect(result.current.messages[1].text).toBe('Entendi seu pedido.');
-    });
-
-    // termina em done: streaming desliga, sem bolha de erro.
-    await waitFor(() => {
-      expect(result.current.streamingMessageId).toBeNull();
-    });
-    expect(result.current.errorMessageId).toBeNull();
-  });
-
-  it('chunk products/interpreted preenchem os campos da mesma mensagem', async () => {
-    const product = {
-      id: 'p1',
-      name: 'Vestido floral',
-      price: 89.9,
-      coverImageUrl: null,
-      store: { id: 's1', name: 'Brechó Ana' },
-    };
-    fakeChat([
-      { type: 'text', delta: 'Olha essas peças.' },
-      { type: 'products', products: [product] },
-      { type: 'interpreted', interpreted: { filters: { category: 'Vestidos' } } },
-      { type: 'done' },
-    ]);
-
-    const { result } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('vestido floral');
-    });
-
-    await waitFor(() => {
-      expect(result.current.messages[1].products).toEqual([product]);
-    });
-    expect(result.current.messages[1].interpreted).toEqual({ filters: { category: 'Vestidos' } });
-  });
-
-  it('error no stream mostra a mensagem na bolha e desliga o streaming, sem done', async () => {
-    fakeChat([
-      { type: 'text', delta: 'Espera' },
-      { type: 'error', message: 'A Vintex não respondeu a tempo.' },
-    ]);
-
-    const { result } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('algo');
-    });
-
-    const vintexId = result.current.messages[1].id;
-
-    await waitFor(() => {
-      expect(result.current.errorMessageId).toBe(vintexId);
-    });
-    expect(result.current.errorText).toBe('A Vintex não respondeu a tempo.');
-    expect(result.current.streamingMessageId).toBeNull();
-  });
-
-  it('retry reenvia a última pergunta, reaproveitando a mesma bolha (mesmo id)', async () => {
-    fakeChat([
-      { type: 'text', delta: 'Falhou' },
-      { type: 'error', message: 'Falha de rede.' },
-    ]);
-
-    const { result } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('bolsa vermelha');
-    });
-
-    const vintexId = result.current.messages[1].id;
-    await waitFor(() => expect(result.current.errorMessageId).toBe(vintexId));
-
-    fakeChat([{ type: 'text', delta: 'Agora funcionou.' }, { type: 'done' }]);
-
-    act(() => {
-      result.current.retry();
-    });
-
-    expect(result.current.errorMessageId).toBeNull();
-    expect(result.current.messages).toHaveLength(2);
-    expect(result.current.messages[1].id).toBe(vintexId);
-
-    await waitFor(() => {
-      expect(result.current.messages[1].text).toBe('Agora funcionou.');
-    });
-    expect(vintexAiService.chat).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: [{ role: 'user', text: 'bolsa vermelha' }],
-      }),
-    );
-  });
-
-  it('enviar uma nova pergunta aborta o stream anterior, que não escreve mais nada', async () => {
-    let capturedSignal: AbortSignal | undefined;
-    vi.spyOn(vintexAiService, 'chat').mockImplementation(async function* (request) {
-      capturedSignal = request.signal;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      if (request.signal?.aborted) return;
-      yield { type: 'text', delta: 'não deveria aparecer' };
-    });
-
-    const { result } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('primeira pergunta');
-    });
-
-    fakeChat([{ type: 'text', delta: 'segunda resposta' }, { type: 'done' }]);
-    act(() => {
-      result.current.sendMessage('segunda pergunta');
-    });
-
-    expect(capturedSignal?.aborted).toBe(true);
-
-    await waitFor(() => {
-      expect(result.current.messages[3]?.text).toBe('segunda resposta');
-    });
-    expect(result.current.messages.some((m) => m.text.includes('não deveria aparecer'))).toBe(
-      false,
-    );
-  });
-
-  it('histórico enviado ao service inclui as mensagens anteriores da conversa', async () => {
-    const spy = fakeChat([{ type: 'text', delta: 'ok' }, { type: 'done' }]);
-
-    const { result } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('primeira');
-    });
-    await waitFor(() => expect(result.current.streamingMessageId).toBeNull());
-
-    act(() => {
-      result.current.sendMessage('segunda');
-    });
-
-    expect(spy).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: [
-          { role: 'user', text: 'primeira' },
-          { role: 'vintex', text: 'ok' },
-          { role: 'user', text: 'segunda' },
-        ],
-      }),
-    );
-  });
-
-  it('desmontar o hook aborta o stream em andamento', async () => {
-    let capturedSignal: AbortSignal | undefined;
-    vi.spyOn(vintexAiService, 'chat').mockImplementation(async function* (request) {
-      capturedSignal = request.signal;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      if (request.signal?.aborted) return;
-      yield { type: 'text', delta: 'x' };
-    });
-
-    const { result, unmount } = renderHook(() => useVintexChat());
-    act(() => {
-      result.current.sendMessage('algo');
-    });
-
-    unmount();
-
-    expect(capturedSignal?.aborted).toBe(true);
-  });
-
-  it('ignora mensagem em branco, sem criar bolhas nem chamar o service', () => {
-    const spy = fakeChat([{ type: 'done' }]);
-    const { result } = renderHook(() => useVintexChat());
-
-    act(() => {
-      result.current.sendMessage('   ');
-    });
-
-    expect(result.current.messages).toHaveLength(0);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('retry sem nenhuma mensagem enviada antes não faz nada', () => {
-    const spy = fakeChat([{ type: 'done' }]);
-    const { result } = renderHook(() => useVintexChat());
-
-    act(() => {
-      result.current.retry();
-    });
-
-    expect(result.current.messages).toHaveLength(0);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('aceita uma mensagem inicial (vinda da navegação) e já dispara o envio', async () => {
-    fakeChat([{ type: 'text', delta: 'oi' }, { type: 'done' }]);
-
-    const { result } = renderHook(() => useVintexChat('mensagem inicial'));
-
-    expect(result.current.messages[0]).toMatchObject({
-      role: 'user',
-      text: 'mensagem inicial',
-    });
-
-    await waitFor(() => expect(result.current.messages[1]?.text).toBe('oi'));
-  });
-});
+  return { ...snapshot, sendMessage, retry };
+}

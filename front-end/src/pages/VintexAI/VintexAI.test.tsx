@@ -1,25 +1,55 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
+import { resetVintexChat } from '@/hooks/useVintexChat';
 import type { ChatChunk } from '@/types/vintex-ai';
+
+beforeEach(() => {
+  resetVintexChat();
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  resetVintexChat();
 });
 
-/** Fila de chunks com um pequeno atraso real entre cada um. */
+/**
+ * Fila de chunks com um pequeno atraso real entre cada um. Implementa o
+ * protocolo de iterador assíncrono na mão (sem `async function*`)
+ * algumas versões do Vitest não mockam geradores async corretamente via
+ * `mockImplementation`.
+ */
 function fakeChat(chunks: ChatChunk[], delayMs = 10) {
-  return vi.spyOn(vintexAiService, 'chat').mockImplementation(async function* (request) {
-    for (const chunk of chunks) {
-      if (request.signal?.aborted) return;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      if (request.signal?.aborted) return;
-      yield chunk;
-    }
+  return vi.spyOn(vintexAiService, 'chat').mockImplementation((request) => {
+    let index = 0;
+    const iterator = {
+      [Symbol.asyncIterator]() {
+        return iterator;
+      },
+      async next(): Promise<IteratorResult<ChatChunk>> {
+        if (request.signal?.aborted || index >= chunks.length) {
+          return { done: true, value: undefined };
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (request.signal?.aborted) {
+          return { done: true, value: undefined };
+        }
+        const value = chunks[index];
+        index += 1;
+        return { done: false, value };
+      },
+      async return(value?: unknown): Promise<IteratorResult<ChatChunk>> {
+        return { done: true, value: value as ChatChunk };
+      },
+      async throw(error?: unknown): Promise<IteratorResult<ChatChunk>> {
+        throw error;
+      },
+    };
+    return iterator as AsyncGenerator<ChatChunk>;
   });
 }
 
@@ -115,14 +145,14 @@ describe('VintexAI page', () => {
     expect(screen.queryByText('Falha de rede.')).not.toBeInTheDocument();
   });
 
-  it('desmontar a tela aborta o stream em andamento', async () => {
-    let capturedSignal: AbortSignal | undefined;
-    vi.spyOn(vintexAiService, 'chat').mockImplementation(async function* (request) {
-      capturedSignal = request.signal;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      if (request.signal?.aborted) return;
-      yield { type: 'text', delta: 'não deveria aparecer' };
-    });
+  /**
+   * #209: sair de /vintex pra ver o detalhe de uma peça não pode perder a
+   * conversa nem cortar uma resposta que ainda está chegando ela termina
+   * em segundo plano, e a tela volta a mostrar tudo, já completo, quando o
+   * usuário retorna. Contrário do que valia no #208 (lá, desmontar abortava).
+   */
+  it('sair da tela não aborta o stream: ele termina em segundo plano e, ao voltar, a conversa continua onde estava', async () => {
+    fakeChat([{ type: 'text', delta: 'resposta completa' }, { type: 'done' }], 15);
 
     const { unmount } = renderPage();
 
@@ -133,7 +163,15 @@ describe('VintexAI page', () => {
 
     unmount();
 
-    expect(capturedSignal?.aborted).toBe(true);
+    // Ninguém montado escutando, mas o stream segue rodando por trás.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+
+    renderPage();
+
+    expect(screen.getByText('algo')).toBeInTheDocument();
+    expect(screen.getByText('resposta completa')).toBeInTheDocument();
   });
 
   it('chegando de outra tela (com histórico), o "Voltar" volta uma página em vez de ir pra home', async () => {
@@ -180,6 +218,44 @@ describe('VintexAI page', () => {
     fireEvent.click(link);
 
     expect(await screen.findByRole('heading', { name: 'Detalhe da peça' })).toBeInTheDocument();
+  });
+
+  it('ao voltar do detalhe da peça pra /vintex, a conversa (incluindo a peça) continua lá', async () => {
+    const product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+    fakeChat([{ type: 'products', products: [product] }, { type: 'done' }]);
+
+    render(
+      <MemoryRouter initialEntries={['/vintex']}>
+        <Routes>
+          <Route path="/vintex" element={<VintexAI />} />
+          <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+      target: { value: 'vestido' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    const link = await screen.findByRole('link', { name: 'Ver peça: Vestido floral' });
+    fireEvent.click(link);
+    await screen.findByRole('heading', { name: 'Detalhe da peça' });
+
+    // "Voltar" da tela do detalhe é fora do escopo desta issue (é da tela
+    // de produto) aqui simulamos com desmontar/montar de novo, que é
+    // exatamente o que acontece por trás quando a rota muda.
+    cleanup();
+    renderPage();
+
+    expect(screen.getByText('vestido')).toBeInTheDocument();
+    expect(screen.getByText('Vestido floral')).toBeInTheDocument();
   });
 
   it('entrando por URL direta, o "Voltar" leva para a home', async () => {

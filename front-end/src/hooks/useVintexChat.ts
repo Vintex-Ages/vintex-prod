@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { chat } from '@/services/vintexAiService';
 import type { ChatMessage } from '@/types/vintex-ai';
 
-interface UseVintexChatResult {
+interface VintexChatState {
   messages: ChatMessage[];
   /** Id da mensagem da Vintex sendo escrita agora, ou `null` se nenhuma. */
   streamingMessageId: string | null;
   /** Id da mensagem que falhou, ou `null` se nenhuma. */
   errorMessageId: string | null;
   errorText: string | null;
+}
+
+interface UseVintexChatResult extends VintexChatState {
   sendMessage: (text: string) => void;
   /** Reenvia a última pergunta, reaproveitando a bolha que falhou. */
   retry: () => void;
@@ -23,17 +26,146 @@ function createMessage(role: ChatMessage['role'], text: string): ChatMessage {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Store a nível de módulo — de propósito, fora do ciclo de vida de qualquer
+// componente. Sair de /vintex pra ver o detalhe de uma peça desmonta a
+// página (#209): se o estado vivesse em `useState`, a conversa e o
+// streaming em andamento se perderiam nesse momento. Aqui eles sobrevivem —
+// só um reload de página de verdade reinicia a conversa (ou uma chamada
+// explícita a `resetVintexChat`).
+// ---------------------------------------------------------------------------
+
+let state: VintexChatState = {
+  messages: [],
+  streamingMessageId: null,
+  errorMessageId: null,
+  errorText: null,
+};
+let hasBootstrapped = false;
+let lastUserText: string | null = null;
+let abortController: AbortController | null = null;
+const listeners = new Set<() => void>();
+
+function setState(
+  patch: Partial<VintexChatState> | ((current: VintexChatState) => Partial<VintexChatState>),
+): void {
+  state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+  listeners.forEach((listener) => listener());
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot(): VintexChatState {
+  return state;
+}
+
+function runStream(history: ChatMessage[], vintexMessageId: string): void {
+  abortController?.abort();
+  const controller = new AbortController();
+  abortController = controller;
+
+  setState({ streamingMessageId: vintexMessageId });
+
+  (async () => {
+    try {
+      for await (const chunk of chat({
+        messages: history.map(({ role, text }) => ({ role, text })),
+        signal: controller.signal,
+      })) {
+        if (chunk.type === 'text') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId
+                ? { ...message, text: message.text + chunk.delta }
+                : message,
+            ),
+          }));
+        } else if (chunk.type === 'products') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId ? { ...message, products: chunk.products } : message,
+            ),
+          }));
+        } else if (chunk.type === 'interpreted') {
+          setState((current) => ({
+            messages: current.messages.map((message) =>
+              message.id === vintexMessageId
+                ? { ...message, interpreted: chunk.interpreted }
+                : message,
+            ),
+          }));
+        } else if (chunk.type === 'error') {
+          setState({ errorMessageId: vintexMessageId, errorText: chunk.message });
+        }
+      }
+    } finally {
+      setState((current) => ({
+        streamingMessageId:
+          current.streamingMessageId === vintexMessageId ? null : current.streamingMessageId,
+      }));
+    }
+  })();
+}
+
+function sendMessage(text: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  lastUserText = trimmed;
+  const userMessage = createMessage('user', trimmed);
+  const vintexMessage = createMessage('vintex', '');
+  const history = [...state.messages, userMessage];
+
+  setState((current) => ({ messages: [...current.messages, userMessage, vintexMessage] }));
+  runStream(history, vintexMessage.id);
+}
+
+function retry(): void {
+  const failedId = state.errorMessageId;
+  if (!lastUserText || !failedId) return;
+
+  const history = state.messages.filter((message) => message.id !== failedId);
+
+  setState((current) => ({
+    messages: current.messages.map((message) =>
+      message.id === failedId ? { ...message, text: '' } : message,
+    ),
+    errorMessageId: null,
+    errorText: null,
+  }));
+
+  runStream(history, failedId);
+}
+
 /**
- * Estado da conversa com a Vintex e o loop de consumo do `AsyncIterable`
- * devolvido por `vintexAiService.chat()` (#199). A página só compõe:
- * chama `sendMessage`/`retry` e passa `streamingMessageId`/`errorMessageId`
- * para o `ChatBubble` (#197) nenhuma regra de negócio no componente de
- * apresentação.
+ * Limpa o store (nova conversa). Abort no stream em andamento, se houver.
+ * Existe principalmente para isolar testes entre si, já que o store é
+ * módulo-escopado, mas serve igual pra uma futura ação de "nova conversa".
+ */
+export function resetVintexChat(): void {
+  abortController?.abort();
+  abortController = null;
+  hasBootstrapped = false;
+  lastUserText = null;
+  state = { messages: [], streamingMessageId: null, errorMessageId: null, errorText: null };
+  listeners.forEach((listener) => listener());
+}
+
+/**
+ * Estado da conversa com a Vintex e o consumo do `AsyncIterable` devolvido
+ * por `vintexAiService.chat()` (#199) — guardados num store módulo-escopado
+ * (ver acima), não em `useState`: a conversa e o streaming em andamento
+ * sobrevivem a sair de `/vintex` (ex.: abrir o detalhe de uma peça) e
+ * voltar (#209). A página só compõe: chama `sendMessage`/`retry` e passa
+ * `streamingMessageId`/`errorMessageId` para o `ChatBubble` (#197) —
+ * nenhuma regra de negócio no componente de apresentação.
  *
  * Enviar uma mensagem nova aborta qualquer stream anterior ainda em
  * andamento (o usuário pode interromper e perguntar outra coisa); o
- * histórico enviado ao service inclui toda a conversa até ali. Desmontar
- * o componente que usa o hook também aborta o stream em andamento.
+ * histórico enviado ao service inclui toda a conversa até ali.
  *
  * Usage:
  *   const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
@@ -47,115 +179,16 @@ function createMessage(role: ChatMessage['role'], text: string): ChatMessage {
  *   />
  */
 export function useVintexChat(initialMessage?: string): UseVintexChatResult {
-  const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    initialMessage?.trim() ? [createMessage('user', initialMessage.trim())] : [],
-  );
-  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
-  const [errorMessageId, setErrorMessageId] = useState<string | null>(null);
-  const [errorText, setErrorText] = useState<string | null>(null);
-
-  const messagesRef = useRef<ChatMessage[]>(messages);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  const lastUserTextRef = useRef<string | null>(initialMessage?.trim() || null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-    },
-    [],
-  );
-
-  const runStream = useCallback((history: ChatMessage[], vintexMessageId: string) => {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setStreamingMessageId(vintexMessageId);
-
-    (async () => {
-      try {
-        for await (const chunk of chat({
-          messages: history.map(({ role, text }) => ({ role, text })),
-          signal: controller.signal,
-        })) {
-          if (chunk.type === 'text') {
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === vintexMessageId
-                  ? { ...message, text: message.text + chunk.delta }
-                  : message,
-              ),
-            );
-          } else if (chunk.type === 'products') {
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === vintexMessageId ? { ...message, products: chunk.products } : message,
-              ),
-            );
-          } else if (chunk.type === 'interpreted') {
-            setMessages((current) =>
-              current.map((message) =>
-                message.id === vintexMessageId
-                  ? { ...message, interpreted: chunk.interpreted }
-                  : message,
-              ),
-            );
-          } else if (chunk.type === 'error') {
-            setErrorMessageId(vintexMessageId);
-            setErrorText(chunk.message);
-          }
-        }
-      } finally {
-        setStreamingMessageId((current) => (current === vintexMessageId ? null : current));
-      }
-    })();
-  }, []);
-
-  const sendMessage = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-
-      lastUserTextRef.current = trimmed;
-      const userMessage = createMessage('user', trimmed);
-      const vintexMessage = createMessage('vintex', '');
-      const history = [...messagesRef.current, userMessage];
-
-      setMessages((current) => [...current, userMessage, vintexMessage]);
-      runStream(history, vintexMessage.id);
-    },
-    [runStream],
-  );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot);
 
   useEffect(() => {
-    if (initialMessage?.trim() && messagesRef.current.length === 1) {
-      const [firstMessage] = messagesRef.current;
-      const vintexMessage = createMessage('vintex', '');
-      setMessages((current) => [...current, vintexMessage]);
-      runStream([firstMessage], vintexMessage.id);
+    const trimmed = initialMessage?.trim();
+    if (trimmed && !hasBootstrapped) {
+      hasBootstrapped = true;
+      sendMessage(trimmed);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const retry = useCallback(() => {
-    const lastUserText = lastUserTextRef.current;
-    const failedId = errorMessageId;
-    if (!lastUserText || !failedId) return;
-
-    const history = messagesRef.current.filter((message) => message.id !== failedId);
-
-    setMessages((current) =>
-      current.map((message) => (message.id === failedId ? { ...message, text: '' } : message)),
-    );
-    setErrorMessageId(null);
-    setErrorText(null);
-
-    runStream(history, failedId);
-  }, [errorMessageId, runStream]);
-
-  return { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry };
+  return { ...snapshot, sendMessage, retry };
 }
