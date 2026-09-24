@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
-import { useAuth } from '@/context/useAuth';
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, useAuth } from '@/context/useAuth';
 import { useCart } from './useCart';
 import type { AuthUser } from '@/types/auth';
 import type { Cart } from '@/types/cart';
@@ -78,13 +78,14 @@ const SAMPLE_CART: Cart = {
 
 function Probe() {
   const { login, logout } = useAuth();
-  const { cart, count, loading, add, remove } = useCart();
+  const { cart, count, loading, error, add, remove } = useCart();
 
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="groups">{cart ? cart.groups.length : 'null'}</span>
       <span data-testid="count">{count}</span>
+      <span data-testid="error">{error ? error.code : 'none'}</span>
       <button onClick={() => login(SAMPLE_USER, 'tok-1')}>entrar</button>
       <button onClick={() => logout()}>sair</button>
       <button onClick={() => void add('1')}>add</button>
@@ -132,7 +133,7 @@ describe('CartContext', () => {
 
     await waitFor(() => expect(screen.getByTestId('groups')).toHaveTextContent('2'));
     expect(screen.getByTestId('count')).toHaveTextContent('3');
-    expect(mockedGetCart).toHaveBeenCalled();
+    expect(mockedGetCart).toHaveBeenCalledWith(SAMPLE_USER.id);
   });
 
   it('ao deslogar, o carrinho volta a null', async () => {
@@ -158,7 +159,7 @@ describe('CartContext', () => {
     fireEvent.click(screen.getByRole('button', { name: 'add' }));
 
     await waitFor(() => expect(screen.getByTestId('groups')).toHaveTextContent('2'));
-    expect(mockedAddItem).toHaveBeenCalledWith('1');
+    expect(mockedAddItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
   });
 
   it('remove() chama cartService.removeItem e atualiza o carrinho com o resultado', async () => {
@@ -172,7 +173,30 @@ describe('CartContext', () => {
     fireEvent.click(screen.getByRole('button', { name: 'remove' }));
 
     await waitFor(() => expect(screen.getByTestId('groups')).toHaveTextContent('0'));
-    expect(mockedRemoveItem).toHaveBeenCalledWith('1');
+    expect(mockedRemoveItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
+  });
+
+  it('reload (F5): sessao restaurada do sessionStorage carrega o carrinho com o user.id do AuthContext', async () => {
+    window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+    window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+    mockedGetCart.mockResolvedValue(SAMPLE_CART);
+
+    renderApp();
+
+    await waitFor(() => expect(screen.getByTestId('groups')).toHaveTextContent('2'));
+    expect(mockedGetCart).toHaveBeenCalledWith(SAMPLE_USER.id);
+    expect(screen.getByTestId('error')).toHaveTextContent('none');
+  });
+
+  it('falha no carregamento automatico vira estado de erro, sem rejeicao nao tratada', async () => {
+    mockedGetCart.mockRejectedValue({ code: 'API_ERROR', message: 'Falhou.' });
+    renderApp();
+
+    fireEvent.click(screen.getByRole('button', { name: 'entrar' }));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toHaveTextContent('API_ERROR'));
+    expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    expect(screen.getByTestId('groups')).toHaveTextContent('null');
   });
 
   it('useCart() lanca erro claro quando usado fora do CartProvider', () => {
