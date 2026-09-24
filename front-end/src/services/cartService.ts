@@ -43,7 +43,11 @@ import { httpClient } from './httpClient';
 /** `true` quando o módulo deve operar sobre o mock em `sessionStorage`. */
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
 
-/** Agrupa itens já resolvidos (com `product` completo) pela loja de cada peça. */
+/**
+ * Agrupa itens já resolvidos (com `product` completo) pela loja de cada peça.
+ * Não preenche `pixKey`: o mock de produtos não guarda chave Pix de loja, e
+ * inventar uma aqui mascararia a dependência do back (revisão do PR #228, ponto 3).
+ */
 function groupByStore(items: CartItem[]): CartGroup[] {
   const groups = new Map<string, CartGroup>();
 
@@ -154,6 +158,12 @@ interface ApiCartStore {
   city?: string;
   verified?: boolean;
   logo_url?: string;
+  /**
+   * Chave Pix do vendedor (RN-18/RN-19). O model `Store` do back já tem
+   * `pix_key`, mas o endpoint do carrinho ainda não confirmou que a envia —
+   * por isso opcional.
+   */
+  pix_key?: string;
 }
 
 interface ApiCartItem {
@@ -203,6 +213,7 @@ function mapApiCartGroup(group: ApiCartGroup): CartGroup {
     store: mapApiStore(group.store),
     items: group.items.map(mapApiCartItem),
     subtotalCents: Math.round(group.subtotal * 100),
+    pixKey: group.store.pix_key,
   };
 }
 

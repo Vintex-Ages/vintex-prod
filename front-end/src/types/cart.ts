@@ -28,6 +28,12 @@ export interface CartGroup {
   items: CartItem[];
   /** Soma em centavos apenas dos itens do grupo sem `unavailable`. */
   subtotalCents: number;
+  /**
+   * Chave Pix do vendedor, exibida na tela de pagamento (RN-18/RN-19).
+   * Opcional até o endpoint do carrinho confirmar o campo; no modo mock é
+   * sempre `undefined`, porque o mock de produtos não guarda chave Pix.
+   */
+  pixKey?: string;
 }
 
 /** Carrinho do usuário: só grupos por loja, sem total único entre lojas. */
