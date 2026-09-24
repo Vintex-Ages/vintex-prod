@@ -27,10 +27,10 @@ function createMessage(role: ChatMessage['role'], text: string): ChatMessage {
 }
 
 // ---------------------------------------------------------------------------
-// Store a nível de módulo — de propósito, fora do ciclo de vida de qualquer
+// Store a nível de módulo de propósito, fora do ciclo de vida de qualquer
 // componente. Sair de /vintex pra ver o detalhe de uma peça desmonta a
 // página (#209): se o estado vivesse em `useState`, a conversa e o
-// streaming em andamento se perderiam nesse momento. Aqui eles sobrevivem —
+// streaming em andamento se perderiam nesse momento. Aqui eles sobrevivem
 // só um reload de página de verdade reinicia a conversa (ou uma chamada
 // explícita a `resetVintexChat`).
 // ---------------------------------------------------------------------------
@@ -156,11 +156,11 @@ export function resetVintexChat(): void {
 
 /**
  * Estado da conversa com a Vintex e o consumo do `AsyncIterable` devolvido
- * por `vintexAiService.chat()` (#199) — guardados num store módulo-escopado
+ * por `vintexAiService.chat()` (#199) guardados num store módulo-escopado
  * (ver acima), não em `useState`: a conversa e o streaming em andamento
  * sobrevivem a sair de `/vintex` (ex.: abrir o detalhe de uma peça) e
  * voltar (#209). A página só compõe: chama `sendMessage`/`retry` e passa
- * `streamingMessageId`/`errorMessageId` para o `ChatBubble` (#197) —
+ * `streamingMessageId`/`errorMessageId` para o `ChatBubble` (#197)
  * nenhuma regra de negócio no componente de apresentação.
  *
  * Enviar uma mensagem nova aborta qualquer stream anterior ainda em
