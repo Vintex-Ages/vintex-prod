@@ -1,10 +1,18 @@
-﻿import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
-import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, useAuth } from '@/context/useAuth';
+import { me } from '@/services/authService';
 import type { AuthUser } from '@/types/auth';
 import Header from './Header';
+
+// Só `me` é substituído: é o que `refreshUser()` consulta. O resto do
+// authService (logout etc.) segue o comportamento real do modo mock.
+vi.mock('@/services/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/authService')>();
+  return { ...actual, me: vi.fn() };
+});
 
 afterEach(cleanup);
 
@@ -32,10 +40,28 @@ function renderHeader() {
   );
 }
 
-function renderHeaderLoggedIn() {
-  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+/**
+ * Expõe o `refreshUser` do contexto para o teste disparar a mesma atualização
+ * que a tela de criar loja (#212) fará depois do `createStore`.
+ */
+let refreshUserFromTest: (() => Promise<void>) | undefined;
+function RefreshProbe() {
+  refreshUserFromTest = useAuth().refreshUser;
+  return null;
+}
+
+function renderHeaderLoggedIn(user: AuthUser = SAMPLE_USER) {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
   window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
-  return renderHeader();
+  return render(
+    <MemoryRouter initialEntries={['/']}>
+      <AuthProvider>
+        <Header />
+        <PathProbe />
+        <RefreshProbe />
+      </AuthProvider>
+    </MemoryRouter>,
+  );
 }
 
 describe('<Header />', () => {
@@ -132,5 +158,75 @@ describe('<Header />', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Sair' }));
 
     expect(await screen.findByRole('button', { name: 'Conta' })).toBeInTheDocument();
+  });
+
+  describe('itens de vendedor no menu (FE-US006-2, #213)', () => {
+    it('logado sem loja: mostra "Quero vender" e não os atalhos da loja', async () => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+      expect(screen.getByRole('button', { name: 'Quero vender' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Minha loja' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Anunciar peça' })).not.toBeInTheDocument();
+    });
+
+    it('logado sem loja: "Quero vender" leva a /sell e fecha o menu', async () => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Quero vender' }));
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/sell'));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it('logado com loja: mostra "Minha loja" e "Anunciar peça", sem "Quero vender"', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+      expect(screen.getByRole('button', { name: 'Minha loja' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciar peça' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Quero vender' })).not.toBeInTheDocument();
+    });
+
+    it('logado com loja: "Minha loja" leva a /seller', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Minha loja' }));
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(/^\/seller$/));
+    });
+
+    it('logado com loja: "Anunciar peça" leva a /seller/products/new', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Anunciar peça' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('path')).toHaveTextContent('/seller/products/new'),
+      );
+    });
+
+    it('troca os itens com o menu aberto quando o contexto passa a is_seller: true', async () => {
+      vi.mocked(me).mockResolvedValue({ ...SAMPLE_USER, is_seller: true });
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      expect(screen.getByRole('button', { name: 'Quero vender' })).toBeInTheDocument();
+
+      // O que a tela de criar loja fará depois do `createStore`: nenhum
+      // reload, nenhuma remontagem do Header — só o contexto atualizado.
+      await act(async () => {
+        await refreshUserFromTest?.();
+      });
+
+      expect(screen.getByRole('button', { name: 'Minha loja' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciar peça' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Quero vender' })).not.toBeInTheDocument();
+    });
   });
 });
