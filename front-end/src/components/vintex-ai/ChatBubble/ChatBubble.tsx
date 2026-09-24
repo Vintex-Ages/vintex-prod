@@ -13,16 +13,8 @@ interface ChatBubbleProps {
  *   `outfit` — compõe o `OutfitSuggestionCard` (#139) para mostrar a
  *   sugestão de look, sem reimplementar esse card aqui.
  *
- * Componente de apresentação puro: não busca dados nem guarda estado —
- * lista de mensagens e histórico ficam na página que usa este componente.
- * Tipos vêm de `@/types/vintex-ai` (#138), não redeclarados.
- *
- * Usage:
- *   import { ChatBubble } from '@/components/vintex-ai/ChatBubble';
- *
- *   {messages.map((message) => (
- *     <ChatBubble key={message.id} message={message} />
- *   ))}
+ * Componente de apresentação puro. Tipos vêm de `@/types/vintex-ai` (#138,
+ * evoluído em #199: `message.createdAt` no lugar do antigo `timestamp`).
  */
 export function ChatBubble({ message }: ChatBubbleProps) {
   if (message.role === 'user') {
@@ -30,7 +22,7 @@ export function ChatBubble({ message }: ChatBubbleProps) {
       <div className="rounded-none bg-vermelho-escuro p-4 shadow-[6px_6px_0_0_theme(colors.vermelho-suave)]">
         <p className="text-label font-semibold uppercase text-branco-quente">Você</p>
         <p className="mt-2 text-body text-branco-quente">{message.text}</p>
-        <p className="mt-2 text-label text-branco-quente/70">{message.timestamp}</p>
+        <p className="mt-2 text-label text-branco-quente/70">{message.createdAt}</p>
       </div>
     );
   }

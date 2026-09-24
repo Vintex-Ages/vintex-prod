@@ -1,9 +1,11 @@
 ﻿import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import type { AuthUser } from '@/types/auth';
 import AppRoutes from './AppRoutes';
-import { paths, productDetail } from './paths';
+import { paths, productDetail, sellerProductPath, storeProfile } from './paths';
 
 afterEach(cleanup);
 
@@ -14,6 +16,39 @@ function renderAt(path: string) {
         <AppRoutes />
       </AuthProvider>
     </MemoryRouter>,
+  );
+}
+
+const BUYER: AuthUser = {
+  id: 'u_1',
+  name: 'Ana Compradora',
+  email: 'ana@exemplo.com',
+  is_seller: false,
+  is_admin: false,
+};
+
+const SELLER: AuthUser = { ...BUYER, id: 'u_2', is_seller: true };
+
+function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
+  return {
+    user: null,
+    token: null,
+    isAuthenticated: false,
+    loading: false,
+    login: () => {},
+    logout: () => {},
+    ...overrides,
+  };
+}
+
+/** Renderiza `AppRoutes` com uma sessão já dada, em vez do `AuthProvider` real. */
+function renderAtWithAuth(path: string, authValue: AuthContextValue) {
+  return render(
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={[path]}>
+        <AppRoutes />
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
@@ -87,5 +122,83 @@ describe('<AppRoutes />', () => {
   ])('RN-26: %s continua acessível sem login', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+  });
+
+  // --- #207: pontos de entrada da Vintex (FAB) ---
+
+  it.each([paths.home, paths.catalog, productDetail('1')])(
+    'mostra o FAB da Vintex em %s (dentro do Layout)',
+    async (path) => {
+      renderAt(path);
+      expect(
+        await screen.findByRole('button', { name: 'Abrir assistente Vintex' }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it.each([paths.vintex, paths.login, paths.register])(
+    'não mostra o FAB da Vintex em %s (fora do Layout, de propósito)',
+    async (path) => {
+      renderAt(path);
+      await screen.findByRole('heading', { level: 1 });
+      expect(
+        screen.queryByRole('button', { name: 'Abrir assistente Vintex' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('no detalhe do produto, o FAB sobe (raised) para não sobrepor a barra fixa', async () => {
+    renderAt(productDetail('1'));
+
+    const fab = await screen.findByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-24');
+    expect(fab.parentElement).toHaveClass('web:bottom-5');
+  });
+
+  it('na Home (sem barra fixa), o FAB fica na posição padrão, não raised', async () => {
+    renderAt(paths.home);
+
+    const fab = await screen.findByRole('button', { name: 'Abrir assistente Vintex' });
+    expect(fab.parentElement).toHaveClass('bottom-5');
+    expect(fab.parentElement).not.toHaveClass('bottom-24');
+  });
+
+  // --- FE-FND-4 (#205): rotas da Sprint 2 e guardas ---
+
+  it.each([
+    [paths.sell, 'Quero vender', SELLER],
+    [paths.seller, 'Painel do vendedor', SELLER],
+    [paths.sellerProductNew, 'Nova peça', SELLER],
+    [sellerProductPath('1'), 'Editar peça', SELLER],
+    [paths.cart, 'Carrinho', BUYER],
+    [storeProfile('1'), 'Perfil da loja', null],
+    [paths.profilePreferences, 'Preferências', BUYER],
+  ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
+    renderAtWithAuth(
+      path,
+      makeAuthValue(
+        user ? { isAuthenticated: true, user } : { isAuthenticated: false, user: null },
+      ),
+    );
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('/seller sem sessão redireciona a /login', async () => {
+    renderAtWithAuth(paths.seller, makeAuthValue({ isAuthenticated: false, user: null }));
+    await screen.findByText('Entre na Vintex');
+  });
+
+  it('/seller logado sem papel seller é redirecionado, não mostra o painel', async () => {
+    renderAtWithAuth(paths.seller, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+    expect(await screen.findByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+  });
+
+  it('/store/:id abre sem login (leitura pública)', async () => {
+    renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
+    expect(await screen.findByRole('heading', { name: 'Perfil da loja' })).toBeInTheDocument();
   });
 });

@@ -40,7 +40,7 @@ describe('VintexAI page', () => {
     vi.spyOn(vintexAiService, 'getOutfitSuggestion').mockResolvedValue({
       id: 'reply-1',
       role: 'vintex',
-      timestamp: 'agora',
+      createdAt: 'agora',
       text: 'Resposta mockada de teste.',
     });
 
@@ -64,7 +64,7 @@ describe('VintexAI page', () => {
     vi.spyOn(vintexAiService, 'getOutfitSuggestion').mockResolvedValue({
       id: 'reply-2',
       role: 'vintex',
-      timestamp: 'agora',
+      createdAt: 'agora',
       text: 'Ok, montei uma sugestão!',
     });
 

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  ChatChunk,
   ChatMessage,
   ChatRole,
+  InterpretedQuery,
   OutfitItem,
   OutfitItemIcon,
   OutfitSuggestion,
 } from './vintex-ai';
+import type { Product } from './product';
 
 /**
  * Estes testes existem principalmente para travar o formato dos tipos:
@@ -37,20 +40,32 @@ describe('vintex-ai types', () => {
     expect(suggestion.items).toHaveLength(1);
   });
 
-  it('aceita ChatMessage para os dois papéis (user/vintex), com outfit opcional', () => {
+  it('aceita ChatMessage para os dois papéis (user/vintex), com createdAt (#199)', () => {
     const roles: ChatRole[] = ['user', 'vintex'];
 
     const messages: ChatMessage[] = roles.map((role) => ({
       id: `msg-${role}`,
       role,
-      timestamp: 'agora',
+      createdAt: new Date().toISOString(),
       text: 'texto de exemplo',
     }));
 
-    const messageWithOutfit: ChatMessage = {
+    expect(messages.map((message) => message.role)).toEqual(roles);
+  });
+
+  it('ChatMessage aceita outfit, products e interpreted, todos opcionais e coexistindo', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Camiseta',
+      price: 79.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó' },
+    };
+
+    const message: ChatMessage = {
       id: 'msg-outfit',
       role: 'vintex',
-      timestamp: 'agora',
+      createdAt: new Date().toISOString(),
       text: 'texto de exemplo',
       outfit: {
         title: 'Domingo de garimpo',
@@ -58,9 +73,44 @@ describe('vintex-ai types', () => {
         items: [{ id: 'i1', label: 'Camisa leve', icon: 'shirt' }],
         note: 'nota',
       },
+      products: [product],
+      interpreted: { filters: { category: 'Roupas' }, similarity: 'básico' },
     };
 
-    expect(messages.map((message) => message.role)).toEqual(roles);
-    expect(messageWithOutfit.outfit?.items).toHaveLength(1);
+    expect(message.outfit?.items).toHaveLength(1);
+    expect(message.products).toHaveLength(1);
+    expect(message.interpreted?.filters.category).toBe('Roupas');
+  });
+
+  it('InterpretedQuery aceita filters sem similarity (busca 100% objetiva)', () => {
+    const interpreted: InterpretedQuery = { filters: { color: 'Preto', size: 'M' } };
+
+    expect(interpreted.similarity).toBeUndefined();
+  });
+
+  it('ChatChunk cobre os cinco tipos de evento do streaming', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Camiseta',
+      price: 79.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó' },
+    };
+
+    const chunks: ChatChunk[] = [
+      { type: 'text', delta: 'Ent' },
+      { type: 'products', products: [product] },
+      { type: 'interpreted', interpreted: { filters: {} } },
+      { type: 'done' },
+      { type: 'error', message: 'falhou' },
+    ];
+
+    expect(chunks.map((chunk) => chunk.type)).toEqual([
+      'text',
+      'products',
+      'interpreted',
+      'done',
+      'error',
+    ]);
   });
 });

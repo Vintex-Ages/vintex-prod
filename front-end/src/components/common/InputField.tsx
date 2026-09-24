@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import clsx from 'clsx';
 
 /**
@@ -20,6 +21,7 @@ export type InputFieldProps = {
   error?: string;
   disabled?: boolean;
   id: string;
+  labelAdornment?: ReactNode;
 };
 
 function InputField({
@@ -32,6 +34,7 @@ function InputField({
   error,
   disabled = false,
   id,
+  labelAdornment,
 }: InputFieldProps) {
   const hasError = Boolean(error);
   const message = error ?? helperText;
@@ -39,9 +42,12 @@ function InputField({
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-label font-bold text-tinta">
-        {label}
-      </label>
+      <div className="flex items-center gap-2">
+        <label htmlFor={id} className="text-label font-bold text-tinta">
+          {label}
+        </label>
+        {labelAdornment != null ? <span>{labelAdornment}</span> : null}
+      </div>
 
       <input
         id={id}

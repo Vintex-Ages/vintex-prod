@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
 import type { Product, ProductDetail } from '@/types/product';
 
 export type ProductCardProps = {
@@ -96,26 +97,7 @@ function ProductCard({
             className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
           />
         ) : (
-          <div
-            role="img"
-            aria-label={product.name}
-            className="flex h-full w-full items-center justify-center text-texto-auxiliar"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="h-10 w-10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 16.5 8.5 12l3 3L16 10.5 20 15M4 6h16v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6Z"
-              />
-            </svg>
-          </div>
+          <ProductImagePlaceholder productName={product.name} />
         )}
       </div>
 
