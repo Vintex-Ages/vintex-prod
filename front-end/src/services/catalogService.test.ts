@@ -228,3 +228,164 @@ describe('catalogService (API real) — mapeamento da loja', () => {
     expect(product.store.verified).toBeUndefined();
   });
 });
+
+/**
+ * Dados reconstruídos a partir do contrato e dos testes do backend em
+ * origin/develop@887b24d. Não são uma resposta capturada de uma API em execução.
+ */
+const BACKEND_FEED_RESPONSE = {
+  items: [
+    {
+      id: 41,
+      name: 'Jaqueta vintage',
+      price: '99.90',
+      cover_image_url: null,
+      status: 'ativo',
+      store: { id: 7, name: 'Brechó Aurora' },
+    },
+  ],
+  page: 2,
+  page_size: 1,
+  total: 3,
+};
+
+describe('catalogService.getFeed — contrato do backend 887b24d', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('mapeia decimal, ids, capa nula e paginação para o contrato do frontend', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: apiGetFeed } = await import('./catalogService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: BACKEND_FEED_RESPONSE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const page = await apiGetFeed({ page: 2, pageSize: 1 });
+
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(1);
+    expect(page.total).toBe(3);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].id).toBe('41');
+    expect(page.items[0].name).toBe('Jaqueta vintage');
+    expect(page.items[0].store.id).toBe('7');
+    expect(page.items[0].store.name).toBe('Brechó Aurora');
+    expect(page.items[0].coverImageUrl).toBeNull();
+    expect(page.items[0].price).toBe(99.9);
+  });
+});
+
+describe('catalogService.getFeed — seleção explícita mock/API', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('VITE_USE_MOCKS_FEED=false prevalece sobre o global e envia GET /products com paginação e sort', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+    vi.stubEnv('VITE_USE_MOCKS_FEED', 'false');
+
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: configuredGetFeed } = await import('./catalogService');
+    const adapter = vi.fn((config) =>
+      Promise.resolve({
+        data: BACKEND_FEED_RESPONSE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }),
+    );
+    httpClient.defaults.adapter = adapter;
+
+    await configuredGetFeed({ page: 2, pageSize: 1, sort: 'recent' });
+
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(adapter.mock.calls[0][0]).toMatchObject({
+      method: 'get',
+      url: '/products',
+      params: { page: 2, page_size: 1, sort: 'recent' },
+    });
+  });
+
+  it('propaga erro HTTP quando o feed real está ativo, sem retornar produtos mockados', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+    vi.stubEnv('VITE_USE_MOCKS_FEED', 'false');
+
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: configuredGetFeed } = await import('./catalogService');
+    const backendError = new Error('falha HTTP do feed');
+    httpClient.defaults.adapter = () => Promise.reject(backendError);
+
+    await expect(configuredGetFeed()).rejects.toBe(backendError);
+  });
+
+  it('sem override específico herda VITE_USE_MOCKS=true', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: configuredGetFeed } = await import('./catalogService');
+    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
+    httpClient.defaults.adapter = adapter;
+
+    const page = await configuredGetFeed();
+
+    expect(page.items).toHaveLength(ACTIVE_COUNT);
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it('VITE_USE_MOCKS_FEED=true prevalece sobre VITE_USE_MOCKS=false', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.stubEnv('VITE_USE_MOCKS_FEED', 'true');
+
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: configuredGetFeed } = await import('./catalogService');
+    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
+    httpClient.defaults.adapter = adapter;
+
+    const page = await configuredGetFeed();
+
+    expect(page.items).toHaveLength(ACTIVE_COUNT);
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it('ativar a API do feed mantém detalhe, busca e feed enriquecido nos mocks', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+    vi.stubEnv('VITE_USE_MOCKS_FEED', 'false');
+
+    const { httpClient } = await import('@/services/httpClient');
+    const {
+      getFeedWithDetails: configuredGetFeedWithDetails,
+      getProduct: configuredGetProduct,
+      search: configuredSearch,
+    } = await import('./catalogService');
+    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
+    httpClient.defaults.adapter = adapter;
+
+    const [product, searchResult, enrichedFeed] = await Promise.all([
+      configuredGetProduct('1'),
+      configuredSearch('nike'),
+      configuredGetFeedWithDetails(),
+    ]);
+
+    expect(product.id).toBe('1');
+    expect(searchResult.match_type).toBe('exact');
+    expect(enrichedFeed.items).toHaveLength(ACTIVE_COUNT);
+    expect(adapter).not.toHaveBeenCalled();
+  });
+});

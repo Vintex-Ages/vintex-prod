@@ -50,18 +50,26 @@ const mockStyles: StyleOption[] = [
 let mockPreferences: Preference[] = [];
 
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
+const useStylesMocks =
+  import.meta.env.VITE_USE_MOCKS_STYLES === undefined
+    ? useMocks
+    : import.meta.env.VITE_USE_MOCKS_STYLES !== 'false';
+
+interface ApiStylesResponse {
+  styles: StyleOption[];
+}
 
 /**
  * Retorna os estilos disponíveis para seleção.
- * Usa dados mockados enquanto VITE_USE_MOCKS estiver habilitado.
+ * `VITE_USE_MOCKS_STYLES` sobrescreve o modo global somente nesta operação.
  */
 export async function getStyles(): Promise<StyleOption[]> {
-  if (useMocks) {
+  if (useStylesMocks) {
     return [...mockStyles];
   }
 
-  const { data } = await httpClient.get<StyleOption[]>('/styles');
-  return data;
+  const { data } = await httpClient.get<ApiStylesResponse>('/styles');
+  return data.styles;
 }
 
 /**

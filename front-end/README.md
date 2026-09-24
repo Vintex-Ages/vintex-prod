@@ -56,6 +56,54 @@ npm install
 npm run dev
 ```
 
+### Integração local parcial com o back-end
+
+O modo padrão continua usando os mocks locais. Para consumir da API real apenas
+o feed de produtos e o catálogo de estilos, crie ou ajuste `.env.local`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_USE_MOCKS=true
+VITE_USE_MOCKS_FEED=false
+VITE_USE_MOCKS_STYLES=false
+```
+
+As flags específicas têm precedência sobre `VITE_USE_MOCKS`. Quando uma delas
+não estiver definida, a operação herda o valor global. O valor `true` seleciona
+o mock, e `false` seleciona a API. Erros HTTP do feed e dos estilos são
+propagados; não há fallback automático para os mocks.
+
+Com essa configuração, somente `catalogService.getFeed` e
+`preferenceService.getStyles` usam a API. Autenticação, detalhe de produto, feed
+enriquecido, filtros/busca e leitura/gravação de preferências continuam
+mockados. Auth, detalhe e persistência de preferências dependem de seus
+endpoints serem integrados ao `develop` do back-end.
+
+No repositório do back-end, prepare o ambiente conforme o README próprio e
+inicie a API:
+
+```bash
+cd ../back-end
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+alembic upgrade head
+python -m app.seeds.lojas
+python -m app.seeds.pecas
+uvicorn app.main:app --reload
+```
+
+A API ficará disponível em `http://localhost:8000`; o frontend usa o prefixo
+`/api` configurado em `VITE_API_BASE_URL`. Em outro terminal, volte ao
+repositório do frontend e execute:
+
+```bash
+npm run dev
+```
+
+Reinicie o Vite sempre que alterar qualquer variável de ambiente.
+
 Outros scripts:
 
 ```bash

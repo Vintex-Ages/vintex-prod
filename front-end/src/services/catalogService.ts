@@ -12,13 +12,19 @@ import type {
 /**
  * Service único de catálogo (FE-SVC-catalog) — feed, detalhe, filtros e
  * busca. Nenhuma tela chama fetch/axios direto (`.ai/coding-rules.md`);
- * tudo passa por aqui, e a troca mock↔API é só essa flag.
+ * tudo passa por aqui. `VITE_USE_MOCKS` define o padrão do service e
+ * `VITE_USE_MOCKS_FEED`, quando presente, sobrescreve o modo somente de
+ * `getFeed`.
  *
  * Tratamos qualquer valor diferente de `'false'` como mock ativo — assim o
  * projeto continua rodando com mock mesmo sem `.env` local (variável vem
  * `undefined` quando o arquivo não existe).
  */
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
+const useFeedMocks =
+  import.meta.env.VITE_USE_MOCKS_FEED === undefined
+    ? useMocks
+    : import.meta.env.VITE_USE_MOCKS_FEED !== 'false';
 
 /** Mesmo default do back (`app/core/pagination.py`, BE-kit-api). */
 const DEFAULT_PAGE_SIZE = 20;
@@ -169,6 +175,15 @@ interface ApiFeedItem {
 }
 
 /**
+ * Item do `GET /products` integrado em origin/develop@887b24d.
+ * O `Decimal` do backend é serializado como string; este tipo e seu mapeador
+ * ficam separados porque `ApiFeedItem` também é usado pela busca (#211).
+ */
+interface ApiProductFeedItem extends Omit<ApiFeedItem, 'price'> {
+  price: string;
+}
+
+/**
  * Diferente do item de lista: `city`/`state` vêm soltos no produto (não em
  * `store`), e `media` já chega no formato que `ProductMedia` espera — sem
  * conversão extra, ao contrário do que eu tinha assumido antes de ver o
@@ -232,6 +247,10 @@ function mapFeedItem(item: ApiFeedItem): Product {
   };
 }
 
+function mapProductFeedItem(item: ApiProductFeedItem): Product {
+  return mapFeedItem({ ...item, price: Number(item.price) });
+}
+
 /** Capa = primeira imagem por `position`, igual o back já faz no feed (`get_active_feed`). */
 function mapProductDetail(item: ApiProductDetail): ProductDetail {
   const cover = [...item.media].sort((a, b) => a.position - b.position)[0]?.url ?? null;
@@ -293,10 +312,10 @@ async function apiGetFeed({
   pageSize = DEFAULT_PAGE_SIZE,
   sort = 'recent',
 }: FeedParams): Promise<Paginated<Product>> {
-  const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
+  const { data } = await httpClient.get<ApiPage<ApiProductFeedItem>>('/products', {
     params: { page, page_size: pageSize, sort },
   });
-  return mapPage(data, mapFeedItem);
+  return mapPage(data, mapProductFeedItem);
 }
 
 /**
@@ -359,7 +378,7 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
 // ---- API pública do service ----
 
 export function getFeed(params: FeedParams = {}): Promise<Paginated<Product>> {
-  return useMocks ? Promise.resolve(mockGetFeed(params)) : apiGetFeed(params);
+  return useFeedMocks ? Promise.resolve(mockGetFeed(params)) : apiGetFeed(params);
 }
 
 /** Feed já enriquecido com `category`/`condition`, pro card do catálogo (ver nota de débito técnico acima). */
