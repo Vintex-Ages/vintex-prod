@@ -107,6 +107,19 @@ function writeStoreOwner(userId: string, storeId: string): void {
   }
 }
 
+/**
+ * Tempo que o mock leva pra "aprovar" a verificação — dá à tela (FE-US007-1)
+ * um estado intermediário real pra exibir enquanto a promise não resolve.
+ */
+const MOCK_VERIFICATION_DELAY_MS = 500;
+
+/** Loja recém-criada não tem histórico: contadores zerados e, pela RN-74, sem `rating`/taxa. */
+const EMPTY_STORE_METRICS: StoreMetrics = { activeProducts: 0, soldProducts: 0, monthsOnPlatform: 0 };
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 let mockIdSeq = 0;
 
 /**
@@ -135,6 +148,7 @@ async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
     state: input.address.state,
     verification: 'pendente',
     createdAt: new Date().toISOString(),
+    metrics: EMPTY_STORE_METRICS,
   };
   saveStore(store);
   writeStoreOwner(user.id, store.id);
@@ -152,6 +166,8 @@ async function mockRequestVerification(): Promise<StoreProfile> {
   if (!store) {
     throw storeNotCreated();
   }
+  // Grava só depois do delay: nesse meio-tempo `getMyStore` ainda devolve 'pendente'.
+  await wait(MOCK_VERIFICATION_DELAY_MS);
   const verified: StoreProfile = { ...store, verification: 'confiavel' };
   saveStore(verified);
   return verified;
@@ -176,6 +192,11 @@ function mockGetStore(id: string): StoreProfile {
   }
 
   const { store } = product;
+  // `activeProducts` vem do próprio mock pra bater com `getStoreProducts`; o
+  // resto é fictício, só pra página da loja (FE-US007-2) ter o que mostrar.
+  const activeProducts = mockProducts.filter(
+    (item) => item.store.id === id && item.status === 'ativo',
+  ).length;
   return {
     id: store.id,
     name: store.name,
@@ -185,6 +206,13 @@ function mockGetStore(id: string): StoreProfile {
     state: 'RS',
     verification: store.verified ? 'confiavel' : 'pendente',
     createdAt: '2024-01-01T00:00:00.000Z',
+    metrics: {
+      activeProducts,
+      soldProducts: 37,
+      monthsOnPlatform: 18,
+      shippingWithoutComplaintRate: 0.96,
+      rating: 4.8,
+    },
   };
 }
 
