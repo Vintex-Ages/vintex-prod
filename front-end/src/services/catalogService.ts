@@ -5,6 +5,7 @@ import type {
   Paginated,
   Product,
   ProductDetail,
+  ProductStatus,
   SearchResult,
   Store,
 } from '@/types/product';
@@ -184,7 +185,7 @@ interface ApiProductDetail {
   size: string;
   condition: string;
   price: number;
-  status: 'ativo' | 'vendido' | 'despublicado';
+  status: Exclude<ProductStatus, 'rascunho'>;
   city: string;
   state: string;
   media: { type: 'image' | 'video'; url: string; position: number }[];
