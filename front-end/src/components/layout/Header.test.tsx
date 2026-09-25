@@ -125,6 +125,50 @@ describe('<Header />', () => {
     expect(await screen.findByRole('button', { name: 'Ana Brechó' })).toBeInTheDocument();
   });
 
+  it('logado: mostra Meus Estilos & Preferências da IA no menu da conta', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+    ).toBeInTheDocument();
+  });
+
+  it('logado: navega para /profile/preferences pelo menu da conta', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('path')).toHaveTextContent('/profile/preferences'),
+    );
+  });
+
+  it('logado: fecha o menu depois de navegar para as preferências', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('anônimo: não mostra Meus Estilos & Preferências da IA no menu da conta', () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+
+    expect(
+      screen.queryByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('logado: ao abrir o menu e clicar em Sair, volta ao estado anônimo', async () => {
     renderHeaderLoggedIn();
 

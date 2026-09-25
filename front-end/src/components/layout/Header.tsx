@@ -138,6 +138,16 @@ function Header() {
               <AccountMenu
                 authenticated={isAuthenticated}
                 user={isAuthenticated ? { name: user?.name ?? '' } : undefined}
+                items={
+                  isAuthenticated
+                    ? [
+                        {
+                          label: 'Meus Estilos & Preferências da IA',
+                          onSelect: () => navigate(paths.profilePreferences),
+                        },
+                      ]
+                    : []
+                }
                 onLogin={() => {
                   setOpen(false);
                   navigate(paths.login);
