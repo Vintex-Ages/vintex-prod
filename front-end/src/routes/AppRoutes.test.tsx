@@ -3,17 +3,33 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { ToastProvider } from '@/context/ToastContext';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import type { AuthUser } from '@/types/auth';
 import AppRoutes from './AppRoutes';
 import { paths, productDetail, sellerProductPath, storeProfile } from './paths';
 
 afterEach(cleanup);
 
+const CART_VALUE: CartContextValue = {
+  cart: { groups: [] },
+  count: 0,
+  loading: false,
+  error: null,
+  add: async () => {},
+  remove: async () => {},
+  refresh: async () => {},
+};
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <AppRoutes />
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -44,11 +60,15 @@ function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
 /** Renderiza `AppRoutes` com uma sessão já dada, em vez do `AuthProvider` real. */
 function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
-    <AuthContext.Provider value={authValue}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </AuthContext.Provider>,
+    <MemoryRouter initialEntries={[path]}>
+      <AuthContext.Provider value={authValue}>
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
+      </AuthContext.Provider>
+    </MemoryRouter>,
   );
 }
 
