@@ -172,7 +172,7 @@ describe('<AppRoutes />', () => {
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [paths.cart, 'Carrinho', BUYER],
-    [storeProfile('1'), 'Perfil da loja', null],
+    [storeProfile('1'), 'Brechó Mercado Público', null],
     [paths.profilePreferences, 'Preferências', BUYER],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
@@ -200,6 +200,6 @@ describe('<AppRoutes />', () => {
 
   it('/store/:id abre sem login (leitura pública)', async () => {
     renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
-    expect(await screen.findByRole('heading', { name: 'Perfil da loja' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Brechó Mercado Público' })).toBeInTheDocument();
   });
 });
