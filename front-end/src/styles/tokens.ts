@@ -43,7 +43,8 @@ export const colors: Record<string, string> = {
   tinta: '#1D1B1A', // texto principal, chip ativo
   'texto-auxiliar': '#655E57', // texto secundário
   linha: '#CFC3B3', // borda e divisória
-  'vermelho-escuro': '#7D0020', // ação e assinatura (único vermelho da v.1)
+  vermelhao: '#982632', // ação e assinatura - vermelho vivo (novo na v.2)
+  'vermelho-escuro': '#741D27', // ação e assinatura - valor atualizado na v.2
   'vermelho-suave': '#F0D9D4', // fundo de destaque
   'verde-rs': '#315443', // confiança e confirmação
   dourado: '#B88C38', // atenção — nunca CTA
@@ -205,6 +206,13 @@ export const colorTokens: ColorToken[] = [
     bgClass: 'bg-linha',
     hex: colors['linha'],
     role: 'borda e divisória',
+  },
+  {
+    name: 'Vermelhão',
+    key: 'vermelhao',
+    bgClass: 'bg-vermelhao',
+    hex: colors['vermelhao'],
+    role: 'ação e assinatura',
   },
   {
     name: 'Vermelho escuro',

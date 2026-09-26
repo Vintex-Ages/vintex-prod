@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { colors, colorTokens, fontFamily, fontSize, screens, spacing } from './tokens';
 
 describe('design tokens', () => {
-  it('exposes the ten official colours by token name', () => {
+  it('exposes the eleven official colours by token name', () => {
     expect(colors).toMatchObject({
       papel: '#F6F1E8',
       'papel-profundo': '#EEE5D7',
@@ -10,12 +10,13 @@ describe('design tokens', () => {
       tinta: '#1D1B1A',
       'texto-auxiliar': '#655E57',
       linha: '#CFC3B3',
-      'vermelho-escuro': '#7D0020',
+      vermelhao: '#982632',
+      'vermelho-escuro': '#741D27',
       'vermelho-suave': '#F0D9D4',
       'verde-rs': '#315443',
       dourado: '#B88C38',
     });
-    expect(Object.keys(colors)).toHaveLength(10);
+    expect(Object.keys(colors)).toHaveLength(11);
   });
 
   it('declares Fraunces for display and Inter for UI, each with a fallback stack', () => {
@@ -77,7 +78,7 @@ describe('design tokens', () => {
   });
 
   it('keeps the sample-page swatch metadata in sync with the colour tokens', () => {
-    expect(colorTokens).toHaveLength(10);
+    expect(colorTokens).toHaveLength(11);
     for (const token of colorTokens) {
       expect(colors[token.key]).toBe(token.hex);
       expect(token.bgClass).toBe(`bg-${token.key}`);
