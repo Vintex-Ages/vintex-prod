@@ -1,9 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Catalog from './Catalog';
 import { search } from '@/services/catalogService';
+import type { SearchResult } from '@/types/product';
 
 /**
  * Fica no lugar da tela de chat de verdade: mostra a mensagem recebida via
@@ -17,9 +18,9 @@ function VintexProbe() {
 }
 
 /** A página navega para o detalhe, então precisa de contexto de router. */
-function renderCatalog() {
+function renderCatalog(initialEntry = '/catalog') {
   return render(
-    <MemoryRouter initialEntries={['/catalog']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/catalog" element={<Catalog />} />
         <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
@@ -33,15 +34,75 @@ vi.mock('@/services/catalogService', () => ({
   search: vi.fn(),
 }));
 
-const mockResult = {
-  match_type: 'exact' as const,
+// Dublês de SearchResult para a UI, não fixtures reais do backend.
+const mockResult: SearchResult = {
+  match_type: 'exact',
   items: [
     { id: '1', name: 'Camiseta', price: 50, coverImageUrl: null, store: { id: '1', name: 'Loja' } },
   ],
   total: 1,
 };
 
+const latestResult: SearchResult = {
+  ...mockResult,
+  items: [{ ...mockResult.items[0], id: '2', name: 'Bota da consulta atual' }],
+};
+
+const fallbackResult: SearchResult = {
+  match_type: 'fallback',
+  items: [],
+  total: 0,
+  suggestions: {
+    reason: 'Nenhum resultado para "xyz". Veja outras peças disponíveis.',
+    items: [
+      {
+        id: '9',
+        name: 'Bota Chelsea',
+        price: 259,
+        coverImageUrl: null,
+        store: { id: '2', name: 'Brechó' },
+      },
+    ],
+  },
+};
+
+function deferredSearch() {
+  let resolve!: (result: SearchResult) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<SearchResult>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function startNewSearchDuringRetry() {
+  const retry = deferredSearch();
+  const latest = deferredSearch();
+  const user = userEvent.setup();
+  vi.mocked(search)
+    .mockRejectedValueOnce(new Error('rede fora'))
+    .mockReturnValueOnce(retry.promise)
+    .mockReturnValueOnce(latest.promise);
+  renderCatalog('/catalog?q=camiseta');
+
+  await user.click(await screen.findByRole('button', { name: 'Tentar de novo' }));
+  expect(search).toHaveBeenCalledTimes(2);
+  // O filtro pode iniciar outra consulta mesmo com o submit da busca desabilitado.
+  await user.click(screen.getByRole('button', { name: 'Calçados' }));
+  expect(search).toHaveBeenCalledTimes(3);
+  expect(search).toHaveBeenLastCalledWith(
+    'camiseta',
+    expect.objectContaining({ category: 'Sapatos' }),
+  );
+  return { retry, latest };
+}
+
 describe('Catalog', () => {
+  beforeEach(() => {
+    vi.mocked(search).mockReset();
+  });
+
   it('busca produtos ao montar e mostra a contagem', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 
@@ -83,23 +144,7 @@ describe('Catalog', () => {
     });
   });
   it('match_type "fallback": mostra o motivo e as sugestões no grid, nunca tela vazia', async () => {
-    vi.mocked(search).mockResolvedValue({
-      match_type: 'fallback',
-      items: [],
-      total: 0,
-      suggestions: {
-        reason: 'Nenhum resultado para "xyz". Veja outras peças disponíveis.',
-        items: [
-          {
-            id: '9',
-            name: 'Bota Chelsea',
-            price: 259,
-            coverImageUrl: null,
-            store: { id: '2', name: 'Brechó' },
-          },
-        ],
-      },
-    });
+    vi.mocked(search).mockResolvedValue(fallbackResult);
 
     renderCatalog();
 
@@ -107,7 +152,8 @@ describe('Catalog', () => {
       await screen.findByText('Nenhum resultado para "xyz". Veja outras peças disponíveis.'),
     ).toBeInTheDocument();
     expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
-    expect(screen.queryByText('Nenhuma peça encontrada no momento.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nada com essa combinação')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ainda não há peças por aqui')).not.toBeInTheDocument();
   });
 
   it('avisa quando a busca falha, em vez de deixar a promessa rejeitar sem tratamento', async () => {
@@ -119,6 +165,125 @@ describe('Catalog', () => {
     const alerta = await screen.findByRole('alert');
     expect(alerta).toHaveTextContent('Não foi possível carregar as peças agora.');
     expect(within(alerta).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+  });
+
+  it('esconde o erro anterior e mostra loading enquanto o retry está pendente', async () => {
+    const retry = deferredSearch();
+    const user = userEvent.setup();
+    vi.mocked(search)
+      .mockRejectedValueOnce(new Error('rede fora'))
+      .mockReturnValueOnce(retry.promise);
+    const { container } = renderCatalog();
+
+    await user.click(await screen.findByRole('button', { name: 'Tentar de novo' }));
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Buscando' })).toBeDisabled();
+    expect.soft(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect.soft(container.querySelector('.animate-pulse')).not.toBeNull();
+
+    await act(async () => {
+      retry.resolve(mockResult);
+    });
+  });
+
+  it('retry reutiliza o termo e os filtros aplicados e recupera os resultados', async () => {
+    const retry = deferredSearch();
+    const user = userEvent.setup();
+    vi.mocked(search)
+      .mockResolvedValueOnce(mockResult)
+      .mockRejectedValueOnce(new Error('rede fora'))
+      .mockReturnValueOnce(retry.promise);
+    renderCatalog('/catalog?q=camiseta');
+    await screen.findByText('Camiseta');
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    await screen.findByRole('alert');
+    expect(search).toHaveBeenLastCalledWith(
+      'camiseta',
+      expect.objectContaining({ category: 'Roupas' }),
+    );
+    const appliedFilters = vi.mocked(search).mock.calls[1][1];
+
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(search).toHaveBeenCalledTimes(3);
+    expect(search).toHaveBeenLastCalledWith('camiseta', appliedFilters);
+    await act(async () => {
+      retry.resolve(mockResult);
+    });
+    expect(screen.getByText('Camiseta')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('resposta de retry antigo não substitui os produtos da consulta mais recente', async () => {
+    const { retry, latest } = await startNewSearchDuringRetry();
+    await act(async () => {
+      latest.resolve(latestResult);
+    });
+    expect(screen.getByText('Bota da consulta atual')).toBeInTheDocument();
+
+    await act(async () => {
+      retry.resolve(mockResult);
+    });
+    expect.soft(screen.queryByText('Bota da consulta atual')).toBeInTheDocument();
+    expect.soft(screen.queryByText('Camiseta')).not.toBeInTheDocument();
+  });
+
+  it('falha de retry antigo não instala erro sobre o sucesso da consulta mais recente', async () => {
+    const { retry, latest } = await startNewSearchDuringRetry();
+    await act(async () => {
+      latest.resolve(latestResult);
+    });
+    expect(screen.getByText('Bota da consulta atual')).toBeInTheDocument();
+
+    await act(async () => {
+      retry.reject(new Error('falha atrasada'));
+    });
+    expect.soft(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect.soft(screen.queryByText('Bota da consulta atual')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Buscar' })[0]).toBeEnabled();
+  });
+
+  it.each(['sucesso', 'falha'] as const)(
+    '%s de retry antigo não encerra o loading de uma consulta mais recente pendente',
+    async (outcome) => {
+      const { retry, latest } = await startNewSearchDuringRetry();
+      expect(screen.getByRole('button', { name: 'Buscando' })).toBeDisabled();
+
+      await act(async () => {
+        if (outcome === 'sucesso') retry.resolve(mockResult);
+        else retry.reject(new Error('falha atrasada'));
+      });
+      expect.soft(screen.queryByRole('button', { name: 'Buscando' })).toBeInTheDocument();
+      expect.soft(screen.queryByText('Buscando peças…')).toBeInTheDocument();
+      expect.soft(screen.queryByText('Camiseta')).not.toBeInTheDocument();
+
+      await act(async () => {
+        latest.resolve(latestResult);
+      });
+      expect(screen.getByText('Bota da consulta atual')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    },
+  );
+
+  it('esconde o motivo do fallback anterior enquanto uma nova busca está carregando', async () => {
+    const next = deferredSearch();
+    const user = userEvent.setup();
+    vi.mocked(search).mockResolvedValueOnce(fallbackResult).mockReturnValueOnce(next.promise);
+    renderCatalog('/catalog?q=xyz');
+    await screen.findByText('Bota Chelsea');
+    const reason = 'Nenhum resultado para "xyz". Veja outras peças disponíveis.';
+    expect(screen.getByText(reason)).toBeInTheDocument();
+
+    const [input] = screen.getAllByRole('searchbox');
+    await user.clear(input);
+    await user.type(input, 'camiseta{Enter}');
+    expect(search).toHaveBeenLastCalledWith('camiseta', expect.any(Object));
+    expect(screen.getByRole('button', { name: 'Buscando' })).toBeDisabled();
+    expect.soft(screen.queryByText(reason)).not.toBeInTheDocument();
+
+    await act(async () => {
+      next.resolve(mockResult);
+    });
+    expect(screen.queryByText(reason)).not.toBeInTheDocument();
   });
 
   // --- #207: pontos de entrada da Vintex ---

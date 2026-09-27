@@ -1,6 +1,7 @@
 import { getAuthToken, handleAuthRequired } from '@/services/httpClient';
+import { mapFeedItem, type ApiFeedItem } from '@/services/catalogService';
 import { products as mockProducts } from '@/mocks/products';
-import type { ChatChunk, ChatMessage, ChatRequest } from '@/types/vintex-ai';
+import type { ChatChunk, ChatMessage, ChatRequest, ChatRole } from '@/types/vintex-ai';
 
 /**
  * Camada de acesso à IA da Vintex.
@@ -23,6 +24,9 @@ import type { ChatChunk, ChatMessage, ChatRequest } from '@/types/vintex-ai';
 function isUsingMocks(): boolean {
   return import.meta.env.VITE_USE_MOCKS !== 'false';
 }
+
+/** Falha que não veio do back (rede, DNS, CORS, conexão cortada no meio). */
+const FALHA_DE_CONEXAO = 'Não foi possível falar com a Vintex agora.';
 
 // ---------------------------------------------------------------------------
 // chat() streaming
@@ -123,26 +127,57 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
 }
 
 // ---------------------------------------------------------------------------
-// API real proposta do front, não confirmada com o back (ver nota no
-// final do arquivo). Sem teste automatizado: não há endpoint pra testar
-// contra ainda (o provider de IA do back está "unavailable" por padrão).
+// API real. Contrato conferido contra o back em 27/09 (`POST /api/ai/chat`,
+// back-end#149), e ele diverge do tipo do front em três pontos — os três
+// convertidos aqui, porque é esta camada que fala com a rede:
+//
+//   1. `role`: o back aceita `"user" | "assistant"` (`ChatTurn`). Mandar
+//      `"vintex"` faz o FastAPI recusar o corpo inteiro com 422, o que
+//      derrubava a conversa a partir da segunda pergunta.
+//   2. `products`: chega no shape do feed (`cover_image_url`, `id` inteiro),
+//      igual ao `GET /products`. Por isso reusa o `mapFeedItem` do
+//      `catalogService` em vez de um segundo mapeamento paralelo.
+//   3. `interpreted`: o back manda `filters`/`similarity` soltos no evento;
+//      aqui eles voltam para dentro de `interpreted`, como o tipo do front
+//      declara. Os *nomes* das chaves de `filters` continuam os do back
+//      (`price_max`): converter isso é de quem for renderizar os chips
+//      (#210), e o back ainda não emite esse chunk.
 // ---------------------------------------------------------------------------
+
+/** O back não conhece o papel `vintex`; no protocolo dele a resposta é `assistant`. */
+function toWireRole(role: ChatRole): 'user' | 'assistant' {
+  return role === 'vintex' ? 'assistant' : 'user';
+}
 
 async function* realChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   const token = getAuthToken();
   const currentRoute =
     typeof window !== 'undefined' ? window.location.pathname + window.location.search : '';
 
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/ai/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      'X-Return-To': currentRoute,
-    },
-    body: JSON.stringify({ messages: request.messages }),
-    signal: request.signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/ai/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'X-Return-To': currentRoute,
+      },
+      body: JSON.stringify({
+        messages: request.messages.map(({ role, text }) => ({ role: toWireRole(role), text })),
+      }),
+      signal: request.signal,
+    });
+  } catch {
+    // `fetch` rejeita com back fora do ar, DNS, CORS — e também no abort.
+    // O contrato de `chat()` promete que abortar encerra o gerador em vez de
+    // lançar, e que quem consome não precisa de `try/catch`. Sem isto a
+    // promessa era falsa: a rejeição subia para quem itera e a bolha ficava
+    // vazia para sempre, sem texto de erro e sem botão de tentar de novo.
+    if (request.signal?.aborted) return;
+    yield { type: 'error', message: FALHA_DE_CONEXAO };
+    return;
+  }
 
   if (response.status === 401) {
     handleAuthRequired(currentRoute);
@@ -159,7 +194,16 @@ async function* realChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   let buffer = '';
 
   while (true) {
-    const { value, done } = await reader.read();
+    let value: Uint8Array | undefined;
+    let done: boolean;
+    try {
+      ({ value, done } = await reader.read());
+    } catch {
+      // Conexão cortada no meio do stream: mesma regra do `fetch` acima.
+      if (request.signal?.aborted) return;
+      yield { type: 'error', message: FALHA_DE_CONEXAO };
+      return;
+    }
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
@@ -181,10 +225,56 @@ function parseSseEvent(raw: string): ChatChunk | null {
   const dataLine = raw.split('\n').find((line) => line.startsWith('data:'));
   if (!dataLine) return null;
 
+  let payload: unknown;
   try {
-    return JSON.parse(dataLine.slice('data:'.length).trim()) as ChatChunk;
+    payload = JSON.parse(dataLine.slice('data:'.length).trim());
   } catch {
     return { type: 'error', message: 'Resposta da Vintex em formato inesperado.' };
+  }
+
+  return toChatChunk(payload);
+}
+
+/**
+ * Evento do back -> `ChatChunk` do front. Não é cast: `products` e
+ * `interpreted` têm shape diferente dos dois lados (ver o bloco de contrato
+ * acima), e o `as ChatChunk` que estava aqui só escondia isso do compilador.
+ * Evento de tipo desconhecido é ignorado, para um chunk novo no back não
+ * quebrar a tela.
+ */
+function toChatChunk(payload: unknown): ChatChunk | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+
+  switch ((payload as { type?: unknown }).type) {
+    case 'text': {
+      const { delta } = payload as { delta?: unknown };
+      return typeof delta === 'string' ? { type: 'text', delta } : null;
+    }
+    case 'products': {
+      const { products } = payload as { products?: ApiFeedItem[] };
+      return { type: 'products', products: (products ?? []).map(mapFeedItem) };
+    }
+    case 'interpreted': {
+      const { filters, similarity } = payload as {
+        filters?: Record<string, string>;
+        similarity?: string | null;
+      };
+      return {
+        type: 'interpreted',
+        interpreted: { filters: filters ?? {}, similarity: similarity ?? undefined },
+      };
+    }
+    case 'done':
+      return { type: 'done' };
+    case 'error': {
+      const { message } = payload as { message?: unknown };
+      return {
+        type: 'error',
+        message: typeof message === 'string' ? message : FALHA_DE_CONEXAO,
+      };
+    }
+    default:
+      return null;
   }
 }
 

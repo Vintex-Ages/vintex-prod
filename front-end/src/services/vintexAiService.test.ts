@@ -128,3 +128,160 @@ describe('vintexAiService.getOutfitSuggestion (atalho independente de chat())', 
     await expect(getOutfitSuggestion('')).resolves.toBeDefined();
   });
 });
+
+/**
+ * Contrato de rede do `POST /api/ai/chat` (back-end#149). O arquivo do service
+ * dizia "sem teste automatizado: não há endpoint pra testar contra ainda", e
+ * enquanto foi verdade os três pontos em que o front divergia do back passaram
+ * sem ninguém ver: o papel `vintex` no corpo (que o back recusa com 422 a
+ * partir da segunda pergunta), o item de peça em snake_case e o evento
+ * `interpreted` plano. O endpoint existe desde 21/09, então aqui o contrato
+ * fica preso por teste, com `fetch` dublado.
+ */
+
+function sse(...eventos: unknown[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const evento of eventos) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(evento)}\n\n`));
+      }
+      controller.close();
+    },
+  });
+}
+
+function respostaOk(body: ReadableStream<Uint8Array>): Response {
+  return { ok: true, status: 200, body } as unknown as Response;
+}
+
+async function coletar(request: Parameters<typeof chat>[0]) {
+  const { chat: chatReal } = await import('./vintexAiService');
+  return collect(chatReal(request));
+}
+
+const PECA_DO_BACK = {
+  id: 42,
+  name: 'Jaqueta de couro',
+  price: 259.9,
+  cover_image_url: 'https://exemplo.test/jaqueta.jpg',
+  store: { id: 7, name: 'Brechó da Ana' },
+};
+
+describe('vintexAiService.chat (API real)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('converte o papel `vintex` em `assistant`, que é o que o back aceita', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaOk(sse({ type: 'done' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await coletar({
+      messages: [
+        { role: 'user', text: 'bolsa vermelha' },
+        { role: 'vintex', text: 'achei estas' },
+        { role: 'user', text: 'e em preto?' },
+      ],
+    });
+
+    const corpo = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(corpo.messages.map((m: { role: string }) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+    ]);
+  });
+
+  it('mapeia o item de peça do back para o Product do front', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(respostaOk(sse({ type: 'products', products: [PECA_DO_BACK] }))),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'jaqueta' }] });
+
+    expect(chunks[0]).toEqual({
+      type: 'products',
+      products: [
+        {
+          id: '42',
+          name: 'Jaqueta de couro',
+          price: 259.9,
+          coverImageUrl: 'https://exemplo.test/jaqueta.jpg',
+          store: {
+            id: '7',
+            name: 'Brechó da Ana',
+            city: undefined,
+            verified: undefined,
+            logoUrl: undefined,
+          },
+        },
+      ],
+    });
+  });
+
+  it('devolve o evento `interpreted` aninhado, como o tipo do front declara', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          respostaOk(
+            sse({ type: 'interpreted', filters: { category: 'Roupas' }, similarity: 'boho' }),
+          ),
+        ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'algo boho' }] });
+
+    expect(chunks[0]).toEqual({
+      type: 'interpreted',
+      interpreted: { filters: { category: 'Roupas' }, similarity: 'boho' },
+    });
+  });
+
+  it('falha de rede vira chunk de erro, nunca exceção para quem itera', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].type).toBe('error');
+  });
+
+  it('abortar encerra o gerador em silêncio, sem chunk de erro', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        controller.abort();
+        return Promise.reject(new DOMException('Aborted', 'AbortError'));
+      }),
+    );
+
+    const chunks = await coletar({
+      messages: [{ role: 'user', text: 'bolsa' }],
+      signal: controller.signal,
+    });
+
+    expect(chunks).toEqual([]);
+  });
+
+  it('ignora evento de tipo desconhecido em vez de quebrar a tela', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(respostaOk(sse({ type: 'reranked' }, { type: 'done' }))),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
+
+    expect(chunks).toEqual([{ type: 'done' }]);
+  });
+});

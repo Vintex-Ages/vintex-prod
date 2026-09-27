@@ -160,7 +160,13 @@ interface ApiStore {
   verified?: boolean;
 }
 
-interface ApiFeedItem {
+/**
+ * Item de lista como o back devolve, no feed e em qualquer outro lugar que
+ * reaproveite o mesmo shape — o chunk `products` do `POST /api/ai/chat`
+ * (back-end#149) devolve exatamente isto, por isso o tipo e o `mapFeedItem`
+ * são exportados.
+ */
+export interface ApiFeedItem {
   id: number | string;
   name: string;
   price: number;
@@ -222,7 +228,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
-function mapFeedItem(item: ApiFeedItem): Product {
+export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
     name: item.name,
@@ -346,6 +352,14 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
   const { data } = await httpClient.get<ApiSearchResponse>('/products', {
     params: toApiParams({ ...filters, q }),
   });
+
+  if (data.match_type !== 'exact' && data.match_type !== 'fallback') {
+    throw new CatalogError(
+      'INVALID_RESPONSE',
+      'Resposta inválida da busca: match_type ausente ou desconhecido.',
+    );
+  }
+
   return {
     match_type: data.match_type,
     items: data.items.map(mapFeedItem),
