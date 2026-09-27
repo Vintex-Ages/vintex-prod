@@ -60,8 +60,12 @@ export async function getStyles(): Promise<StyleOption[]> {
     return [...mockStyles];
   }
 
-  const { data } = await httpClient.get<StyleOption[]>('/styles');
-  return data;
+  // O back devolve `{ styles: [...] }`, não a lista solta (`StylesResponse`,
+  // em `app/schemas/style_schema.py`). Tipar como lista dava 200 e entregava
+  // um objeto para a tela, que quebrava no `.map` — o onboarding ficava em
+  // branco sem nenhum erro de rede.
+  const { data } = await httpClient.get<{ styles: StyleOption[] }>('/styles');
+  return data.styles ?? [];
 }
 
 /**
