@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logout as authServiceLogout } from '@/services/authService';
+import { logout as authServiceLogout, me } from '@/services/authService';
 import {
   REDIRECT_STORAGE_KEY,
   setAuthTokenProvider,
@@ -165,6 +165,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /**
+   * Rebusca o usuário atual no backend e atualiza estado + `sessionStorage`
+   * sem exigir um novo login (ex.: depois de criar uma loja, `is_seller`
+   * passa a `true`).
+   */
+  const refreshUser = useCallback(async () => {
+    const nextUser = await me();
+    setUser(nextUser);
+    try {
+      window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(nextUser));
+    } catch {
+      // Sem storage disponível: usuário atualizado fica só em memória.
+    }
+  }, []);
+
+  /**
    * Restaura uma sessão previamente persistida.
    */
   useEffect(() => {
@@ -227,8 +242,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       login,
       logout,
+      refreshUser,
     }),
-    [user, token, loading, login, logout],
+    [user, token, loading, login, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
