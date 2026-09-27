@@ -11,17 +11,19 @@ afterEach(() => {
   cleanup();
 });
 
+// ISO sem fuso de proposito: `formatarHorario` converte para o horario local,
+// e com `Z` o valor esperado mudaria conforme o fuso de quem roda o teste.
 const userMessage: ChatMessage = {
   id: 'm1',
   role: 'user',
-  createdAt: 'agora',
+  createdAt: '2026-09-27T14:32:00',
   text: 'Quero um look para um café no domingo.',
 };
 
 const vintexMessage: ChatMessage = {
   id: 'm2',
   role: 'vintex',
-  createdAt: 'agora',
+  createdAt: '2026-09-27T14:33:00',
   text: 'Entendi: confortável, com memória de brechó.',
 };
 
@@ -42,7 +44,21 @@ describe('ChatBubble', () => {
 
     expect(screen.getByText('Você')).toBeInTheDocument();
     expect(screen.getByText(userMessage.text)).toBeInTheDocument();
+    expect(screen.getByText('14:32')).toBeInTheDocument();
+  });
+
+  it('formata o horário e nunca mostra o ISO cru na tela', () => {
+    render(<ChatBubble message={{ ...userMessage, createdAt: '2026-09-27T21:04:11.482Z' }} />);
+
+    expect(screen.queryByText(/^2026-09-27T/)).not.toBeInTheDocument();
+    expect(screen.getByText(/^\d{2}:\d{2}$/)).toBeInTheDocument();
+  });
+
+  it('createdAt que não é data volta como veio, sem "Invalid Date"', () => {
+    render(<ChatBubble message={{ ...userMessage, createdAt: 'agora' }} />);
+
     expect(screen.getByText('agora')).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
   });
 
   it('renderiza a bolha da Vintex com rótulo "Vintex" e texto', () => {

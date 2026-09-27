@@ -2,6 +2,20 @@ import { OutfitSuggestionCard } from '@/components/vintex-ai/OutfitSuggestionCar
 import { ChatProductList } from '@/components/vintex-ai/ChatProductList';
 import type { ChatMessage } from '@/types/vintex-ai';
 
+/**
+ * `message.createdAt` é ISO 8601, como o tipo declara desde o #199. Imprimir
+ * a string crua colocava `2026-09-27T21:04:11.482Z` embaixo de cada mensagem
+ * do usuário; o defeito ficava escondido enquanto a página montava a mensagem
+ * com a palavra `agora` no lugar da data (#208 passou a usar a data de
+ * verdade). Valor que não for data volta como veio, para a bolha nunca
+ * mostrar `Invalid Date`.
+ */
+function formatarHorario(createdAt: string): string {
+  const data = new Date(createdAt);
+  if (Number.isNaN(data.getTime())) return createdAt;
+  return data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 type ChatBubbleProps = {
   message: ChatMessage;
   /** Texto ainda chegando aos poucos (a página é quem alimenta, ver #208). */
@@ -51,7 +65,9 @@ export function ChatBubble({
       <div className="rounded-none bg-vermelho-escuro p-4 shadow-[6px_6px_0_0_theme(colors.vermelho-suave)]">
         <p className="text-label font-semibold uppercase text-branco-quente">Você</p>
         <p className="mt-2 text-body text-branco-quente">{message.text}</p>
-        <p className="mt-2 text-label text-branco-quente/70">{message.createdAt}</p>
+        <p className="mt-2 text-label text-branco-quente/70">
+          {formatarHorario(message.createdAt)}
+        </p>
       </div>
     );
   }

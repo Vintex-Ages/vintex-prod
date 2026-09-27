@@ -41,7 +41,12 @@ let state: VintexChatState = {
   errorMessageId: null,
   errorText: null,
 };
-let hasBootstrapped = false;
+// Identidade da navegação cuja mensagem inicial já foi enviada. Era um
+// booleano, e por ser módulo-escopado como o resto do store ele nunca voltava
+// a `false`: entrar pelo campo da Home uma segunda vez encontrava a flag
+// ligada e a pergunta era descartada em silêncio, mostrando a conversa antiga.
+// A `location.key` do router é única por navegação, então serve de identidade.
+let bootstrappedKey: string | null = null;
 let lastUserText: string | null = null;
 let abortController: AbortController | null = null;
 const listeners = new Set<() => void>();
@@ -131,7 +136,12 @@ function retry(): void {
 
   setState((current) => ({
     messages: current.messages.map((message) =>
-      message.id === failedId ? { ...message, text: '' } : message,
+      // `products`/`interpreted` da tentativa que falhou saem junto com o
+      // texto: se a nova tentativa não devolver peça nenhuma, a lista antiga
+      // continuaria na tela como se fosse resposta desta.
+      message.id === failedId
+        ? { ...message, text: '', products: undefined, interpreted: undefined }
+        : message,
     ),
     errorMessageId: null,
     errorText: null,
@@ -148,7 +158,7 @@ function retry(): void {
 export function resetVintexChat(): void {
   abortController?.abort();
   abortController = null;
-  hasBootstrapped = false;
+  bootstrappedKey = null;
   lastUserText = null;
   state = { messages: [], streamingMessageId: null, errorMessageId: null, errorText: null };
   listeners.forEach((listener) => listener());
@@ -178,17 +188,21 @@ export function resetVintexChat(): void {
  *     onRetry={retry}
  *   />
  */
-export function useVintexChat(initialMessage?: string): UseVintexChatResult {
+export function useVintexChat(initialMessage?: string, bootstrapKey?: string): UseVintexChatResult {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
 
   useEffect(() => {
     const trimmed = initialMessage?.trim();
-    if (trimmed && !hasBootstrapped) {
-      hasBootstrapped = true;
-      sendMessage(trimmed);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!trimmed) return;
+
+    // Sem `bootstrapKey` cai no próprio texto, que ainda protege do envio
+    // duplo no mesmo mount (StrictMode monta o efeito duas vezes em dev).
+    const key = bootstrapKey ?? trimmed;
+    if (bootstrappedKey === key) return;
+
+    bootstrappedKey = key;
+    sendMessage(trimmed);
+  }, [initialMessage, bootstrapKey]);
 
   return { ...snapshot, sendMessage, retry };
 }

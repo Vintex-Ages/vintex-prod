@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
 import { resetVintexChat } from '@/hooks/useVintexChat';
@@ -272,5 +272,47 @@ describe('VintexAI page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
 
     expect(await screen.findByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
+  });
+  /**
+   * O ponto de entrada da Home/Catálogo (#207) navega para cá com a pergunta
+   * em `location.state`. O disparo era guardado por um booleano módulo-escopado
+   * que nunca voltava a `false`, então a segunda entrada pelo campo era
+   * descartada em silêncio: aparecia a conversa antiga e a pergunta nova não
+   * chegava ao service. Agora a guarda é a `location.key`, única por navegação.
+   */
+  it('entrar pelo campo da Home duas vezes envia as duas perguntas', async () => {
+    const spy = fakeChat([{ type: 'done' }]);
+
+    function EntradaStub() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button onClick={() => navigate('/vintex', { state: { message: 'look de inverno' } })}>
+            primeira
+          </button>
+          <button onClick={() => navigate('/vintex', { state: { message: 'bota de cano curto' } })}>
+            segunda
+          </button>
+        </>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<EntradaStub />} />
+          <Route path="/vintex" element={<VintexAI />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'primeira' }));
+    expect(await screen.findByText('look de inverno')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'segunda' }));
+
+    expect(await screen.findByText('bota de cano curto')).toBeInTheDocument();
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
   });
 });
