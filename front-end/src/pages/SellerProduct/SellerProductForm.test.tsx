@@ -119,6 +119,56 @@ describe('SellerProductForm', () => {
     expect(screen.getAllByRole('img', { name: 'Sugerido pela IA' })).toHaveLength(5);
   });
 
+  /**
+   * Caso real do primeiro teste com a API: a foto era de uma camiseta branca
+   * com faixa preta, e o Gemini respondeu `category: "Camiseta"` (o prompt do
+   * back pede tipo da peça, não a taxonomia do catálogo) e uma cor composta.
+   * Nenhum dos dois existe na lista da tela, e o `Select` mostrava o
+   * placeholder com a estrelinha de "preenchido pela IA" ao lado.
+   */
+  it('sugestão fora da lista não preenche nem marca, e diz o que a IA leu', async () => {
+    vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+      ok: true,
+      suggestion: {
+        fields: {
+          category: 'Camiseta',
+          color: 'Branco e preto',
+          description: 'Camiseta branca com faixa preta.',
+        },
+        suggested: ['category', 'color', 'description'],
+      },
+    });
+    renderForm();
+
+    await subirFoto();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Descrição')).toHaveValue('Camiseta branca com faixa preta.'),
+    );
+    expect(screen.getByLabelText('Categoria')).toHaveValue('');
+    expect(screen.getByLabelText('Cor')).toHaveValue('');
+    // Uma marca só, a da descrição, mais a da legenda.
+    expect(screen.getAllByRole('img', { name: 'Sugerido pela IA' })).toHaveLength(1);
+    expect(screen.getByText(/leu a categoria como "Camiseta"/i)).toBeInTheDocument();
+    expect(screen.getByText(/leu a cor como "Branco e preto"/i)).toBeInTheDocument();
+  });
+
+  it('sugestão com acento ou caixa diferente ainda encaixa na lista', async () => {
+    vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+      ok: true,
+      suggestion: {
+        fields: { color: 'preto', condition: 'seminovo' },
+        suggested: ['color', 'condition'],
+      },
+    });
+    renderForm();
+
+    await subirFoto();
+
+    await waitFor(() => expect(screen.getByLabelText('Cor')).toHaveValue('Preto'));
+    expect(screen.getByLabelText('Conservação')).toHaveValue('Seminovo');
+  });
+
   it('marca não identificada aparece como aviso, sem preencher o campo (RN-58)', async () => {
     renderForm();
 

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
 import type { MediaItem } from '@/components/common/MediaUploader';
 import {
   getById,
@@ -67,6 +68,48 @@ const CAMPO_POR_SUGESTAO: Record<ListingSuggestionField, keyof ProductFormValues
   brand: 'brand',
 };
 
+/**
+ * Campos que são lista fechada na tela. A IA responde texto livre: o prompt do
+ * back pede "tipo da peça" para `category` (ex.: "Camiseta"), e a tela usa a
+ * taxonomia do catálogo (Roupas, Sapatos, Acessórios); e a cor de uma peça
+ * branca com faixa preta volta como "Branco e preto", que não é nenhuma opção.
+ * Sem casar contra a lista, o `Select` mostra o placeholder e o campo fica
+ * vazio com a marca de sugerido ao lado — a tela diz que a IA preencheu uma
+ * coisa que não está lá.
+ */
+const OPCOES_POR_CAMPO: Partial<Record<ListingSuggestionField, readonly string[]>> = {
+  category: CATEGORIES.filter((c) => c.value).map((c) => c.value as string),
+  size: SIZES,
+  color: COLORS,
+  condition: CONDITIONS,
+};
+
+const ROTULO_POR_CAMPO: Record<ListingSuggestionField, string> = {
+  category: 'a categoria',
+  color: 'a cor',
+  size: 'o tamanho',
+  condition: 'a conservação',
+  description: 'a descrição',
+  brand: 'a marca',
+};
+
+function semAcento(valor: string): string {
+  return valor.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+}
+
+/**
+ * Valor da IA traduzido para a opção correspondente da tela, ou `null` quando
+ * não existe equivalente. Compara sem acento e sem caixa, porque "seminovo" e
+ * "Seminovo" são a mesma coisa; não tenta adivinhar parecidos, porque "Branco
+ * e preto" casaria com dois e o palpite errado é pior que o campo vazio.
+ */
+function resolverOpcao(campo: ListingSuggestionField, valor: string): string | null {
+  const opcoes = OPCOES_POR_CAMPO[campo];
+  if (!opcoes) return valor;
+
+  return opcoes.find((opcao) => semAcento(opcao) === semAcento(valor)) ?? null;
+}
+
 function paraReais(cents: number | null): number | undefined {
   return cents === null ? undefined : cents / 100;
 }
@@ -119,6 +162,13 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [loading, setLoading] = useState(Boolean(productId));
   const [formError, setFormError] = useState<string | null>(null);
   const [draftId, setDraftId] = useState<string | undefined>(productId);
+
+  // Último estado renderizado. `setMedia` roda depois de duas idas à rede e
+  // precisa saber o que o vendedor já digitou nesse meio tempo; ler do
+  // updater do `setValues` não serve, porque ele é adiado e o `setSuggested`
+  // logo abaixo veria um conjunto vazio.
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
   // Modo edição (FE-US019-2): carrega pelo `getById`, e não pelo detalhe
   // público, que responde 404 para peça despublicada e não traz rascunho.
@@ -226,20 +276,48 @@ export function useProductForm(productId?: string): UseProductFormResult {
       }
 
       const { fields, suggested: vindos, notes } = resultado.suggestion;
-      setAiNotes(notes ?? []);
+
+      // Campo cuja sugestão não existe na lista da tela não é preenchido nem
+      // marcado: em vez disso, o que a IA leu vira aviso, para o vendedor
+      // escolher sabendo. Marca sobre campo vazio seria mentira na tela.
+      const encaixaram = new Set<ListingSuggestionField>();
+      const resolvidos = new Map<ListingSuggestionField, string>();
+      const forasDaLista: string[] = [];
+
+      for (const chave of vindos) {
+        const bruto = fields[chave];
+        if (!bruto) continue;
+
+        const resolvido = resolverOpcao(chave, bruto);
+        if (resolvido === null) {
+          forasDaLista.push(
+            `A Vintex leu ${ROTULO_POR_CAMPO[chave]} como "${bruto}", que não está na lista. Escolha a mais próxima.`,
+          );
+          continue;
+        }
+
+        resolvidos.set(chave, resolvido);
+        encaixaram.add(chave);
+      }
+
+      setAiNotes([...(notes ?? []), ...forasDaLista]);
+
       // Só preenche campo ainda vazio: sugestão não sobrescreve o que o
       // vendedor já escreveu.
-      setValues((atual) => {
-        const proximo = { ...atual };
-        for (const chave of vindos) {
-          const campo = CAMPO_POR_SUGESTAO[chave];
-          if (proximo[campo] === null || proximo[campo] === '') {
-            (proximo[campo] as string) = fields[chave] as string;
-          }
-        }
-        return proximo;
-      });
-      setSuggested(new Set(vindos));
+      const atuais = valuesRef.current;
+      const preenchidos = new Set<ListingSuggestionField>();
+      const aPreencher: Partial<ProductFormValues> = {};
+
+      for (const [chave, valor] of resolvidos) {
+        const campo = CAMPO_POR_SUGESTAO[chave];
+        if (atuais[campo] !== null && atuais[campo] !== '') continue;
+
+        (aPreencher[campo] as string) = valor;
+        preenchidos.add(chave);
+      }
+
+      setValues((atual) => ({ ...atual, ...aPreencher }));
+      setSuggested(preenchidos);
     } catch {
       // RN-57: falha ao subir ou analisar não trava o cadastro.
       setAiNotes(['Não foi possível analisar as fotos. Preencha os campos à mão.']);
