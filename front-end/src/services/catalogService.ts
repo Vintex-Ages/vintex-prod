@@ -348,7 +348,10 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
   });
 
   if (data.match_type !== 'exact' && data.match_type !== 'fallback') {
-    throw new Error('Resposta inválida da busca: match_type ausente ou desconhecido.');
+    throw new CatalogError(
+      'INVALID_RESPONSE',
+      'Resposta inválida da busca: match_type ausente ou desconhecido.',
+    );
   }
 
   return {
