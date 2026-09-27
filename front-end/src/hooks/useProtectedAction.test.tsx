@@ -19,6 +19,7 @@ const authenticatedContext: AuthContextValue = {
   loading: false,
   login: vi.fn(),
   logout: vi.fn(),
+  refreshUser: vi.fn(),
 };
 
 const anonymousContext: AuthContextValue = {
@@ -28,6 +29,7 @@ const anonymousContext: AuthContextValue = {
   loading: false,
   login: vi.fn(),
   logout: vi.fn(),
+  refreshUser: vi.fn(),
 };
 
 /**

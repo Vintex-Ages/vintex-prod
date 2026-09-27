@@ -24,6 +24,7 @@ function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
     loading: false,
     login: () => {},
     logout: () => {},
+    refreshUser: async () => {},
     ...overrides,
   };
 }
