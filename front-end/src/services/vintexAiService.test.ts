@@ -285,3 +285,226 @@ describe('vintexAiService.chat (API real)', () => {
     expect(chunks).toEqual([{ type: 'done' }]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// suggestListing (FE-SVC-vintex-ai-listing, #200)
+// ---------------------------------------------------------------------------
+
+describe('suggestListing (mock)', () => {
+  beforeEach(() => {
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+  });
+
+  it('devolve os campos e a lista do que veio da IA', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto-frente.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.fields.category).toBe('Jaquetas');
+    expect(r.suggestion.suggested).toEqual([
+      'category',
+      'color',
+      'size',
+      'condition',
+      'description',
+    ]);
+  });
+
+  // RN-58: a IA não chuta marca. Sem etiqueta legível, `brand` não vem e a
+  // ausência é dita em `notes`, para a tela poder explicar em vez de só omitir.
+  it('sem etiqueta na foto não sugere marca, e registra o motivo', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto-frente.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).not.toContain('brand');
+    expect(r.suggestion.fields.brand).toBeUndefined();
+    expect(r.suggestion.notes?.join(' ')).toMatch(/etiqueta/i);
+  });
+
+  it('com etiqueta na foto sugere a marca', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto-frente.jpg', 'foto-etiqueta.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).toContain('brand');
+    expect(r.suggestion.fields.brand).toBe('Zara');
+  });
+
+  it('modo falha devolve ok:false com motivo, sem lançar (RN-57)', async () => {
+    window.history.pushState({}, '', '/?mockFail=1');
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto.jpg'] });
+
+    expect(r).toEqual({ ok: false, reason: 'unavailable', message: expect.any(String) });
+  });
+
+  it('timeout curto devolve reason timeout, para a IA lenta não travar a tela', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto.jpg'] }, { timeoutMs: 10 });
+
+    expect(r).toEqual({ ok: false, reason: 'timeout', message: expect.any(String) });
+  });
+
+  it('recusa antes de chamar quando passa do limite de fotos do back', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+    const nove = Array.from({ length: 9 }, (_, i) => `foto-${i}.jpg`);
+
+    const r = await suggestListing({ imageUrls: nove });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('invalid-image');
+    expect(r.message).toContain('8');
+  });
+
+  it('sem foto nenhuma recusa como foto inválida', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: [] });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('invalid-image');
+  });
+});
+
+describe('suggestListing (API real)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  function respostaJson(dados: unknown, status = 200): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: () => Promise.resolve(dados),
+    } as unknown as Response;
+  }
+
+  it('manda image_urls em snake_case e traduz o ImageAnalysisResult do back', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      respostaJson({
+        category: { value: 'Jaquetas', confidence: 0.9 },
+        color: { value: 'Preto', confidence: null },
+        size: null,
+        condition: null,
+        description: null,
+        brand: { value: 'Zara', confidence: 0.5 },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/ai/listing-suggestions');
+    expect(JSON.parse(init.body as string)).toEqual({ image_urls: ['https://x.test/a.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).toEqual(['category', 'color', 'brand']);
+    expect(r.suggestion.confidence).toEqual({ category: 0.9, brand: 0.5 });
+  });
+
+  // A rota síncrona devolve 200 com tudo nulo quando a IA falha, então o front
+  // não tem como chamar de indisponível: informa que nada foi identificado.
+  it('resposta com todos os campos nulos vira sucesso sem nenhum campo sugerido', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respostaJson({})));
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).toEqual([]);
+    expect(r.suggestion.notes?.join(' ')).toMatch(/não identificamos/i);
+  });
+
+  it('422 do back vira invalid-image', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respostaJson({}, 422)));
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('invalid-image');
+  });
+
+  it('falha de rede vira unavailable, nunca exceção (RN-57)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+    expect(r).toEqual({ ok: false, reason: 'unavailable', message: expect.any(String) });
+  });
+
+  it('com productId consulta o pipeline e devolve o que ele já concluiu', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      respostaJson({
+        status: 'done',
+        error: null,
+        suggestions: { color: { value: 'Verde' } },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'], productId: '42' });
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/users/me/products/42/ai-status');
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.fields.color).toBe('Verde');
+  });
+
+  it('pipeline com status failed vira unavailable com a mensagem do back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(respostaJson({ status: 'failed', error: 'Provedor recusou a imagem.' })),
+    );
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'], productId: '42' });
+
+    expect(r).toEqual({
+      ok: false,
+      reason: 'unavailable',
+      message: 'Provedor recusou a imagem.',
+    });
+  });
+
+  it('pipeline que não sai de processing esgota o prazo e vira timeout', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respostaJson({ status: 'processing' })));
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing(
+      { imageUrls: ['https://x.test/a.jpg'], productId: '42' },
+      { timeoutMs: 30 },
+    );
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('timeout');
+  });
+});
