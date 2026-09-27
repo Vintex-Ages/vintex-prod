@@ -160,7 +160,13 @@ interface ApiStore {
   verified?: boolean;
 }
 
-interface ApiFeedItem {
+/**
+ * Item de lista como o back devolve, no feed e em qualquer outro lugar que
+ * reaproveite o mesmo shape — o chunk `products` do `POST /api/ai/chat`
+ * (back-end#149) devolve exatamente isto, por isso o tipo e o `mapFeedItem`
+ * são exportados.
+ */
+export interface ApiFeedItem {
   id: number | string;
   name: string;
   price: number;
@@ -222,7 +228,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
-function mapFeedItem(item: ApiFeedItem): Product {
+export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
     name: item.name,
