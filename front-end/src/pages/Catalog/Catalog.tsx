@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import ActiveFilters from '@/components/catalog/ActiveFilters';
 import { CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
@@ -68,6 +68,7 @@ function Catalog() {
   const [suggestionReason, setSuggestionReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const requestSequence = useRef(0);
 
   // A busca também parte do cabeçalho, que escreve `?q=` e navega para cá. Sem
   // isto o campo da página continuaria mostrando o termo anterior.
@@ -76,12 +77,17 @@ function Catalog() {
   }, [term]);
 
   const run = useCallback(() => {
-    let active = true;
-    setLoading(true);
+    const requestId = ++requestSequence.current;
+    const requestTerm = term;
+    const requestFilters = toFilterParams(filters);
 
-    search(term, toFilterParams(filters))
+    setLoading(true);
+    setError(false);
+    setSuggestionReason(null);
+
+    search(requestTerm, requestFilters)
       .then((result: SearchResult) => {
-        if (!active) return;
+        if (requestId !== requestSequence.current) return;
         // `fallback` traz a lista em `suggestions.items` e deixa `items` vazio.
         // Renderizar as sugestões no mesmo grid garante a RN-61: nunca uma tela
         // vazia enquanto houver catálogo.
@@ -92,14 +98,14 @@ function Catalog() {
         setError(false);
       })
       .catch(() => {
-        if (active) setError(true);
+        if (requestId === requestSequence.current) setError(true);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (requestId === requestSequence.current) setLoading(false);
       });
 
     return () => {
-      active = false;
+      requestSequence.current += 1;
     };
   }, [term, filters]);
 

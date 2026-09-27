@@ -4,9 +4,8 @@ import { ChatBubble } from '@/components/vintex-ai/ChatBubble';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import IconButton from '@/components/common/IconButton';
-import { getOutfitSuggestion } from '@/services/vintexAiService';
+import { useVintexChat } from '@/hooks/useVintexChat';
 import { paths } from '@/routes/paths';
-import type { ChatMessage } from '@/types/vintex-ai';
 
 const SUGGESTION_CHIPS = ['Look para um jantar', 'Cores mais neutras', 'Até R$ 250'];
 
@@ -50,32 +49,21 @@ function IntroPrompt() {
   );
 }
 
-function createUserMessage(text: string): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role: 'user',
-    createdAt: 'agora',
-    text,
-  };
-}
-
 /**
  * Tela de conversa com a assistente Vintex.
  *
- * Página fina: só compõe peças que já existem — `ChatBubble` (#142) para
- * as mensagens, `SearchBar` (#120) para o composer, `FilterChip` (#134)
- * para os chips de sugestão e `IconButton` (#113) para o botão de voltar.
- * A resposta da Vintex vem do `vintexAiService` (#138); não há mock
- * inline aqui. Tipos vêm de `@/types/vintex-ai` (#138, evoluído em #199:
- * `createdAt` no lugar do antigo `timestamp`).
+ * Página fina: só compõe peças que já existem — `ChatBubble` (#142, com os
+ * estados de streaming/erro/produtos do #197), `SearchBar` (#120) para o
+ * composer, `FilterChip` (#134) para os chips de sugestão e `IconButton`
+ * (#113) para o botão de voltar. Todo o estado da conversa e o consumo do
+ * streaming (`vintexAiService.chat()`, #199) vivem em `useVintexChat`
+ * (#208) — a página só chama `sendMessage`/`retry` e repassa
+ * `streamingMessageId`/`errorMessageId` para o `ChatBubble`.
  *
  * Responsiva (breakpoints `tablet:`/`web:` de `src/styles/tokens.ts`): a
  * partir do `web:`, o cabeçalho e a linha acima das mensagens ocupam a
  * largura toda da tela, enquanto as mensagens e o composer ficam num
  * bloco central mais largo.
- *
- * Fora de escopo: qualquer IA real/streaming — a página ainda consome
- * `getOutfitSuggestion` (mock), migra para `chat()` (streaming, #199) em #208.
  *
  * Usage:
  *   import VintexAI from '@/pages/VintexAI/VintexAI';
@@ -97,55 +85,22 @@ export default function VintexAI() {
     else navigate(-1);
   };
 
-  const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    incomingMessage ? [createUserMessage(incomingMessage)] : [],
-  );
+  // `location.key` é única por navegação: é ela que faz cada entrada pelo
+  // campo da Home valer um envio, e não só a primeira da sessão.
+  const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
+    useVintexChat(incomingMessage, location.key);
   const [draft, setDraft] = useState('');
-  const [isSending, setIsSending] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
-  const hasSentIncomingMessage = useRef(false);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
   }, [messages]);
 
-  useEffect(() => {
-    if (incomingMessage && !hasSentIncomingMessage.current) {
-      hasSentIncomingMessage.current = true;
-      void sendToVintex(incomingMessage);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function sendToVintex(prompt: string) {
-    setIsSending(true);
-    try {
-      const reply = await getOutfitSuggestion(prompt);
-      setMessages((current) => [...current, reply]);
-    } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: 'vintex',
-          createdAt: 'agora',
-          text: 'Não consegui responder agora. Tenta de novo em instantes?',
-        },
-      ]);
-    } finally {
-      setIsSending(false);
-    }
-  }
-
   const hasMessages = messages.length > 0;
 
   function handleSearchSubmit(term: string) {
-    const trimmed = term.trim();
-    if (!trimmed || isSending) return;
-
-    setMessages((current) => [...current, createUserMessage(trimmed)]);
+    sendMessage(term);
     setDraft('');
-    void sendToVintex(trimmed);
   }
 
   function handleChipClick(chip: string) {
@@ -187,7 +142,18 @@ export default function VintexAI() {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className="w-full tablet:max-w-[75%]">
-                <ChatBubble message={message} />
+                {/*
+                  Sem `onOpenProduct`: a `ChatProductList` já embrulha cada
+                  peça num `Link` para o detalhe. Navegar aqui também empilhava
+                  duas entradas no histórico no mesmo clique, e o botão voltar
+                  passava a precisar de dois toques para sair do detalhe.
+                */}
+                <ChatBubble
+                  message={message}
+                  streaming={message.id === streamingMessageId}
+                  error={message.id === errorMessageId ? (errorText ?? undefined) : undefined}
+                  onRetry={retry}
+                />
               </div>
             </div>
           ))}
@@ -209,7 +175,6 @@ export default function VintexAI() {
             onSubmit={handleSearchSubmit}
             placeholder="O que você quer vestir?"
             submitLabel="Enviar"
-            loading={isSending}
           />
         </div>
       </div>
