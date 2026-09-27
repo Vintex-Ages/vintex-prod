@@ -597,10 +597,35 @@ export async function getSalesSummary(period: SalesPeriod): Promise<SalesSummary
   return useMocks ? mockGetSalesSummary(period) : apiGetSalesSummary(period);
 }
 
-/** Envia as fotos e devolve as URLs, na mesma ordem dos arquivos. Sem rota no back ainda. */
-export async function uploadMedia(files: File[]): Promise<string[]> {
-  if (!useMocks) {
-    throw endpointUnavailable('uploadMedia');
+interface ApiMediaItem {
+  key: string;
+  url: string;
+  content_type: string;
+  size: number;
+}
+
+/**
+ * `POST /api/users/me/media` (back-end#73). A URL que volta é absoluta e
+ * aponta para a própria API, porque quem baixa a foto depois é o servidor,
+ * ao gerar a sugestão do anúncio: URL relativa ou `blob:` do navegador não
+ * serve para ele.
+ */
+async function apiUploadMedia(files: File[]): Promise<string[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
   }
-  return mockUploadMedia(files);
+  formData.append('kind', 'photo');
+
+  try {
+    const { data } = await httpClient.post<{ items: ApiMediaItem[] }>('/users/me/media', formData);
+    return data.items.map((item) => item.url);
+  } catch (error) {
+    throw toSellerProductError(error);
+  }
+}
+
+/** Envia as fotos e devolve as URLs, na mesma ordem dos arquivos. */
+export async function uploadMedia(files: File[]): Promise<string[]> {
+  return useMocks ? mockUploadMedia(files) : apiUploadMedia(files);
 }
