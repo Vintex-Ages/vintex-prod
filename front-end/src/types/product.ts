@@ -5,13 +5,22 @@ export type ProductStatus = 'anunciada' | 'vendida' | 'pausada';
  * precisar de `Product`/`ProductDetail` importa daqui, não redefine local.
  */
 
+import type { StoreVerification } from '@/types/store';
+
 export interface Store {
   id: string;
   name: string;
   city?: string;
+  /**
+   * Forma derivada/legada de verificação (`verification === 'confiavel'`).
+   * Mantido porque `catalogService.ts` e `mocks/products.ts` ainda o
+   * preenchem; código novo deveria preferir `verification` quando disponível.
+   */
   verified?: boolean;
   /** URL do logo da loja. Usado no card da loja da página de detalhe (FE-US012-1). */
   logoUrl?: string;
+  /** Verificação da loja (FE-SVC-store), ver `@/types/store`. */
+  verification?: StoreVerification;
 }
 
 /**

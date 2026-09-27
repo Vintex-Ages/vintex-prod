@@ -1,0 +1,463 @@
+import { markCurrentAccountAsSeller, me } from '@/services/authService';
+import { httpClient } from '@/services/httpClient';
+import { products as mockProducts } from '@/mocks/products';
+import type { Paginated, Product } from '@/types/product';
+import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
+
+/**
+ * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
+ * próprio/público, verificação (Selo Confiável, `.ai/glossary.md`) e peças da
+ * loja. Segue o mesmo padrão de `catalogService.ts`: flag `VITE_USE_MOCKS`,
+ * branch mock vs. API real, erros normalizados em `StoreError`.
+ */
+const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
+
+/** Mesmo default do back (`app/core/pagination.py`, BE-kit-api). */
+const DEFAULT_PAGE_SIZE = 20;
+
+interface StoreProductsParams {
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * Erro de loja com o mesmo `code` do envelope do back
+ * (`app/core/errors.py::ErrorCode`) — quem chama o service trata o mesmo
+ * formato de erro estando no mock ou na API real.
+ */
+export class StoreError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StoreError';
+  }
+}
+
+function storeNotCreated(): StoreError {
+  return new StoreError('STORE_NOT_FOUND', 'Nenhuma loja foi criada para o usuário atual.');
+}
+
+function storeNotFound(id: string): StoreError {
+  return new StoreError('STORE_NOT_FOUND', `Loja ${id} não encontrada.`);
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number): Paginated<T> {
+  const start = (page - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), page, pageSize, total: items.length };
+}
+
+function toStoreProduct({ id, name, price, coverImageUrl, store }: Product): Product {
+  return { id, name, price, coverImageUrl, store };
+}
+
+// ---- mock ----
+
+/**
+ * Armazenamento mock em duas partes, pra separar o perfil público do dono:
+ * - `STORES_STORAGE_KEY`: todas as lojas criadas no mock, indexadas pelo id da
+ *   loja — é o que `getStore(id)` consulta, sem depender de quem está logado.
+ * - `storeOwnerKey(userId)`: id da loja de cada usuário do mock de auth, no
+ *   mesmo padrão por usuário do carrinho (`cart:${userId}`). Uma chave fixa
+ *   fazia o usuário B ver a loja do A depois de um logout (revisão do PR #243,
+ *   ponto 3).
+ */
+const STORES_STORAGE_KEY = 'vintex.stores';
+
+function storeOwnerKey(userId: string): string {
+  return `store:${userId}`;
+}
+
+function readStores(): Record<string, StoreProfile> {
+  try {
+    const raw = window.sessionStorage.getItem(STORES_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoreProfile>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStores(stores: Record<string, StoreProfile>): void {
+  try {
+    window.sessionStorage.setItem(STORES_STORAGE_KEY, JSON.stringify(stores));
+  } catch {
+    // Sem storage disponível: loja mockada não é persistida.
+  }
+}
+
+function saveStore(store: StoreProfile): void {
+  writeStores({ ...readStores(), [store.id]: store });
+}
+
+function readOwnedStore(userId: string): StoreProfile | null {
+  try {
+    const storeId = window.sessionStorage.getItem(storeOwnerKey(userId));
+    return storeId ? (readStores()[storeId] ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoreOwner(userId: string, storeId: string): void {
+  try {
+    window.sessionStorage.setItem(storeOwnerKey(userId), storeId);
+  } catch {
+    // Sem storage disponível: loja mockada não é persistida.
+  }
+}
+
+/**
+ * Tempo que o mock leva pra "aprovar" a verificação — dá à tela (FE-US007-1)
+ * um estado intermediário real pra exibir enquanto a promise não resolve.
+ */
+const MOCK_VERIFICATION_DELAY_MS = 500;
+
+/** Loja recém-criada não tem histórico: contadores zerados e, pela RN-74, sem `rating`/taxa. */
+const EMPTY_STORE_METRICS: StoreMetrics = {
+  activeProducts: 0,
+  soldProducts: 0,
+  monthsOnPlatform: 0,
+};
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let mockIdSeq = 0;
+
+/**
+ * `mockIdSeq` volta a 0 num reload, mas as lojas continuam no
+ * `sessionStorage` — pula ids já usados pra não sobrescrever a loja de outro
+ * usuário.
+ */
+function nextMockId(): string {
+  const stores = readStores();
+  let id: string;
+  do {
+    mockIdSeq += 1;
+    id = `store-mock-${mockIdSeq}`;
+  } while (id in stores);
+  return id;
+}
+
+async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
+  const user = await me();
+  const store: StoreProfile = {
+    id: nextMockId(),
+    name: input.name,
+    description: input.description,
+    logoUrl: null,
+    city: input.address.city,
+    state: input.address.state,
+    verification: 'pendente',
+    createdAt: new Date().toISOString(),
+    metrics: EMPTY_STORE_METRICS,
+  };
+  saveStore(store);
+  writeStoreOwner(user.id, store.id);
+  return store;
+}
+
+async function mockGetMyStore(): Promise<StoreProfile | null> {
+  const user = await me();
+  return readOwnedStore(user.id);
+}
+
+async function mockRequestVerification(): Promise<StoreProfile> {
+  const user = await me();
+  const store = readOwnedStore(user.id);
+  if (!store) {
+    throw storeNotCreated();
+  }
+  // Grava só depois do delay: nesse meio-tempo `getMyStore` ainda devolve 'pendente'.
+  await wait(MOCK_VERIFICATION_DELAY_MS);
+  const verified: StoreProfile = { ...store, verification: 'confiavel' };
+  saveStore(verified);
+  return verified;
+}
+
+/**
+ * Perfil público: não exige login. Procura primeiro nas lojas criadas no mock
+ * (de qualquer usuário); sem nenhuma com esse `id`, procura em
+ * `mocks/products.ts` um produto cujo `store.id` bata — o perfil é montado a
+ * partir do `Store` embutido no produto, já que o mock de catálogo não tem uma
+ * lista de lojas separada.
+ */
+function mockGetStore(id: string): StoreProfile {
+  const created = readStores()[id];
+  if (created) {
+    return created;
+  }
+
+  const product = mockProducts.find((item) => item.store.id === id);
+  if (!product) {
+    throw storeNotFound(id);
+  }
+
+  const { store } = product;
+  // `activeProducts` vem do próprio mock pra bater com `getStoreProducts`; o
+  // resto é fictício, só pra página da loja (FE-US007-2) ter o que mostrar.
+  const activeProducts = mockProducts.filter(
+    (item) => item.store.id === id && item.status === 'ativo',
+  ).length;
+  return {
+    id: store.id,
+    name: store.name,
+    description: 'Brechó com curadoria de peças únicas.',
+    logoUrl: store.logoUrl ?? null,
+    city: store.city ?? '',
+    state: 'RS',
+    verification: store.verified ? 'confiavel' : 'pendente',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    metrics: {
+      activeProducts,
+      soldProducts: 37,
+      monthsOnPlatform: 18,
+      shippingWithoutComplaintRate: 0.96,
+      rating: 4.8,
+    },
+  };
+}
+
+/** Só peças `ativo` aparecem — vendidas/despublicadas ficam de fora do perfil público. */
+function mockGetStoreProducts(
+  id: string,
+  { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
+): Paginated<Product> {
+  const items = mockProducts
+    .filter((product) => product.store.id === id && product.status === 'ativo')
+    .map(toStoreProduct);
+  return paginate(items, page, pageSize);
+}
+
+// ---- API real ----
+// Endpoints alinhados na revisão do PR #243 (comentário do Mauro): seguem a
+// convenção do backend (`.ai/adr/0001-fundacao-http-kit-api.md`, §4, no repo
+// do back) de que `/api/auth/*` é só para credencial e `/api/users/me/*` é
+// usado para todo recurso do usuário logado — mesmo formato que
+// `/users/me/preferences` (`preferenceService.ts`) já usa. Por isso a loja do
+// próprio vendedor vive em `/users/me/store` (criar, ler, verificar), nunca em
+// `/stores/me` — evita a armadilha de `/stores/me` colidir com `/stores/{id}`
+// por ordem de resolução de rota (se `{id}` for tratado como inteiro, "me" dá
+// 422; se for texto, "me" vira um id como outro qualquer).
+// `GET /stores/{id}` e `GET /stores/{id}/products` continuam como estavam —
+// são leitura pública, não mudam.
+// `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
+// contrário.
+
+interface ApiStoreMetrics {
+  active_products: number;
+  sold_products: number;
+  months_on_platform: number;
+  shipping_without_complaint_rate?: number;
+  rating?: number;
+}
+
+interface ApiStoreProfile {
+  id: number | string;
+  name: string;
+  description: string;
+  logo_url: string | null;
+  city: string;
+  state: string;
+  verification: StoreVerification;
+  created_at: string;
+  metrics?: ApiStoreMetrics;
+}
+
+interface ApiStoreProductItem {
+  id: number | string;
+  name: string;
+  price: number;
+  cover_image_url: string | null;
+  store: {
+    id: number | string;
+    name: string;
+    city?: string;
+    verified?: boolean;
+    logo_url?: string;
+    verification?: StoreVerification;
+  };
+}
+
+interface ApiPage<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
+}
+
+interface ApiErrorEnvelope {
+  error?: { code?: string; message?: string };
+}
+
+function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
+  return {
+    activeProducts: metrics.active_products,
+    soldProducts: metrics.sold_products,
+    monthsOnPlatform: metrics.months_on_platform,
+    shippingWithoutComplaintRate: metrics.shipping_without_complaint_rate,
+    rating: metrics.rating,
+  };
+}
+
+function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
+  return {
+    id: String(store.id),
+    name: store.name,
+    description: store.description,
+    logoUrl: store.logo_url,
+    city: store.city,
+    state: store.state,
+    verification: store.verification,
+    createdAt: store.created_at,
+    metrics: store.metrics ? mapStoreMetrics(store.metrics) : undefined,
+  };
+}
+
+function mapStoreProductItem(item: ApiStoreProductItem): Product {
+  return {
+    id: String(item.id),
+    name: item.name,
+    price: item.price,
+    coverImageUrl: item.cover_image_url,
+    store: {
+      id: String(item.store.id),
+      name: item.store.name,
+      city: item.store.city,
+      verified: item.store.verified,
+      logoUrl: item.store.logo_url,
+      verification: item.store.verification,
+    },
+  };
+}
+
+/** Normaliza erro do axios pro mesmo `StoreError` do caminho mock. */
+function toStoreError(error: unknown): StoreError {
+  const data = (error as { response?: { data?: ApiErrorEnvelope } }).response?.data;
+  if (data?.error?.code) {
+    return new StoreError(data.error.code, data.error.message ?? 'Erro ao consultar loja.');
+  }
+  return new StoreError('INTERNAL_ERROR', 'Erro ao consultar loja.');
+}
+
+function toStoreFormData(input: StoreInput): FormData {
+  const formData = new FormData();
+  formData.append('name', input.name);
+  formData.append('description', input.description);
+  formData.append('document_type', input.document.type);
+  formData.append('document_number', input.document.number);
+  formData.append('pix_key', input.pixKey);
+  formData.append('address', JSON.stringify(input.address));
+  if (input.acceptedContractVersion) {
+    formData.append('accepted_contract_version', input.acceptedContractVersion);
+  }
+  if (input.logo) {
+    formData.append('logo', input.logo);
+  }
+  return formData;
+}
+
+async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
+  try {
+    const { data } = input.logo
+      ? await httpClient.post<ApiStoreProfile>('/users/me/store', toStoreFormData(input), {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      : await httpClient.post<ApiStoreProfile>('/users/me/store', {
+          name: input.name,
+          description: input.description,
+          document_type: input.document.type,
+          document_number: input.document.number,
+          pix_key: input.pixKey,
+          address: input.address,
+          accepted_contract_version: input.acceptedContractVersion,
+        });
+    return mapStoreProfile(data);
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
+async function apiGetMyStore(): Promise<StoreProfile | null> {
+  try {
+    const { data } = await httpClient.get<ApiStoreProfile>('/users/me/store');
+    return mapStoreProfile(data);
+  } catch (error) {
+    const status = (error as { response?: { status?: number } }).response?.status;
+    if (status === 404) {
+      return null;
+    }
+    throw toStoreError(error);
+  }
+}
+
+async function apiRequestVerification(): Promise<StoreProfile> {
+  try {
+    const { data } = await httpClient.post<ApiStoreProfile>('/users/me/store/verification');
+    return mapStoreProfile(data);
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
+async function apiGetStore(id: string): Promise<StoreProfile> {
+  try {
+    const { data } = await httpClient.get<ApiStoreProfile>(`/stores/${id}`);
+    return mapStoreProfile(data);
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
+async function apiGetStoreProducts(
+  id: string,
+  { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
+): Promise<Paginated<Product>> {
+  try {
+    const { data } = await httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
+      params: { page, page_size: pageSize },
+    });
+    return {
+      items: data.items.map(mapStoreProductItem),
+      page: data.page,
+      pageSize: data.page_size,
+      total: data.total,
+    };
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
+// ---- API pública do service ----
+
+export async function createStore(input: StoreInput): Promise<StoreProfile> {
+  if (!useMocks) {
+    return apiCreateStore(input);
+  }
+  const store = await mockCreateStore(input);
+  // Na API real o back marca `is_seller` ao criar a loja; no mock, quem faz
+  // isso é o authService — senão `refreshUser()` nunca vê a conta como vendedora.
+  await markCurrentAccountAsSeller();
+  return store;
+}
+
+export async function getMyStore(): Promise<StoreProfile | null> {
+  return useMocks ? mockGetMyStore() : apiGetMyStore();
+}
+
+export async function requestVerification(): Promise<StoreProfile> {
+  return useMocks ? mockRequestVerification() : apiRequestVerification();
+}
+
+export async function getStore(id: string): Promise<StoreProfile> {
+  return useMocks ? mockGetStore(id) : apiGetStore(id);
+}
+
+export async function getStoreProducts(
+  id: string,
+  params: StoreProductsParams = {},
+): Promise<Paginated<Product>> {
+  return useMocks ? mockGetStoreProducts(id, params) : apiGetStoreProducts(id, params);
+}
