@@ -311,3 +311,129 @@ describe('storeService (API real) — loja pública', () => {
     });
   });
 });
+
+/**
+ * Fixtures serializados dos models do back em `develop@659951f`, com
+ * `model_dump_json()` — não escritos à mão. A rodada anterior de correção
+ * deste arquivo usou fixture inventado, e por isso o teste passava enquanto
+ * o contrato real estava quebrado.
+ */
+describe('storeService (API real) — rotas privadas de escrita', () => {
+  /** `POST` e `GET /api/users/me/store` devolvem os dois `StoreResponse`. */
+  const STORE_RESPONSE = {
+    id: 7,
+    seller_id: 3,
+    name: 'Brechó Aurora',
+    description: 'Peças garimpadas',
+    logo_url: 'http://localhost:8000/api/media/logos/aurora.png',
+    document_type: 'CNPJ',
+    document_value: '12345678000199',
+    terms_version: '1.0',
+    terms_accepted_at: '2026-03-14T12:00:00Z',
+  };
+
+  /** `GET /api/stores/{id}/products` — `price` é `Decimal` sem serializer no back. */
+  const STORE_PRODUCTS_PAGE = {
+    items: [
+      { id: 41, name: 'Jaqueta de couro', price: '199.90', cover_image_url: null, status: 'ativo' },
+    ],
+    page: 1,
+    page_size: 20,
+    total: 1,
+  };
+
+  const PERFIL_PUBLICO = {
+    id: 7,
+    name: 'Brechó Aurora',
+    description: 'Peças garimpadas',
+    logo_url: null,
+    verified: true,
+    address: {
+      street: 'Rua Ali',
+      number: '120',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90010000',
+    },
+    metrics: { created_at: '2026-03-14T12:00:00Z', products_listed: 12, products_sold: 5 },
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function responder(dados: unknown, status = 200) {
+    return (config: unknown) =>
+      Promise.resolve({
+        data: dados,
+        status,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }) as never;
+  }
+
+  /**
+   * `POST /api/users/me/store` devolve `StoreResponse`, igual ao `GET` da
+   * mesma rota — não o formato público. Usar o mapeador público aqui estoura
+   * em `metrics.created_at`, e é o clique de "Criar loja" do `front-end#270`.
+   */
+  it('createStore lê o formato da rota privada, sem metrics nem address', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { createStore: apiCreateStore } = await import('./storeService');
+
+    httpClient.defaults.adapter = responder(STORE_RESPONSE, 201);
+
+    const loja = await apiCreateStore(input);
+
+    expect(loja.id).toBe('7');
+    expect(loja.name).toBe('Brechó Aurora');
+    expect(loja.description).toBe('Peças garimpadas');
+    expect(loja.logoUrl).toBe('http://localhost:8000/api/media/logos/aurora.png');
+    expect(loja.verification).toBe('pendente');
+    expect(loja.metrics).toBeUndefined();
+  });
+
+  /**
+   * `StoreProductItemResponse.price` é `Decimal` **sem** `field_serializer`,
+   * então chega como string — ao contrário do feed e do detalhe, que têm o
+   * serializer e chegam como número.
+   */
+  it('getStoreProducts converte o price de string para número', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStoreProducts: apiGetStoreProducts } = await import('./storeService');
+
+    httpClient.defaults.adapter = ((config: { url?: string }) =>
+      config.url?.includes('/products')
+        ? responder(STORE_PRODUCTS_PAGE)(config)
+        : responder(PERFIL_PUBLICO)(config)) as never;
+
+    const pagina = await apiGetStoreProducts('7');
+
+    expect(pagina.items).toHaveLength(1);
+    expect(pagina.items[0].price).toBe(199.9);
+    expect(typeof pagina.items[0].price).toBe('number');
+  });
+
+  /**
+   * `POST /api/users/me/store/verification` devolve `{ verified: boolean }`
+   * (`SellerVerificationResponse`, no `back-end#195`) — uma terceira forma,
+   * que não dá para virar `StoreProfile`. Enquanto a rota não existe na
+   * `develop`, falhar com mensagem é melhor que estourar em `metrics`.
+   */
+  it('requestVerification falha com mensagem, e não com TypeError de metrics', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { requestVerification: apiRequestVerification } = await import('./storeService');
+
+    httpClient.defaults.adapter = responder({ verified: true });
+
+    await expect(apiRequestVerification()).rejects.toThrow(/contrato|indisponível/i);
+  });
+});
