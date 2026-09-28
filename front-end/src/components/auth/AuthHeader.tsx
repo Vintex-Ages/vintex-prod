@@ -1,9 +1,10 @@
 import clsx from 'clsx';
 
+import logoVintex from '@/assets/images/logo-vintex.svg';
 import IconButton from '@/components/common/IconButton';
 
 /**
- * Cabeçalho compacto das telas de autenticação — botão de voltar + wordmark.
+ * Cabeçalho compacto das telas de autenticação — botão de voltar + logo.
  * Só apresentação: sem router aqui, quem usa decide o que `onBack` faz
  * (ex.: `navigate(-1)` na página). Mesmo padrão visual do `Header.tsx` do site
  * (fundo de bloco + divisória inferior), porém mais simples e sem navegação.
@@ -42,12 +43,8 @@ function AuthHeader({ onBack }: AuthHeaderProps) {
         )}
       >
         <IconButton icon={ArrowLeftIcon} ariaLabel="Voltar" onClick={onBack} variant="primary" />
-        {/*
-          Mesmo tamanho da marca no `Header` do site (`h3`). Estava em `h2`, que
-          na escala fluida chega a 48px no desktop — a marca ficava maior que o
-          titulo da propria tela de login, logo abaixo dela.
-        */}
-        <span className={clsx('font-display text-h3 leading-none text-tinta')}>vintex</span>
+        {/* Mesma altura do logo no `Header` do site (20px, o tamanho do design). */}
+        <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
       </div>
     </header>
   );

@@ -124,16 +124,13 @@ describe('Catalog', () => {
     await waitFor(() => expect(search).toHaveBeenCalled());
 
     await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    expect(screen.getAllByRole('button', { name: 'Roupas' })).toHaveLength(1);
 
     await waitFor(() => {
       expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'Roupas' }));
     });
 
-    // #207: agora existem duas caixas de busca na tela (a tradicional e a
-    // de dentro do spotlight, que só aparece no `web`). A primeira
-    // (`getAllByRole(...)[0]`) é a tradicional do catálogo — antes bastava
-    // `getByRole('searchbox')` porque só havia uma.
-    const [input] = screen.getAllByRole('searchbox');
+    const input = screen.getByRole('searchbox');
     await user.type(input, 'camiseta{Enter}');
 
     await waitFor(() => {
@@ -273,7 +270,7 @@ describe('Catalog', () => {
     const reason = 'Nenhum resultado para "xyz". Veja outras peças disponíveis.';
     expect(screen.getByText(reason)).toBeInTheDocument();
 
-    const [input] = screen.getAllByRole('searchbox');
+    const input = screen.getByRole('searchbox');
     await user.clear(input);
     await user.type(input, 'camiseta{Enter}');
     expect(search).toHaveBeenLastCalledWith('camiseta', expect.any(Object));
@@ -288,23 +285,21 @@ describe('Catalog', () => {
 
   // --- #207: pontos de entrada da Vintex ---
 
-  it('renderiza o spotlight compacto acima dos filtros, além da busca tradicional', async () => {
+  it('mostra uma busca e mantém um acesso separado à conversa com a Vintex', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 
     renderCatalog();
     await waitFor(() => expect(search).toHaveBeenCalled());
 
-    expect(
-      screen.getByRole('heading', { name: 'Prefere descrever o que procura?' }),
-    ).toBeInTheDocument();
-
-    // As duas barras de busca (a tradicional e a de dentro do spotlight)
-    // usam o mesmo aria-label "Buscar" hoje — débito técnico do SearchBar
-    // (#93), fora do escopo desta issue.
-    expect(screen.getAllByRole('searchbox')).toHaveLength(2);
+    expect(screen.getByText('Prefere descrever o que procura?')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /conversar com a vintex/i })).toHaveAttribute(
+      'href',
+      '/vintex',
+    );
+    expect(screen.getAllByRole('searchbox')).toHaveLength(1);
   });
 
-  it('enviar pelo spotlight leva para /vintex com a mensagem, não repete a busca tradicional', async () => {
+  it('abre a conversa com a Vintex pelo acesso do catálogo', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
     const user = userEvent.setup();
 
@@ -312,10 +307,9 @@ describe('Catalog', () => {
     await waitFor(() => expect(search).toHaveBeenCalled());
     vi.mocked(search).mockClear();
 
-    const [, spotlightInput] = screen.getAllByRole('searchbox');
-    await user.type(spotlightInput, 'vestido floral{Enter}');
+    await user.click(screen.getByRole('link', { name: /conversar com a vintex/i }));
 
-    expect(await screen.findByText('Vintex recebeu: vestido floral')).toBeInTheDocument();
+    expect(await screen.findByText('Vintex recebeu:')).toBeInTheDocument();
     expect(search).not.toHaveBeenCalled();
   });
 });

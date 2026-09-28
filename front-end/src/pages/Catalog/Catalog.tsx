@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import ActiveFilters from '@/components/catalog/ActiveFilters';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
+import BrandSignature from '@/components/common/BrandSignature';
 import FilterPanel from '@/components/catalog/FilterPanel';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { SuggestionBlock } from '@/components/catalog/SuggestionBlock';
@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
-import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { paths, productDetail } from '@/routes/paths';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
@@ -56,7 +55,6 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  * - **Vazio e erro têm saída** — limpar os filtros e tentar de novo.
  */
 function Catalog() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const term = searchParams.get('q') ?? '';
 
@@ -127,6 +125,10 @@ function Catalog() {
 
   return (
     <Container as="main" className="flex flex-col gap-6 py-6 tablet:py-8">
+      <div className="-mx-4 -mt-6 -mb-2 tablet:hidden">
+        <BrandSignature headingAs="p" />
+      </div>
+
       <div className="flex flex-col gap-4">
         <h1 className="font-display text-h2 text-tinta">Catálogo</h1>
 
@@ -138,37 +140,35 @@ function Catalog() {
         />
       </div>
 
-      {/*
-        #207: caminho em destaque para a IA, a partir do `tablet`
-        (RN-94/RN-54) — no mobile o FAB já cobre esse papel. A SearchBar
-        tradicional acima continua visível em todo breakpoint: a IA é um
-        caminho a mais, não o único.
-      */}
       <div className="hidden tablet:block">
-        <VintexSearchSpotlight
-          size="compact"
-          headingAs="h2"
-          heading="Prefere descrever o que procura?"
-          eyebrow=""
-          isOnline={false}
-          suggestions={[]}
-          placeholder="Descreva a peça ou o estilo..."
-          onSubmit={(query) => navigate(paths.vintex, { state: { message: query } })}
-        />
+        <Link
+          to={paths.vintex}
+          className="flex min-h-touch items-center justify-between gap-4 bg-vermelho-escuro px-5 py-3 font-ui text-branco-quente transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-branco-quente"
+        >
+          <span className="font-display text-h4 web:text-h3">Prefere descrever o que procura?</span>
+          <span className="inline-flex shrink-0 items-center gap-2 text-body-sm font-semibold underline underline-offset-4">
+            Conversar com a Vintex
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </Link>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <FilterPanel
-          filters={filters}
-          onChange={setFilters}
-          sizeOptions={[...SIZES]}
-          conditionOptions={[...CONDITIONS]}
-          colorOptions={[...COLORS]}
-          resultCount={loading ? undefined : total}
-        />
-
-        <ActiveFilters filters={filters} onChange={setFilters} total={total} loading={loading} />
-      </div>
+      <FilterPanel
+        filters={filters}
+        onChange={setFilters}
+        sizeOptions={[...SIZES]}
+        conditionOptions={[...CONDITIONS]}
+        colorOptions={[...COLORS]}
+        resultCount={loading ? undefined : total}
+      />
 
       {error ? (
         <ErrorState message="Não foi possível carregar as peças agora." onRetry={run} />

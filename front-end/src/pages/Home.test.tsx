@@ -187,7 +187,7 @@ describe('<Home />', () => {
 
     expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
   });
-  describe('convite "Quero vender" (FE-US006-1, #212)', () => {
+  describe('convite para vender (FE-US006-1, #212)', () => {
     beforeEach(() => {
       vi.mocked(getFeed).mockResolvedValue(feed);
     });
@@ -196,7 +196,7 @@ describe('<Home />', () => {
       const user = userEvent.setup();
       renderHome(BUYER);
 
-      await user.click(await screen.findByRole('link', { name: 'Quero vender' }));
+      await user.click(await screen.findByRole('link', { name: 'Anunciar Peça' }));
 
       expect(await screen.findByRole('heading', { name: 'Página de vender' })).toBeInTheDocument();
     });
@@ -205,14 +205,14 @@ describe('<Home />', () => {
       renderHome();
 
       await screen.findByRole('link', { name: 'Vestido floral' });
-      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
     });
 
     it('quem já vende não vê o convite', async () => {
       renderHome({ ...BUYER, is_seller: true });
 
       await screen.findByRole('link', { name: 'Vestido floral' });
-      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
     });
   });
 });

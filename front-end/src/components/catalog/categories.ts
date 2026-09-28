@@ -1,7 +1,7 @@
 /**
- * Categorias do catálogo, compartilhadas entre `FilterPanel` (que envia) e
- * `ActiveFilters` (que rotula o chip). Em arquivo próprio como o `navLinks.ts`
- * do layout: exportar constante de arquivo de componente quebra o Fast Refresh.
+ * Categorias do catálogo, compartilhadas entre `FilterPanel` (que exibe e
+ * envia). Em arquivo próprio como o `navLinks.ts` do layout: exportar constante
+ * de arquivo de componente quebra o Fast Refresh.
  *
  * O `value` é exatamente o que está gravado em `products.category`, porque a
  * comparação é por igualdade nos dois lados: `matchesFilters` no mock e o

@@ -10,7 +10,7 @@ import { paths } from '@/routes/paths';
  * `.ai/coding-rules.md`.
  *
  * A aba indicada por `active` recebe `aria-current="page"` e o estilo ativo
- * (fundo `tinta`, texto `branco-quente`); a outra usa fundo `papel`/texto
+ * (fundo `verde-rs`, texto `branco-quente`); a outra usa fundo `papel`/texto
  * `tinta` com borda inferior sinalizando que não está selecionada.
  *
  * Usage:
@@ -26,7 +26,7 @@ function tabClass(isActive: boolean): string {
   return clsx(
     'flex min-h-11 flex-1 items-center justify-center px-4 text-body font-semibold no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta',
     isActive
-      ? 'bg-tinta text-branco-quente'
+      ? 'bg-verde-rs text-branco-quente'
       : 'border-b-2 border-linha bg-papel text-tinta hover:bg-papel-profundo',
   );
 }

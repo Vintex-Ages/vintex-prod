@@ -163,7 +163,7 @@ export default function VintexAI() {
 
       <div className="border-t border-linha bg-papel px-4 pb-4 pt-3 tablet:px-8 web:px-10">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
             {SUGGESTION_CHIPS.map((chip) => (
               <FilterChip key={chip} label={chip} onToggle={() => handleChipClick(chip)} />
             ))}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import logoVintex from '@/assets/images/logo-vintex.svg';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
@@ -120,9 +121,9 @@ function Header() {
       <Container className="flex items-center gap-1 py-3 tablet:gap-6 tablet:py-4">
         <Link
           to={paths.home}
-          className="shrink-0 font-display text-h3 leading-none text-tinta hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
+          className="shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
         >
-          vintex
+          <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
         </Link>
 
         <div className="relative shrink-0 tablet:hidden">

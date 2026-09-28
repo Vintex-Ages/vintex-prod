@@ -12,8 +12,7 @@ function FilterIcon() {
     <svg
       aria-hidden="true"
       viewBox="0 0 24 24"
-      width="16"
-      height="16"
+      className="h-[14.4px] w-[14.4px]"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
@@ -30,14 +29,12 @@ function ChevronDownIcon({ open }: { open: boolean }) {
     <svg
       aria-hidden="true"
       viewBox="0 0 24 24"
-      width="16"
-      height="16"
+      className={clsx('h-[12.8px] w-[12.8px] transition-transform', open && 'rotate-180')}
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={clsx('transition-transform', open && 'rotate-180')}
     >
       <polyline points="6 9 12 15 18 9" />
     </svg>
@@ -62,12 +59,12 @@ function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
       type="button"
       onClick={onClick}
       aria-expanded={open}
-      className="inline-flex min-h-touch w-fit shrink-0 items-center gap-2 rounded-full border border-linha bg-branco-quente px-4 py-2 text-body-sm text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+      className="inline-flex min-h-touch w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-linha bg-branco-quente px-3 py-2 text-label font-semibold leading-normal text-verde-rs transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
     >
       <FilterIcon />
       <span>Mais filtros</span>
       {hasCount && (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-vermelho-escuro px-2 text-label text-branco-quente">
+        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-vermelho-escuro px-1 text-[10.6px] font-semibold leading-none text-branco-quente">
           {count}
         </span>
       )}

@@ -111,6 +111,7 @@ export function SearchBar({
           'flex shrink-0 items-center justify-center gap-2 bg-vermelho-escuro font-semibold text-branco-quente transition',
           'hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente',
           'disabled:cursor-not-allowed disabled:opacity-70',
+          'min-h-touch',
           compact ? 'px-3 text-body-sm' : 'px-4 text-body',
         )}
       >
