@@ -12,7 +12,8 @@ import clsx from 'clsx';
  * ser pulado pelo indicador.
  *
  * Duas variantes por breakpoint: no mobile, o resumo compacto
- * ("2 de 3 · Dados"); a partir de `tablet:`, a lista horizontal. A variante
+ * ("2 de 3 · Dados"), com um "Voltar para <etapa anterior>" quando há etapa
+ * concluída e `onStepSelect`; a partir de `tablet:`, a lista horizontal. A variante
  * escondida fica em `display: none`, então o leitor de tela não ouve o
  * progresso duas vezes.
  *
@@ -52,7 +53,7 @@ function StepMarker({ index, state }: { index: number; state: StepState }) {
       className={clsx(
         'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-body-sm font-semibold',
         state === 'completed' && 'border-verde-rs bg-verde-rs text-branco-quente',
-        state === 'current' && 'border-tinta bg-tinta text-branco-quente',
+        state === 'current' && 'border-vermelho-escuro bg-vermelho-escuro text-branco-quente',
         state === 'upcoming' && 'border-linha bg-transparent text-texto-auxiliar',
       )}
     >
@@ -76,13 +77,25 @@ function StepMarker({ index, state }: { index: number; state: StepState }) {
 
 function Stepper({ steps, current, onStepSelect }: StepperProps) {
   const currentStep = steps[current];
+  const previousStep = current > 0 ? steps[current - 1] : undefined;
 
   return (
     <div>
       {currentStep ? (
-        <p className="text-body-sm font-semibold text-tinta tablet:hidden">
-          {`${current + 1} de ${steps.length} · ${currentStep.label}`}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 tablet:hidden">
+          <p className="text-body-sm font-semibold text-tinta">
+            {`${current + 1} de ${steps.length} · ${currentStep.label}`}
+          </p>
+          {previousStep && onStepSelect ? (
+            <button
+              type="button"
+              onClick={() => onStepSelect(current - 1)}
+              className="inline-flex min-h-touch items-center px-1 text-body-sm text-tinta underline underline-offset-4 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            >
+              {`Voltar para ${previousStep.label}`}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       <ol className="hidden items-center gap-2 tablet:flex">
