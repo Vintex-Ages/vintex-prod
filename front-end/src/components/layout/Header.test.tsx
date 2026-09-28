@@ -212,7 +212,6 @@ describe('<Header />', () => {
     });
 
     it('troca os itens com o menu aberto quando o contexto passa a is_seller: true', async () => {
-      vi.mocked(me).mockResolvedValue({ ...SAMPLE_USER, is_seller: true });
       renderHeaderLoggedIn();
 
       fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
@@ -220,6 +219,10 @@ describe('<Header />', () => {
 
       // O que a tela de criar loja fará depois do `createStore`: nenhum
       // reload, nenhuma remontagem do Header — só o contexto atualizado.
+      // O `me()` só passa a responder vendedor aqui: o `AuthProvider` já
+      // chama `me()` na montagem para confirmar o papel (#267), e com o mock
+      // configurado antes do render o menu abriria como vendedor.
+      vi.mocked(me).mockResolvedValue({ ...SAMPLE_USER, is_seller: true });
       await act(async () => {
         await refreshUserFromTest?.();
       });
