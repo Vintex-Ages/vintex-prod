@@ -171,6 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const refreshUser = useCallback(async () => {
     const nextUser = await me();
+    // Resposta sem usuário não derruba a sessão: quem confirma o papel não
+    // pode ser quem desloga por acidente.
+    if (!nextUser) return;
+
     setUser(nextUser);
     try {
       window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(nextUser));
@@ -199,6 +203,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAuthTokenProvider(() => token);
   }, [token]);
+
+  /**
+   * Confirma o papel do usuário assim que existe token.
+   *
+   * O `POST /auth/login` não devolve `is_seller`: no back, `UserPublic` é
+   * identidade mais `created_at`, e por isso `apiLogin` entrega o usuário com
+   * `is_seller: false` fixo. Quem sabe o papel é o `GET /users/me`. Sem esta
+   * confirmação um vendedor de verdade nunca passa pela guarda de `/seller`,
+   * por mais que o banco diga o contrário — foi o que apareceu no primeiro
+   * teste de integração com a API real.
+   *
+   * Declarado depois do efeito acima de propósito: efeitos rodam na ordem em
+   * que aparecem, e a chamada precisa do token já registrado no `httpClient`.
+   */
+  useEffect(() => {
+    if (!token) return;
+
+    void refreshUser().catch(() => {
+      // 401 já é tratado pelo interceptador do `httpClient`. Outra falha
+      // mantém o usuário que o login entregou, sem derrubar a sessão.
+    });
+  }, [token, refreshUser]);
 
   /**
    * Remove o provider de token quando o AuthProvider desmonta.
