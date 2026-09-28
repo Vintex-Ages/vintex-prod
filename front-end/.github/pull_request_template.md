@@ -1,38 +1,46 @@
 ## Descrição
 
-<!-- Descreva de forma clara o que essa PR faz e por quê. -->
-
-Closes #<!-- número da issue -->
-
-## Tipo de mudança
-
-- [ ] Feature (nova funcionalidade)
-- [ ] Bugfix (correção de bug)
-- [ ] Hotfix (correção urgente em produção)
-- [ ] Refactor (refatoração sem mudança de comportamento)
-- [ ] Docs (alteração em documentação)
-- [ ] Chore (configs, CI, dependências)
+<!-- Explique o que foi feito e por quê. -->
 
 ## O que foi feito
 
+<!-- Liste objetivamente as mudanças feitas neste PR. -->
+
+-
 -
 -
 
-## Onde foi utilizado IA?
+## Tipo de mudança
 
-<!-- Descreva o auxílio de IA ou escreva "Nenhum uso de IA nesta PR." -->
+<!-- Selecione exatamente uma opção, mantendo a palavra em inglês
+(exigido pela validação automática de PR). -->
 
--
+- [ ] Feature
+- [ ] Bugfix
+- [ ] Hotfix
+- [ ] Refactor
+- [ ] Docs
+- [ ] Chore
 
-## Screenshots / Evidências (opcional)
+## Uso de IA
 
-<!-- Prints de antes/depois, logs ou outras evidências visuais -->
+<!-- Quais ferramentas de IA foram usadas neste PR (ChatGPT, Claude, Copilot,
+Cursor, etc.) e em quais partes (geração de código, revisão, documentação,
+testes, etc.). Se nenhuma foi usada, escreva "Nenhuma". -->
 
 ## Checklist
 
-- [ ] Criei a branch a partir de `develop`
-- [ ] Rodei `npm run lint`
-- [ ] Rodei `npm run test`
-- [ ] Rodei `npm run build`
-- [ ] Rodei `npm run format` e revisei as alterações
-- [ ] Atualizei testes e documentação quando necessário
+- [ ] Rodei `npm run lint` localmente e não há erros
+- [ ] Rodei `npm run format:check` localmente e não há problemas de formatação
+- [ ] Rodei `npm run build` localmente e o projeto builda sem erros
+- [ ] Rodei `npm run test` localmente (quando aplicável)
+- [ ] Adicionei prints caso envolva mudança visual
+
+## Prints
+
+<!-- Cole aqui prints de antes/depois, se for mudança visual. -->
+
+## Observações
+
+<!-- Qualquer contexto adicional para quem for revisar.
+Inclua aqui: Closes #<número da issue> -->
