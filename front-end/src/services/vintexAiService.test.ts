@@ -172,11 +172,23 @@ describe('vintexAiService.chat (API real)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
+    // Base com `/api` no fim, como o `.env.example` manda: e o que revela a
+    // URL dobrada, que `toContain` nao revelava.
+    vi.stubEnv('VITE_API_BASE_URL', 'http://api.test/api');
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it('monta a URL do chat sem dobrar o /api da base', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaOk(sse({ type: 'done' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await coletar({ messages: [{ role: 'user', text: 'oi' }] });
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe('http://api.test/api/ai/chat');
   });
 
   it('converte o papel `vintex` em `assistant`, que é o que o back aceita', async () => {
@@ -381,6 +393,9 @@ describe('suggestListing (API real)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
+    // Base com `/api` no fim, como o `.env.example` manda: e o que revela a
+    // URL dobrada, que `toContain` nao revelava.
+    vi.stubEnv('VITE_API_BASE_URL', 'http://api.test/api');
   });
 
   afterEach(() => {
@@ -413,7 +428,7 @@ describe('suggestListing (API real)', () => {
     const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain('/api/ai/listing-suggestions');
+    expect(String(url)).toBe('http://api.test/api/ai/listing-suggestions');
     expect(JSON.parse(init.body as string)).toEqual({ image_urls: ['https://x.test/a.jpg'] });
 
     expect(r.ok).toBe(true);
@@ -469,7 +484,9 @@ describe('suggestListing (API real)', () => {
 
     const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'], productId: '42' });
 
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/users/me/products/42/ai-status');
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      'http://api.test/api/users/me/products/42/ai-status',
+    );
     expect(fetchMock.mock.calls[0][1].method).toBe('GET');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
