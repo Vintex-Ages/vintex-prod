@@ -203,6 +203,50 @@ describe('storeService (API real) — loja pública', () => {
     vi.unstubAllEnvs();
   });
 
+  /**
+   * `/users/me/store` e `/stores/{id}` devolvem formatos diferentes para a
+   * mesma entidade. Usar o mapeador público na rota privada derrubava a
+   * guarda de vendedor com `TypeError`, porque ele lê `metrics.created_at` e
+   * a resposta privada não tem `metrics`.
+   */
+  it('getMyStore usa o formato da rota privada, que não tem metrics nem address', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyStore: apiGetMyStore } = await import('./storeService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          id: 5,
+          seller_id: 2,
+          name: 'Brechó do Mauro',
+          description: null,
+          logo_url: null,
+          document_type: 'CPF',
+          document_value: '529.982.247-25',
+          terms_version: 'v1',
+          terms_accepted_at: '2026-09-27T23:00:00',
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const loja = await apiGetMyStore();
+
+    expect(loja?.id).toBe('5');
+    expect(loja?.name).toBe('Brechó do Mauro');
+  });
+
+  it('getMyStore devolve null quando o vendedor ainda não tem loja', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyStore: apiGetMyStore } = await import('./storeService');
+
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 404, data: {} } });
+
+    await expect(apiGetMyStore()).resolves.toBeNull();
+  });
+
   it('desaninha endereço, traduz o selo e lê a data de dentro de metrics', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { getStore: apiGetStore } = await import('./storeService');

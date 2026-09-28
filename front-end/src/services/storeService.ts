@@ -412,10 +412,47 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
   }
 }
 
+/**
+ * `GET /api/users/me/store` (back-end#141) devolve a loja **do ponto de vista
+ * do dono** — `StoreResponse`, com documento e termos — e não o retrato
+ * público de `GET /api/stores/{id}`. São dois formatos diferentes para a mesma
+ * entidade, e por isso dois mapeadores.
+ *
+ * Usar o mapeador público aqui derrubava a tela com `TypeError`, porque ele lê
+ * `metrics.created_at` e esta resposta não tem `metrics`. A guarda de vendedor
+ * só precisa saber se a loja existe; cidade, selo e métricas continuam vindo
+ * do retrato público, que é quem os tem.
+ */
+interface ApiMyStore {
+  id: number | string;
+  seller_id: number | string;
+  name: string;
+  description: string | null;
+  logo_url: string | null;
+  document_type: string;
+  document_value: string;
+  terms_version: string | null;
+  terms_accepted_at: string | null;
+}
+
+function mapMyStore(store: ApiMyStore): StoreProfile {
+  return {
+    id: String(store.id),
+    name: store.name,
+    description: store.description ?? '',
+    logoUrl: store.logo_url,
+    // Não vêm nesta rota; quem precisa deles busca o retrato público.
+    city: '',
+    state: '',
+    verification: 'pendente',
+    createdAt: store.terms_accepted_at ?? '',
+  };
+}
+
 async function apiGetMyStore(): Promise<StoreProfile | null> {
   try {
-    const { data } = await httpClient.get<ApiStoreProfile>('/users/me/store');
-    return mapStoreProfile(data);
+    const { data } = await httpClient.get<ApiMyStore>('/users/me/store');
+    return mapMyStore(data);
   } catch (error) {
     const status = (error as { response?: { status?: number } }).response?.status;
     if (status === 404) {
