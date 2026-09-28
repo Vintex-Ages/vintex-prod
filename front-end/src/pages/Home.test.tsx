@@ -158,21 +158,17 @@ describe('<Home />', () => {
 
   // --- #207: pontos de entrada da Vintex ---
 
-  it('mostra o spotlight (web) e o heading de fallback (mobile/tablet) com o mesmo h1', async () => {
+  it('mostra o spotlight web com o título semântico da página', async () => {
     vi.mocked(getFeed).mockResolvedValue(feed);
     renderHome();
 
     await screen.findByRole('link', { name: 'Vestido floral' });
 
-    // Dois h1 no DOM ao mesmo tempo é esperado: um fica escondido por classe
-    // (`web:hidden` / `hidden web:block`) conforme o breakpoint — jsdom não
-    // avalia media query, então o teste garante que cada um existe, não
-    // qual está visualmente visível numa largura específica.
     const headings = screen.getAllByRole('heading', {
       name: 'Garimpe a peça certa nos brechós do Rio Grande do Sul.',
       level: 1,
     });
-    expect(headings).toHaveLength(2);
+    expect(headings).toHaveLength(1);
   });
 
   it('enviar pelo spotlight leva para /vintex com a mensagem, não para o catálogo', async () => {
@@ -182,7 +178,7 @@ describe('<Home />', () => {
 
     await screen.findByRole('link', { name: 'Vestido floral' });
 
-    const input = screen.getByRole('searchbox', { name: 'Buscar' });
+    const input = screen.getByPlaceholderText('O que você procura?');
     await user.type(input, 'jaqueta de couro{Enter}');
 
     expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
