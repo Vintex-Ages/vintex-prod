@@ -1,6 +1,7 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createStore,
+  getMockAcceptedContractVersion,
   getMyStore,
   getStore,
   getStoreProducts,
@@ -61,6 +62,21 @@ describe('storeService', () => {
     expect(created.id.length).toBeGreaterThan(0);
 
     expect(await getMyStore()).toEqual(created);
+  });
+
+  it('createStore guarda no mock a versão do contrato de venda aceita (#203)', async () => {
+    const created = await createStore({
+      ...input,
+      acceptedContractVersion: 'contrato-0.1-placeholder',
+    });
+
+    expect(getMockAcceptedContractVersion(created.id)).toBe('contrato-0.1-placeholder');
+  });
+
+  it('createStore sem acceptedContractVersion não registra versão', async () => {
+    const created = await createStore(input);
+
+    expect(getMockAcceptedContractVersion(created.id)).toBeUndefined();
   });
 
   it('createStore marca a conta logada como vendedora (me() passa a ter is_seller = true)', async () => {

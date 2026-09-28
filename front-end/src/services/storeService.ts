@@ -108,6 +108,34 @@ function writeStoreOwner(userId: string, storeId: string): void {
 }
 
 /**
+ * Versão do contrato de venda aceita ao criar a loja (#203). Fica fora do
+ * `StoreProfile` porque o perfil não expõe esse campo — é só registro do aceite.
+ */
+function storeContractKey(storeId: string): string {
+  return `store-contract:${storeId}`;
+}
+
+function writeAcceptedContractVersion(storeId: string, version: string): void {
+  try {
+    window.sessionStorage.setItem(storeContractKey(storeId), version);
+  } catch {
+    // Sem storage disponível: aceite mockado não é persistido.
+  }
+}
+
+/**
+ * Versão do contrato que a loja aceitou, no mock. Existe pra os testes
+ * conferirem o registro do aceite — fora do mock quem registra é o back.
+ */
+export function getMockAcceptedContractVersion(storeId: string): string | undefined {
+  try {
+    return window.sessionStorage.getItem(storeContractKey(storeId)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Tempo que o mock leva pra "aprovar" a verificação — dá à tela (FE-US007-1)
  * um estado intermediário real pra exibir enquanto a promise não resolve.
  */
@@ -156,6 +184,9 @@ async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
   };
   saveStore(store);
   writeStoreOwner(user.id, store.id);
+  if (input.acceptedContractVersion) {
+    writeAcceptedContractVersion(store.id, input.acceptedContractVersion);
+  }
   return store;
 }
 
@@ -245,6 +276,9 @@ function mockGetStoreProducts(
 // são leitura pública, não mudam.
 // `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
 // contrário.
+// `accepted_contract_version` (FE-SVC-legal, #203) é proposta do front, ainda
+// não confirmada com o back (back-end#29, #30): confirmar nome e onde o back
+// grava (`Seller.terms_version`?) antes de ligar via API real.
 
 /**
  * Contrato real de `GET /api/stores/{id}` (`StoreDetailResponse`, back-end#142),
