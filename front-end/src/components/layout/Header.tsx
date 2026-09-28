@@ -77,12 +77,20 @@ function Header() {
     navigate(path);
   }
 
-  const accountItems = user?.is_seller
-    ? [
-        { label: 'Minha loja', onSelect: () => goTo(paths.seller) },
-        { label: 'Anunciar peça', onSelect: () => goTo(paths.sellerProductNew) },
-      ]
-    : [{ label: 'Quero vender', onSelect: () => goTo(paths.sell) }];
+  const accountItems = [
+    ...(user?.is_seller
+      ? [
+          { label: 'Minha loja', onSelect: () => goTo(paths.seller) },
+          { label: 'Anunciar peça', onSelect: () => goTo(paths.sellerProductNew) },
+        ]
+      : [{ label: 'Quero vender', onSelect: () => goTo(paths.sell) }]),
+    // Edição das preferências no perfil (FE-US004-3, #72): vale para todo
+    // usuário logado, vendedor ou não.
+    {
+      label: 'Meus Estilos & Preferências da IA',
+      onSelect: () => goTo(paths.profilePreferences),
+    },
+  ];
 
   /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
   const showSearch = pathname !== paths.home && pathname !== paths.catalog;

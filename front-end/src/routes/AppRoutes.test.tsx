@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
+import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -32,6 +33,28 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+vi.mock('@/services/preferenceService', () => ({
+  getStyles: vi.fn(),
+  getPreferences: vi.fn(),
+  savePreferences: vi.fn(),
+}));
+
+const MOCK_STYLES = [
+  {
+    type: 'estilo',
+    value: 'streetwear',
+    label: 'Streetwear Urbano',
+    description: 'Oversized, moletons gráficos e sneakers raros',
+  },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getStyles).mockResolvedValue(MOCK_STYLES);
+  vi.mocked(getPreferences).mockResolvedValue([{ type: 'estilo', value: 'streetwear' }]);
+  vi.mocked(savePreferences).mockResolvedValue(undefined);
+});
 
 function renderAt(path: string) {
   return render(
@@ -201,7 +224,6 @@ describe('<AppRoutes />', () => {
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [paths.cart, 'Carrinho', BUYER],
     [storeProfile('1'), 'Perfil da loja', null],
-    [paths.profilePreferences, 'Preferências', BUYER],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
       path,
@@ -213,6 +235,31 @@ describe('<AppRoutes />', () => {
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('/profile/preferences autenticado renderiza a página real dentro do Layout', async () => {
+    renderAtWithAuth(
+      paths.profilePreferences,
+      makeAuthValue({ isAuthenticated: true, user: BUYER }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Meus Estilos & Preferências da IA' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /streetwear/i })).toBeChecked();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('/profile/preferences sem sessão redireciona para /login', async () => {
+    renderAtWithAuth(
+      paths.profilePreferences,
+      makeAuthValue({ isAuthenticated: false, user: null }),
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+    expect(getStyles).not.toHaveBeenCalled();
+    expect(getPreferences).not.toHaveBeenCalled();
   });
 
   it('/seller sem sessão redireciona a /login', async () => {
