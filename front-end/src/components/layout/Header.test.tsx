@@ -1,14 +1,22 @@
 ﻿import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
-import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
+import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, useAuth } from '@/context/useAuth';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { paths } from '@/routes/paths';
+import { me } from '@/services/authService';
 import type { AuthUser } from '@/types/auth';
 import Header from './Header';
+
+// Só `me` é substituído: é o que `refreshUser()` consulta. O resto do
+// authService (logout etc.) segue o comportamento real do modo mock.
+vi.mock('@/services/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/authService')>();
+  return { ...actual, me: vi.fn() };
+});
 
 afterEach(cleanup);
 
@@ -72,10 +80,30 @@ function getControlledMobileSearch(toggle: HTMLButtonElement): HTMLElement | nul
   return controlledId ? document.getElementById(controlledId) : null;
 }
 
-function renderHeaderLoggedIn(options?: { count?: number }) {
-  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+/**
+ * Expõe o `refreshUser` do contexto para o teste disparar a mesma atualização
+ * que a tela de criar loja (#212) fará depois do `createStore`.
+ */
+let refreshUserFromTest: (() => Promise<void>) | undefined;
+function RefreshProbe() {
+  refreshUserFromTest = useAuth().refreshUser;
+  return null;
+}
+
+function renderHeaderLoggedIn(user: AuthUser = SAMPLE_USER, options?: { count?: number }) {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
   window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
-  return renderHeader(options);
+  return render(
+    <MemoryRouter initialEntries={['/']}>
+      <AuthProvider>
+        <CartContext.Provider value={createCartValue(options?.count)}>
+          <Header />
+          <PathProbe />
+          <RefreshProbe />
+        </CartContext.Provider>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
 }
 
 function ReactiveCartHeader() {
@@ -431,6 +459,50 @@ describe('<Header />', () => {
     expect(await screen.findByRole('button', { name: 'Ana Brechó' })).toBeInTheDocument();
   });
 
+  it('logado: mostra Meus Estilos & Preferências da IA no menu da conta', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+    ).toBeInTheDocument();
+  });
+
+  it('logado: navega para /profile/preferences pelo menu da conta', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('path')).toHaveTextContent('/profile/preferences'),
+    );
+  });
+
+  it('logado: fecha o menu depois de navegar para as preferências', async () => {
+    renderHeaderLoggedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Meus Estilos & Preferências da IA' }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('anônimo: não mostra Meus Estilos & Preferências da IA no menu da conta', () => {
+    renderHeader();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+
+    expect(
+      screen.queryByRole('button', { name: 'Meus Estilos & Preferências da IA' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('logado: ao abrir o menu e clicar em Sair, volta ao estado anônimo', async () => {
     renderHeaderLoggedIn();
 
@@ -448,20 +520,20 @@ describe('<Header />', () => {
     });
 
     it('logado: mostra o CartBadge mesmo quando count é zero', async () => {
-      renderHeaderLoggedIn({ count: 0 });
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 0 });
 
       expect(await screen.findByRole('button', { name: 'Carrinho, 0 itens' })).toBeInTheDocument();
     });
 
     it('apresenta no CartBadge a contagem fornecida por useCart', async () => {
-      renderHeaderLoggedIn({ count: 3 });
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 3 });
 
       expect(await screen.findByRole('button', { name: 'Carrinho, 3 itens' })).toBeInTheDocument();
       expect(screen.getByText('3')).toBeInTheDocument();
     });
 
     it('navega para paths.cart ao clicar no CartBadge', async () => {
-      renderHeaderLoggedIn({ count: 1 });
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 1 });
 
       fireEvent.click(await screen.findByRole('button', { name: 'Carrinho, 1 itens' }));
 
@@ -478,6 +550,79 @@ describe('<Header />', () => {
 
       expect(await screen.findByRole('button', { name: 'Carrinho, 3 itens' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: SAMPLE_USER.name })).toBe(accountButton);
+    });
+  });
+
+  describe('itens de vendedor no menu (FE-US006-2, #213)', () => {
+    it('logado sem loja: mostra "Quero vender" e não os atalhos da loja', async () => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+      expect(screen.getByRole('button', { name: 'Quero vender' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Minha loja' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Anunciar peça' })).not.toBeInTheDocument();
+    });
+
+    it('logado sem loja: "Quero vender" leva a /sell e fecha o menu', async () => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Quero vender' }));
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/sell'));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it('logado com loja: mostra "Minha loja" e "Anunciar peça", sem "Quero vender"', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+
+      expect(screen.getByRole('button', { name: 'Minha loja' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciar peça' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Quero vender' })).not.toBeInTheDocument();
+    });
+
+    it('logado com loja: "Minha loja" leva a /seller', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Minha loja' }));
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(/^\/seller$/));
+    });
+
+    it('logado com loja: "Anunciar peça" leva a /seller/products/new', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Anunciar peça' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('path')).toHaveTextContent('/seller/products/new'),
+      );
+    });
+
+    it('troca os itens com o menu aberto quando o contexto passa a is_seller: true', async () => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Ana Brechó' }));
+      expect(screen.getByRole('button', { name: 'Quero vender' })).toBeInTheDocument();
+
+      // O que a tela de criar loja fará depois do `createStore`: nenhum
+      // reload, nenhuma remontagem do Header — só o contexto atualizado.
+      // O `me()` só passa a responder vendedor aqui: o `AuthProvider` já
+      // chama `me()` na montagem para confirmar o papel (#267), e com o mock
+      // configurado antes do render o menu abriria como vendedor.
+      vi.mocked(me).mockResolvedValue({ ...SAMPLE_USER, is_seller: true });
+      await act(async () => {
+        await refreshUserFromTest?.();
+      });
+
+      expect(screen.getByRole('button', { name: 'Minha loja' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciar peça' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Quero vender' })).not.toBeInTheDocument();
     });
   });
 });

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import clsx from 'clsx';
 import Button from '@/components/common/Button';
-import Checkbox from '@/components/common/Checkbox';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import StyleSelector from '@/components/preferences/StyleSelector';
 import { paths } from '@/routes/paths';
 import { getStyles, savePreferences } from '@/services/preferenceService';
 import type { Preference, StyleOption } from '@/types/preference';
@@ -56,12 +55,6 @@ function StyleSelection() {
   }, []);
 
   useEffect(load, [load]);
-
-  function toggleStyle(value: string) {
-    setSelected((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    );
-  }
 
   const count = selected.length;
 
@@ -121,50 +114,7 @@ function StyleSelection() {
         <ErrorState message="Não foi possível carregar os estilos agora." onRetry={load} />
       ) : (
         <>
-          <ul className="flex flex-col gap-3">
-            {styles.map((style) => {
-              const isSelected = selected.includes(style.value);
-              const inputId = `style-${style.value}`;
-
-              return (
-                <li key={style.value}>
-                  <label
-                    htmlFor={inputId}
-                    className={clsx(
-                      'flex min-h-touch cursor-pointer items-center gap-3 rounded-sm border p-3 transition-colors',
-                      isSelected
-                        ? 'border-vermelho-escuro bg-vermelho-suave'
-                        : 'border-linha bg-branco-quente hover:bg-papel-profundo',
-                    )}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-papel-profundo font-display text-h4 text-tinta"
-                    >
-                      {style.label.charAt(0)}
-                    </span>
-
-                    <span className="flex flex-1 flex-col gap-0.5">
-                      <span className="font-ui text-body font-semibold text-tinta">
-                        {style.label}
-                      </span>
-                      {style.description && (
-                        <span className="text-body-sm text-texto-auxiliar">
-                          {style.description}
-                        </span>
-                      )}
-                    </span>
-
-                    <Checkbox
-                      id={inputId}
-                      checked={isSelected}
-                      onChange={() => toggleStyle(style.value)}
-                    />
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
+          <StyleSelector styles={styles} selectedValues={selected} onChange={setSelected} />
 
           {/*
             A contagem vem ANTES do botão no DOM: no celular ela fica acima da

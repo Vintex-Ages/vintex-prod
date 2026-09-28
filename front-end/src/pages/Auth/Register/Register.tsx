@@ -12,17 +12,12 @@ import { isPasswordValid, PASSWORD_POLICY_MESSAGE, register } from '@/services/a
 import { CepError, lookupAddress, type CepAddress } from '@/services/cepService';
 import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
 import type { ApiError } from '@/types/auth';
+import { formatCep } from '@/utils/document';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
 type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep' | 'terms', string>>;
-
-/** `12345678` → `12345-678`; mantém só dígitos, no máximo 8. */
-function formatCep(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
-}
 
 /** Impede o link de navegar e de repassar o clique pro checkbox (ver JSDoc de `Checkbox`). */
 function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
