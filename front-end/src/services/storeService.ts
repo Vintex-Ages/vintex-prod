@@ -1,7 +1,7 @@
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
-import type { Paginated, Product } from '@/types/product';
+import type { Paginated, Product, Store } from '@/types/product';
 import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
 
 /**
@@ -246,24 +246,38 @@ function mockGetStoreProducts(
 // `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
 // contrário.
 
+/**
+ * Contrato real de `GET /api/stores/{id}` (`StoreDetailResponse`, back-end#142),
+ * conferido contra o schema antes do merge daquele PR. Diverge em tudo do que
+ * o front supunha: `city`/`state` vêm dentro de `address`, o selo vem como
+ * `verified: boolean` em vez do estado, a data de abertura está dentro de
+ * `metrics`, e as contagens têm outro nome. A conversão é toda aqui, porque é
+ * o service que fala com a rede.
+ */
+interface ApiStoreAddress {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string;
+  state: string;
+  zip_code: string;
+}
+
 interface ApiStoreMetrics {
-  active_products: number;
-  sold_products: number;
-  months_on_platform: number;
-  shipping_without_complaint_rate?: number;
-  rating?: number;
+  created_at: string;
+  products_listed: number;
+  products_sold: number;
 }
 
 interface ApiStoreProfile {
   id: number | string;
   name: string;
-  description: string;
+  description: string | null;
   logo_url: string | null;
-  city: string;
-  state: string;
-  verification: StoreVerification;
-  created_at: string;
-  metrics?: ApiStoreMetrics;
+  verified: boolean;
+  address: ApiStoreAddress | null;
+  metrics: ApiStoreMetrics;
 }
 
 interface ApiStoreProductItem {
@@ -292,13 +306,30 @@ interface ApiErrorEnvelope {
   error?: { code?: string; message?: string };
 }
 
+/** Meses completos entre a abertura da loja e hoje (RN-74). */
+function mesesNaPlataforma(createdAt: string): number {
+  const abertura = new Date(createdAt);
+  if (Number.isNaN(abertura.getTime())) return 0;
+
+  const hoje = new Date();
+  const meses =
+    (hoje.getFullYear() - abertura.getFullYear()) * 12 +
+    (hoje.getMonth() - abertura.getMonth()) -
+    (hoje.getDate() < abertura.getDate() ? 1 : 0);
+
+  return Math.max(0, meses);
+}
+
+/**
+ * `shippingWithoutComplaintRate` e `rating` seguem ausentes: o back diz na
+ * própria docstring que só entrega o que já existe, e a tela mostra "em breve"
+ * para o resto.
+ */
 function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
   return {
-    activeProducts: metrics.active_products,
-    soldProducts: metrics.sold_products,
-    monthsOnPlatform: metrics.months_on_platform,
-    shippingWithoutComplaintRate: metrics.shipping_without_complaint_rate,
-    rating: metrics.rating,
+    activeProducts: metrics.products_listed,
+    soldProducts: metrics.products_sold,
+    monthsOnPlatform: mesesNaPlataforma(metrics.created_at),
   };
 }
 
@@ -306,30 +337,31 @@ function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
   return {
     id: String(store.id),
     name: store.name,
-    description: store.description,
+    description: store.description ?? '',
     logoUrl: store.logo_url,
-    city: store.city,
-    state: store.state,
-    verification: store.verification,
-    createdAt: store.created_at,
-    metrics: store.metrics ? mapStoreMetrics(store.metrics) : undefined,
+    // Loja sem endereço cadastrado ainda é loja: a tela esconde a linha em vez
+    // de quebrar. O back permite `address` nulo.
+    city: store.address?.city ?? '',
+    state: store.address?.state ?? '',
+    verification: store.verified ? 'confiavel' : 'pendente',
+    createdAt: store.metrics.created_at,
+    metrics: mapStoreMetrics(store.metrics),
   };
 }
 
-function mapStoreProductItem(item: ApiStoreProductItem): Product {
+/**
+ * `GET /api/stores/{id}/products` devolve só a peça (`StoreProductItemResponse`):
+ * a loja não se repete em cada item, porque é a mesma da rota. O mapeamento
+ * anterior lia `item.store.id` e derrubava a página com `TypeError` assim que o
+ * mock fosse desligado — a loja entra a partir do perfil já carregado.
+ */
+function mapStoreProductItem(item: ApiStoreProductItem, store: Store): Product {
   return {
     id: String(item.id),
     name: item.name,
     price: item.price,
     coverImageUrl: item.cover_image_url,
-    store: {
-      id: String(item.store.id),
-      name: item.store.name,
-      city: item.store.city,
-      verified: item.store.verified,
-      logoUrl: item.store.logo_url,
-      verification: item.store.verification,
-    },
+    store,
   };
 }
 
@@ -416,11 +448,23 @@ async function apiGetStoreProducts(
   { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
 ): Promise<Paginated<Product>> {
   try {
-    const { data } = await httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
-      params: { page, page_size: pageSize },
-    });
+    // A rota devolve só a peça, sem repetir a loja em cada item, o que está
+    // certo — mas o `ProductCard` mostra o nome da loja, e sem ele cada card
+    // fica com uma linha em branco. Buscar o perfil junto custa uma requisição
+    // a mais numa tela que já carrega esse mesmo perfil; se virar problema, o
+    // caminho é a página passar a loja que ela já tem.
+    const [resposta, loja] = await Promise.all([
+      httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
+        params: { page, page_size: pageSize },
+      }),
+      apiGetStore(id),
+    ]);
+
+    const { data } = resposta;
+    const store: Store = { id: loja.id, name: loja.name, city: loja.city || undefined };
+
     return {
-      items: data.items.map(mapStoreProductItem),
+      items: data.items.map((item) => mapStoreProductItem(item, store)),
       page: data.page,
       pageSize: data.page_size,
       total: data.total,
