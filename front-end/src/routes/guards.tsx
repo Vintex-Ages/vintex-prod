@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import ErrorState from '@/components/common/ErrorState';
 import { useAuth } from '@/context/useAuth';
+import { useToast } from '@/context/useToast';
+import { useMyStore } from '@/hooks/useMyStore';
 import { paths } from './paths';
 
 /**
@@ -16,9 +19,15 @@ import { paths } from './paths';
  * vai para `paths.home` — não existe página de "acesso negado" no design
  * system ainda; isso é suposição a reavaliar se isso mudar.
  *
+ * `RequireStore` (FE-US006-2, #213, RN-31 "não se anuncia sem loja") protege
+ * a área do vendedor (`/seller/*`): também parte do `RequireAuth`, mas em vez
+ * do papel consulta a loja (`getMyStore`). Sem loja, leva a `paths.sell` com
+ * um toast explicando o motivo — em vez da home muda do `RequireRole`.
+ *
  * Usage:
  *   <Route path={paths.onboarding} element={<RequireAuth><Onboarding /></RequireAuth>} />
- *   <Route path={paths.sellerDashboard} element={<RequireRole role="seller"><SellerDashboard /></RequireRole>} />
+ *   <Route path={paths.admin} element={<RequireRole role="admin"><Admin /></RequireRole>} />
+ *   <Route path={paths.seller} element={<RequireStore><SellerAdmin /></RequireStore>} />
  */
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -61,6 +70,49 @@ export function RequireRole({ role, children }: { role: Role; children: ReactNod
   return (
     <RequireAuth>
       <RoleGate role={role}>{children}</RoleGate>
+    </RequireAuth>
+  );
+}
+
+const NO_STORE_MESSAGE = 'Para anunciar, crie sua loja';
+
+function StoreGate({ children }: { children: ReactNode }) {
+  const { state, retry } = useMyStore();
+  const { toast } = useToast();
+  const hasNoStore = state.status === 'ready' && state.store === null;
+
+  // Efeito, não render: disparar o toast durante o render o repetiria a cada
+  // nova renderização. Só vira `true` uma vez por montagem (vem de um update,
+  // não do mount), então o StrictMode não o duplica.
+  useEffect(() => {
+    if (hasNoStore) {
+      toast(NO_STORE_MESSAGE, { kind: 'info' });
+    }
+  }, [hasNoStore, toast]);
+
+  if (state.status === 'loading') {
+    return (
+      <p role="status" className="px-4 py-12 text-center font-ui text-body text-texto-auxiliar">
+        Verificando sua loja…
+      </p>
+    );
+  }
+
+  if (state.status === 'error') {
+    return <ErrorState message="Não foi possível verificar sua loja." onRetry={retry} />;
+  }
+
+  if (hasNoStore) {
+    return <Navigate to={paths.sell} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+export function RequireStore({ children }: { children: ReactNode }) {
+  return (
+    <RequireAuth>
+      <StoreGate>{children}</StoreGate>
     </RequireAuth>
   );
 }

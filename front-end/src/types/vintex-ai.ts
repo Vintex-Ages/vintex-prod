@@ -76,3 +76,38 @@ export interface ChatRequest {
   messages: Pick<ChatMessage, 'role' | 'text'>[];
   signal?: AbortSignal;
 }
+
+/**
+ * Campos que a IA sabe sugerir a partir das fotos, e só eles: é exatamente o
+ * que o `ImageAnalysisResult` do back devolve (`back-end#150`). Todos os seis
+ * são chaves de `ProductInput` (`FE-SVC-seller-products`, #202), então a lista
+ * que o formulário recebe em `suggested` encaixa direto nos campos dele.
+ *
+ * Declarado aqui como união própria em vez de `keyof ProductInput` por dois
+ * motivos: `ProductInput` ainda não está na `develop` (vem no #202), e quem
+ * decide o que pode ser sugerido é o back, não o tipo do formulário. `name`,
+ * `price`, `style` e `images` ficam de fora porque a IA não os devolve — em
+ * particular `price`, que depende da fonte de preço ainda não resolvida
+ * (`SPIKE-01`), e `name`, que o vendedor sempre escreve.
+ */
+export type ListingSuggestionField =
+  'category' | 'color' | 'size' | 'condition' | 'description' | 'brand';
+
+export interface ListingSuggestion {
+  /** Só os campos que a IA conseguiu preencher. */
+  fields: Partial<Record<ListingSuggestionField, string>>;
+  /** Quais vieram da IA, para a tela marcar cada um (RN-56). */
+  suggested: ListingSuggestionField[];
+  confidence?: Partial<Record<ListingSuggestionField, number>>;
+  /** Ex.: 'Marca não identificada: etiqueta ilegível' (RN-58). */
+  notes?: string[];
+}
+
+/**
+ * Falha é resultado tipado, nunca exceção: o cadastro não trava por causa da
+ * IA (RN-57). `invalid-image` cobre o que o front recusa antes de chamar (mais
+ * fotos que o limite do back) e o que o back recusa no corpo.
+ */
+export type ListingSuggestionResult =
+  | { ok: true; suggestion: ListingSuggestion }
+  | { ok: false; reason: 'timeout' | 'unavailable' | 'invalid-image'; message: string };
