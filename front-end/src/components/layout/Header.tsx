@@ -31,6 +31,13 @@ import { NAV_LINKS } from './navLinks';
  *   endereço próprio e o "voltar" do navegador funciona.
  * - **Fixo no topo.** O feed é longo; sem isso a busca e a conta saem de
  *   alcance depois da primeira rolagem.
+ * - **Itens de vendedor (FE-US006-2, #213).** Logado sem loja, o menu oferece
+ *   "Quero vender"; com loja, "Minha loja" e "Anunciar peça". A fonte é
+ *   `user.is_seller` do contexto — síncrono, sem requisição no header — e o
+ *   menu troca sozinho quando alguém chama `refreshUser()` (a tela de criar
+ *   loja, #212). Limitação conhecida: na API real, `login`/`register` não
+ *   trazem `is_seller`, então logo após entrar o vendedor aparece sem loja
+ *   até o próximo `refreshUser()`.
  *
  * Usage:
  *   import Header from '@/components/layout/Header';
@@ -64,6 +71,18 @@ function Header() {
     const trimmed = value.trim();
     navigate(trimmed ? `${paths.catalog}?q=${encodeURIComponent(trimmed)}` : paths.catalog);
   }
+
+  function goTo(path: string) {
+    setOpen(false);
+    navigate(path);
+  }
+
+  const accountItems = user?.is_seller
+    ? [
+        { label: 'Minha loja', onSelect: () => goTo(paths.seller) },
+        { label: 'Anunciar peça', onSelect: () => goTo(paths.sellerProductNew) },
+      ]
+    : [{ label: 'Quero vender', onSelect: () => goTo(paths.sell) }];
 
   /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
   const showSearch = pathname !== paths.home && pathname !== paths.catalog;
@@ -138,14 +157,9 @@ function Header() {
               <AccountMenu
                 authenticated={isAuthenticated}
                 user={isAuthenticated ? { name: user?.name ?? '' } : undefined}
-                onLogin={() => {
-                  setOpen(false);
-                  navigate(paths.login);
-                }}
-                onRegister={() => {
-                  setOpen(false);
-                  navigate(paths.register);
-                }}
+                items={accountItems}
+                onLogin={() => goTo(paths.login)}
+                onRegister={() => goTo(paths.register)}
                 onLogout={() => {
                   setOpen(false);
                   logout();
