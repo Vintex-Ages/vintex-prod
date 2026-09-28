@@ -272,15 +272,18 @@ describe('catalogService (API real) — mapeamento da loja', () => {
 });
 
 /**
- * Dados reconstruídos a partir do contrato e dos testes do backend em
- * origin/develop@887b24d. Não são uma resposta capturada de uma API em execução.
+ * Fixture serializado de `FeedResponse`/`ProductFeedItemResponse` em
+ * `develop@659951f`, com `model_dump_json()`. `price` vem **número**, porque o
+ * schema tem `@field_serializer("price") -> float`; a versão anterior deste
+ * fixture usava `"99.90"` e o teste passava afirmando uma conversão que a API
+ * nunca exigiu.
  */
 const BACKEND_FEED_RESPONSE = {
   items: [
     {
       id: 41,
       name: 'Jaqueta vintage',
-      price: '99.90',
+      price: 99.9,
       cover_image_url: null,
       status: 'ativo',
       store: { id: 7, name: 'Brechó Aurora' },
@@ -291,7 +294,7 @@ const BACKEND_FEED_RESPONSE = {
   total: 3,
 };
 
-describe('catalogService.getFeed — contrato do backend 887b24d', () => {
+describe('catalogService.getFeed — contrato do backend 659951f', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
@@ -301,7 +304,7 @@ describe('catalogService.getFeed — contrato do backend 887b24d', () => {
     vi.unstubAllEnvs();
   });
 
-  it('mapeia decimal, ids, capa nula e paginação para o contrato do frontend', async () => {
+  it('mapeia preço, ids, capa nula e paginação para o contrato do frontend', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { getFeed: apiGetFeed } = await import('./catalogService');
 
