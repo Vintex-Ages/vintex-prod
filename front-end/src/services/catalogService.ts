@@ -167,21 +167,19 @@ interface ApiStore {
  * (back-end#149) devolve exatamente isto, por isso o tipo e o `mapFeedItem`
  * são exportados.
  */
+/**
+ * `price` e `number` porque `ProductFeedItemResponse` tem
+ * `@field_serializer("price")` devolvendo `float` (`app/schemas/product_schema.py`).
+ * Sem esse serializer o `Decimal` do Pydantic sairia como string — e e o que
+ * ainda acontece em `ProductDraftResponse` e `StoreProductItemResponse`, que
+ * nao o tem. Conferido serializando os models em `develop@659951f`.
+ */
 export interface ApiFeedItem {
   id: number | string;
   name: string;
   price: number;
   cover_image_url: string | null;
   store: ApiStore;
-}
-
-/**
- * Item do `GET /products` integrado em origin/develop@887b24d.
- * O `Decimal` do backend é serializado como string; este tipo e seu mapeador
- * ficam separados porque `ApiFeedItem` também é usado pela busca (#211).
- */
-interface ApiProductFeedItem extends Omit<ApiFeedItem, 'price'> {
-  price: string;
 }
 
 /**
@@ -248,10 +246,6 @@ export function mapFeedItem(item: ApiFeedItem): Product {
   };
 }
 
-function mapProductFeedItem(item: ApiProductFeedItem): Product {
-  return mapFeedItem({ ...item, price: Number(item.price) });
-}
-
 /** Capa = primeira imagem por `position`, igual o back já faz no feed (`get_active_feed`). */
 function mapProductDetail(item: ApiProductDetail): ProductDetail {
   const cover = [...item.media].sort((a, b) => a.position - b.position)[0]?.url ?? null;
@@ -313,10 +307,10 @@ async function apiGetFeed({
   pageSize = DEFAULT_PAGE_SIZE,
   sort = 'recent',
 }: FeedParams): Promise<Paginated<Product>> {
-  const { data } = await httpClient.get<ApiPage<ApiProductFeedItem>>('/products', {
+  const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
     params: { page, page_size: pageSize, sort },
   });
-  return mapPage(data, mapProductFeedItem);
+  return mapPage(data, mapFeedItem);
 }
 
 /**
