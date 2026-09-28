@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InternalAxiosRequestConfig } from 'axios';
 import {
   CatalogError,
   getFeed,
@@ -143,6 +144,47 @@ describe('catalogService (mock)', () => {
   });
 });
 
+describe('catalogService.search (HTTP, VITE_USE_MOCKS=false)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Dados adversos para testar rejeição; não são fixtures reais da busca.
+  it.each([
+    {
+      scenario: 'resposta do feed sem match_type',
+      data: { items: [], page: 1, page_size: 20, total: 0 },
+    },
+    {
+      scenario: 'resposta com match_type desconhecido',
+      data: { items: [], total: 0, match_type: 'unknown', suggestions: null },
+    },
+  ])('rejeita $scenario', async ({ data }) => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { search: apiSearch } = await import('./catalogService');
+    const adapter = vi.fn((config: InternalAxiosRequestConfig) =>
+      Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config }),
+    );
+    httpClient.defaults.adapter = adapter;
+
+    const [result] = await Promise.allSettled([apiSearch('vestido', { category: 'Roupas' })]);
+
+    // Confirma o caminho HTTP antes de verificar a rejeição do corpo recebido.
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(adapter.mock.calls[0][0]).toMatchObject({
+      method: 'get',
+      url: '/products',
+      params: { q: 'vestido', category: 'Roupas' },
+    });
+    expect(result.status).toBe('rejected');
+  });
+});
+
 describe('catalogService (API real) — mapeamento da loja', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -226,5 +268,66 @@ describe('catalogService (API real) — mapeamento da loja', () => {
 
     expect(product.store.logoUrl).toBeUndefined();
     expect(product.store.verified).toBeUndefined();
+  });
+});
+
+/**
+ * Fixture serializado de `FeedResponse`/`ProductFeedItemResponse` em
+ * `develop@659951f`, com `model_dump_json()`. `price` vem **número**, porque o
+ * schema tem `@field_serializer("price") -> float`; a versão anterior deste
+ * fixture usava `"99.90"` e o teste passava afirmando uma conversão que a API
+ * nunca exigiu.
+ */
+const BACKEND_FEED_RESPONSE = {
+  items: [
+    {
+      id: 41,
+      name: 'Jaqueta vintage',
+      price: 99.9,
+      cover_image_url: null,
+      status: 'ativo',
+      store: { id: 7, name: 'Brechó Aurora' },
+    },
+  ],
+  page: 2,
+  page_size: 1,
+  total: 3,
+};
+
+describe('catalogService.getFeed — contrato do backend 659951f', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('mapeia preço, ids, capa nula e paginação para o contrato do frontend', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getFeed: apiGetFeed } = await import('./catalogService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: BACKEND_FEED_RESPONSE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const page = await apiGetFeed({ page: 2, pageSize: 1 });
+
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(1);
+    expect(page.total).toBe(3);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].id).toBe('41');
+    expect(page.items[0].name).toBe('Jaqueta vintage');
+    expect(page.items[0].store.id).toBe('7');
+    expect(page.items[0].store.name).toBe('Brechó Aurora');
+    expect(page.items[0].coverImageUrl).toBeNull();
+    expect(page.items[0].price).toBe(99.9);
   });
 });

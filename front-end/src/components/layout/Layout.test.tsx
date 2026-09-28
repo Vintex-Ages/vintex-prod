@@ -2,7 +2,18 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import Layout from './Layout';
+
+const CART_VALUE: CartContextValue = {
+  cart: { groups: [] },
+  count: 0,
+  loading: false,
+  error: null,
+  add: async () => {},
+  remove: async () => {},
+  refresh: async () => {},
+};
 
 /** Só pra ler a rota atual do MemoryRouter depois do clique no FAB. */
 function LocationProbe() {
@@ -16,7 +27,9 @@ function renderLayout(children: React.ReactNode, bottomSpacer = false) {
   return render(
     <MemoryRouter>
       <AuthProvider>
-        <Layout bottomSpacer={bottomSpacer}>{children}</Layout>
+        <CartContext.Provider value={CART_VALUE}>
+          <Layout bottomSpacer={bottomSpacer}>{children}</Layout>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -50,14 +63,12 @@ describe('<Layout />', () => {
     );
   });
 
-  it('mantém a navegação principal visível em todo tamanho de tela', () => {
+  it('mantém a navegação principal acessível no mobile e visível no desktop', () => {
     renderLayout(null);
 
-    // Antes a navegacao era `hidden tablet:flex`: abaixo de 720px os dois links
-    // sumiam e o catalogo so era alcancavel pelo rodape. Com a marca em `h3` em
-    // vez de `h2`, os dois cabem — e dois links nao justificam um menu sanfonado.
     const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).not.toHaveClass('hidden');
+    expect(nav).toHaveClass('hidden', 'tablet:flex');
+    expect(screen.getByRole('button', { name: 'Abrir menu principal' })).toBeInTheDocument();
   });
 
   // --- #207: FAB da Vintex só no mobile/tablet, spotlight assume no web ---
@@ -89,9 +100,11 @@ describe('<Layout />', () => {
     render(
       <MemoryRouter>
         <AuthProvider>
-          <Layout>
-            <LocationProbe />
-          </Layout>
+          <CartContext.Provider value={CART_VALUE}>
+            <Layout>
+              <LocationProbe />
+            </Layout>
+          </CartContext.Provider>
         </AuthProvider>
       </MemoryRouter>,
     );

@@ -1,8 +1,8 @@
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
-import type { Paginated, Product } from '@/types/product';
-import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
+import type { Paginated, Product, Store } from '@/types/product';
+import type { StoreInput, StoreMetrics, StoreProfile } from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
@@ -108,6 +108,34 @@ function writeStoreOwner(userId: string, storeId: string): void {
 }
 
 /**
+ * Versão do contrato de venda aceita ao criar a loja (#203). Fica fora do
+ * `StoreProfile` porque o perfil não expõe esse campo — é só registro do aceite.
+ */
+function storeContractKey(storeId: string): string {
+  return `store-contract:${storeId}`;
+}
+
+function writeAcceptedContractVersion(storeId: string, version: string): void {
+  try {
+    window.sessionStorage.setItem(storeContractKey(storeId), version);
+  } catch {
+    // Sem storage disponível: aceite mockado não é persistido.
+  }
+}
+
+/**
+ * Versão do contrato que a loja aceitou, no mock. Existe pra os testes
+ * conferirem o registro do aceite — fora do mock quem registra é o back.
+ */
+export function getMockAcceptedContractVersion(storeId: string): string | undefined {
+  try {
+    return window.sessionStorage.getItem(storeContractKey(storeId)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Tempo que o mock leva pra "aprovar" a verificação — dá à tela (FE-US007-1)
  * um estado intermediário real pra exibir enquanto a promise não resolve.
  */
@@ -156,6 +184,9 @@ async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
   };
   saveStore(store);
   writeStoreOwner(user.id, store.id);
+  if (input.acceptedContractVersion) {
+    writeAcceptedContractVersion(store.id, input.acceptedContractVersion);
+  }
   return store;
 }
 
@@ -245,40 +276,59 @@ function mockGetStoreProducts(
 // são leitura pública, não mudam.
 // `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
 // contrário.
+// `accepted_contract_version` (FE-SVC-legal, #203) é proposta do front, ainda
+// não confirmada com o back (back-end#29, #30): confirmar nome e onde o back
+// grava (`Seller.terms_version`?) antes de ligar via API real.
+
+/**
+ * Contrato real de `GET /api/stores/{id}` (`StoreDetailResponse`, back-end#142),
+ * conferido contra o schema antes do merge daquele PR. Diverge em tudo do que
+ * o front supunha: `city`/`state` vêm dentro de `address`, o selo vem como
+ * `verified: boolean` em vez do estado, a data de abertura está dentro de
+ * `metrics`, e as contagens têm outro nome. A conversão é toda aqui, porque é
+ * o service que fala com a rede.
+ */
+interface ApiStoreAddress {
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string;
+  state: string;
+  zip_code: string;
+}
 
 interface ApiStoreMetrics {
-  active_products: number;
-  sold_products: number;
-  months_on_platform: number;
-  shipping_without_complaint_rate?: number;
-  rating?: number;
+  created_at: string;
+  products_listed: number;
+  products_sold: number;
 }
 
 interface ApiStoreProfile {
   id: number | string;
   name: string;
-  description: string;
+  description: string | null;
   logo_url: string | null;
-  city: string;
-  state: string;
-  verification: StoreVerification;
-  created_at: string;
-  metrics?: ApiStoreMetrics;
+  verified: boolean;
+  address: ApiStoreAddress | null;
+  metrics: ApiStoreMetrics;
 }
 
+/**
+ * `GET /api/stores/{id}/products` devolve `StoreProductItemResponse`: cinco
+ * campos, e a loja **não** vem em cada item (é a mesma da rota).
+ *
+ * `price` e `number | string` porque o `Decimal` do back nao tem
+ * `field_serializer` nesta resposta e chega como `"199.90"` — ao contrario do
+ * feed e do detalhe, que tem o serializer e chegam como numero. Mesmo padrao
+ * do `sellerProductService`.
+ */
 interface ApiStoreProductItem {
   id: number | string;
   name: string;
-  price: number;
+  price: number | string;
   cover_image_url: string | null;
-  store: {
-    id: number | string;
-    name: string;
-    city?: string;
-    verified?: boolean;
-    logo_url?: string;
-    verification?: StoreVerification;
-  };
+  status: string;
 }
 
 interface ApiPage<T> {
@@ -292,13 +342,30 @@ interface ApiErrorEnvelope {
   error?: { code?: string; message?: string };
 }
 
+/** Meses completos entre a abertura da loja e hoje (RN-74). */
+function mesesNaPlataforma(createdAt: string): number {
+  const abertura = new Date(createdAt);
+  if (Number.isNaN(abertura.getTime())) return 0;
+
+  const hoje = new Date();
+  const meses =
+    (hoje.getFullYear() - abertura.getFullYear()) * 12 +
+    (hoje.getMonth() - abertura.getMonth()) -
+    (hoje.getDate() < abertura.getDate() ? 1 : 0);
+
+  return Math.max(0, meses);
+}
+
+/**
+ * `shippingWithoutComplaintRate` e `rating` seguem ausentes: o back diz na
+ * própria docstring que só entrega o que já existe, e a tela mostra "em breve"
+ * para o resto.
+ */
 function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
   return {
-    activeProducts: metrics.active_products,
-    soldProducts: metrics.sold_products,
-    monthsOnPlatform: metrics.months_on_platform,
-    shippingWithoutComplaintRate: metrics.shipping_without_complaint_rate,
-    rating: metrics.rating,
+    activeProducts: metrics.products_listed,
+    soldProducts: metrics.products_sold,
+    monthsOnPlatform: mesesNaPlataforma(metrics.created_at),
   };
 }
 
@@ -306,30 +373,31 @@ function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
   return {
     id: String(store.id),
     name: store.name,
-    description: store.description,
+    description: store.description ?? '',
     logoUrl: store.logo_url,
-    city: store.city,
-    state: store.state,
-    verification: store.verification,
-    createdAt: store.created_at,
-    metrics: store.metrics ? mapStoreMetrics(store.metrics) : undefined,
+    // Loja sem endereço cadastrado ainda é loja: a tela esconde a linha em vez
+    // de quebrar. O back permite `address` nulo.
+    city: store.address?.city ?? '',
+    state: store.address?.state ?? '',
+    verification: store.verified ? 'confiavel' : 'pendente',
+    createdAt: store.metrics.created_at,
+    metrics: mapStoreMetrics(store.metrics),
   };
 }
 
-function mapStoreProductItem(item: ApiStoreProductItem): Product {
+/**
+ * `GET /api/stores/{id}/products` devolve só a peça (`StoreProductItemResponse`):
+ * a loja não se repete em cada item, porque é a mesma da rota. O mapeamento
+ * anterior lia `item.store.id` e derrubava a página com `TypeError` assim que o
+ * mock fosse desligado — a loja entra a partir do perfil já carregado.
+ */
+function mapStoreProductItem(item: ApiStoreProductItem, store: Store): Product {
   return {
     id: String(item.id),
     name: item.name,
-    price: item.price,
+    price: Number(item.price),
     coverImageUrl: item.cover_image_url,
-    store: {
-      id: String(item.store.id),
-      name: item.store.name,
-      city: item.store.city,
-      verified: item.store.verified,
-      logoUrl: item.store.logo_url,
-      verification: item.store.verification,
-    },
+    store,
   };
 }
 
@@ -362,10 +430,10 @@ function toStoreFormData(input: StoreInput): FormData {
 async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
   try {
     const { data } = input.logo
-      ? await httpClient.post<ApiStoreProfile>('/users/me/store', toStoreFormData(input), {
+      ? await httpClient.post<ApiMyStore>('/users/me/store', toStoreFormData(input), {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
-      : await httpClient.post<ApiStoreProfile>('/users/me/store', {
+      : await httpClient.post<ApiMyStore>('/users/me/store', {
           name: input.name,
           description: input.description,
           document_type: input.document.type,
@@ -374,16 +442,53 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
           address: input.address,
           accepted_contract_version: input.acceptedContractVersion,
         });
-    return mapStoreProfile(data);
+    return mapMyStore(data);
   } catch (error) {
     throw toStoreError(error);
   }
 }
 
+/**
+ * `GET /api/users/me/store` (back-end#141) devolve a loja **do ponto de vista
+ * do dono** — `StoreResponse`, com documento e termos — e não o retrato
+ * público de `GET /api/stores/{id}`. São dois formatos diferentes para a mesma
+ * entidade, e por isso dois mapeadores.
+ *
+ * Usar o mapeador público aqui derrubava a tela com `TypeError`, porque ele lê
+ * `metrics.created_at` e esta resposta não tem `metrics`. A guarda de vendedor
+ * só precisa saber se a loja existe; cidade, selo e métricas continuam vindo
+ * do retrato público, que é quem os tem.
+ */
+interface ApiMyStore {
+  id: number | string;
+  seller_id: number | string;
+  name: string;
+  description: string | null;
+  logo_url: string | null;
+  document_type: string;
+  document_value: string;
+  terms_version: string | null;
+  terms_accepted_at: string | null;
+}
+
+function mapMyStore(store: ApiMyStore): StoreProfile {
+  return {
+    id: String(store.id),
+    name: store.name,
+    description: store.description ?? '',
+    logoUrl: store.logo_url,
+    // Não vêm nesta rota; quem precisa deles busca o retrato público.
+    city: '',
+    state: '',
+    verification: 'pendente',
+    createdAt: store.terms_accepted_at ?? '',
+  };
+}
+
 async function apiGetMyStore(): Promise<StoreProfile | null> {
   try {
-    const { data } = await httpClient.get<ApiStoreProfile>('/users/me/store');
-    return mapStoreProfile(data);
+    const { data } = await httpClient.get<ApiMyStore>('/users/me/store');
+    return mapMyStore(data);
   } catch (error) {
     const status = (error as { response?: { status?: number } }).response?.status;
     if (status === 404) {
@@ -393,13 +498,23 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
   }
 }
 
+/**
+ * `POST /api/users/me/store/verification` ainda nao existe na `develop`, e o
+ * `back-end#195` a declara devolvendo `SellerVerificationResponse`, que e
+ * `{ verified: boolean }` — uma terceira forma, sem nome, logo nem endereco.
+ * Nao da para montar um `StoreProfile` com isso, e nenhuma das outras duas
+ * rotas devolve `verified` junto dos dados da loja do proprio vendedor.
+ *
+ * Enquanto isso nao se resolve, falhar dizendo o motivo. Antes daqui o codigo
+ * chamava o mapeador publico, que le `metrics.created_at`: dava
+ * `"Erro ao consultar loja."`, mensagem que manda procurar no lugar errado.
+ * Quem fizer a `front-end#224` decide o contrato junto com o back.
+ */
 async function apiRequestVerification(): Promise<StoreProfile> {
-  try {
-    const { data } = await httpClient.post<ApiStoreProfile>('/users/me/store/verification');
-    return mapStoreProfile(data);
-  } catch (error) {
-    throw toStoreError(error);
-  }
+  throw new StoreError(
+    'CONTRACT_MISMATCH',
+    'A verificação do selo ainda não tem contrato fechado com o back (back-end#195).',
+  );
 }
 
 async function apiGetStore(id: string): Promise<StoreProfile> {
@@ -416,11 +531,23 @@ async function apiGetStoreProducts(
   { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
 ): Promise<Paginated<Product>> {
   try {
-    const { data } = await httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
-      params: { page, page_size: pageSize },
-    });
+    // A rota devolve só a peça, sem repetir a loja em cada item, o que está
+    // certo — mas o `ProductCard` mostra o nome da loja, e sem ele cada card
+    // fica com uma linha em branco. Buscar o perfil junto custa uma requisição
+    // a mais numa tela que já carrega esse mesmo perfil; se virar problema, o
+    // caminho é a página passar a loja que ela já tem.
+    const [resposta, loja] = await Promise.all([
+      httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
+        params: { page, page_size: pageSize },
+      }),
+      apiGetStore(id),
+    ]);
+
+    const { data } = resposta;
+    const store: Store = { id: loja.id, name: loja.name, city: loja.city || undefined };
+
     return {
-      items: data.items.map(mapStoreProductItem),
+      items: data.items.map((item) => mapStoreProductItem(item, store)),
       page: data.page,
       pageSize: data.page_size,
       total: data.total,

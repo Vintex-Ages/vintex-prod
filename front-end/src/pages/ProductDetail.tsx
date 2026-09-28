@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
@@ -9,6 +17,9 @@ import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Container from '@/components/layout/Container';
 import Gallery from '@/components/product/Gallery';
 import SoldBadge from '@/components/product/SoldBadge';
+import { useAuth } from '@/context/useAuth';
+import { useCart } from '@/context/useCart';
+import { useToast } from '@/context/useToast';
 import { useProtectedAction } from '@/hooks/useProtectedAction';
 import { paths, storeProfile } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
@@ -55,9 +66,10 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  *
  * Galeria de fotos (carrossel + miniaturas, ordenada por `position`) é o
  * componente `Gallery` (FE-US012-2, #85). Sem curadoria de IA (#127/#139) e sem
- * carrinho/checkout real (pagamento real fora do escopo do projeto): o botão
- * "Comprar Agora" não dispara compra nenhuma, só a barreira de login
- * (FE-US012-5, #88) importa por enquanto.
+ * checkout real (pagamento real fora do escopo do projeto): o botão "Comprar
+ * Agora" não dispara compra nenhuma, só a barreira de login (FE-US012-5, #88)
+ * importa por enquanto. A adição ao carrinho usa o CartProvider compartilhado
+ * (FE-US021-1, #225), que também atualiza reativamente o contador do Header.
  *
  * Barreira de login (FE-US012-5, #88): favoritar e comprar passam por
  * `useProtectedAction` — deslogado abre `LoginInterceptor` (compartilhado
@@ -75,10 +87,16 @@ function Attribute({ label, value }: { label: string; value: ReactNode }) {
  */
 function ProductDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const { cart, loading: cartLoading, error: cartError, add } = useCart();
+  const { toast } = useToast();
 
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [favorited, setFavorited] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const isAddingRef = useRef(false);
 
   useEffect(() => {
     if (!id) {
@@ -121,14 +139,61 @@ function ProductDetail() {
   /** Não existe fluxo de compra real ainda (pagamento fora do escopo) — aqui só a barreira de login importa. */
   const noopBuy = useCallback(() => {}, []);
 
+  const alreadyInCart = useMemo(
+    () =>
+      cart?.groups.some((group) => group.items.some((item) => item.product.id === productId)) ??
+      false,
+    [cart, productId],
+  );
+
+  const addToCart = useCallback(async () => {
+    if (!productId || alreadyInCart || isAddingRef.current) return;
+
+    isAddingRef.current = true;
+    setIsAdding(true);
+
+    try {
+      await add(productId);
+      toast('Adicionada ao carrinho', {
+        kind: 'success',
+        action: {
+          label: 'Ver carrinho',
+          onSelect: () => navigate(paths.cart),
+        },
+      });
+    } catch {
+      toast('Não foi possível adicionar ao carrinho. Tente novamente.', { kind: 'error' });
+    } finally {
+      isAddingRef.current = false;
+      setIsAdding(false);
+    }
+  }, [add, alreadyInCart, navigate, productId, toast]);
+
+  /**
+   * Ao voltar do login, espera a primeira carga do carrinho antes de fazer a
+   * intenção armazenada coincidir; assim refresh() não sobrescreve o add().
+   */
+  const cartReadyForResume =
+    !isAuthenticated || (!cartLoading && (cart !== null || cartError !== null));
+  const cartIntent = useMemo(
+    () => ({
+      type: cartReadyForResume ? 'add-to-cart' : 'add-to-cart-awaiting-cart',
+      payload: { productId },
+    }),
+    [cartReadyForResume, productId],
+  );
+
   const protectedFavorite = useProtectedAction({ intent: favoriteIntent, action: toggleFavorite });
+  const protectedAddToCart = useProtectedAction({ intent: cartIntent, action: addToCart });
   const protectedBuy = useProtectedAction({ intent: buyIntent, action: noopBuy });
 
   const activeIntercept = protectedFavorite.interceptorOpen
     ? protectedFavorite
-    : protectedBuy.interceptorOpen
-      ? protectedBuy
-      : null;
+    : protectedAddToCart.interceptorOpen
+      ? protectedAddToCart
+      : protectedBuy.interceptorOpen
+        ? protectedBuy
+        : null;
 
   if (status === 'loading') {
     return (
@@ -160,6 +225,13 @@ function ProductDetail() {
   }
 
   const priceLabel = priceFormatter.format(product.price);
+  const cartButtonLabel = isAdding
+    ? 'Adicionando ao carrinho'
+    : alreadyInCart
+      ? 'No carrinho'
+      : 'Adicionar ao carrinho';
+  const cartActionDisabled =
+    product.status === 'vendido' || cartLoading || alreadyInCart || isAdding;
 
   return (
     <Container as="main" className="py-6 web:py-10">
@@ -240,23 +312,48 @@ function ProductDetail() {
             <Attribute label="Localização" value={product.store.city ?? '—'} />
           </dl>
 
-          <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-3 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:border-0 web:p-0">
-            <FavoriteButton
-              active={favorited}
-              onToggle={() => {
-                void protectedFavorite.runProtectedAction();
+          <div className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-2 border-t border-linha bg-branco-quente p-4 web:static web:mt-8 web:gap-3 web:border-0 web:p-0">
+            <div className="w-11 shrink-0">
+              <FavoriteButton
+                active={favorited}
+                onToggle={() => {
+                  void protectedFavorite.runProtectedAction();
+                }}
+                disabled={product.status === 'vendido'}
+              />
+            </div>
+            <Button
+              variant="secondary"
+              aria-label={cartButtonLabel}
+              aria-busy={isAdding}
+              disabled={cartActionDisabled}
+              className="min-w-0 flex-1 px-2 text-label web:px-6 web:text-body"
+              onClick={() => {
+                void protectedAddToCart.runProtectedAction();
               }}
-              disabled={product.status === 'vendido'}
-            />
+            >
+              <span aria-hidden="true" className="web:hidden">
+                {isAdding ? 'Adicionando…' : alreadyInCart ? 'No carrinho' : 'Carrinho'}
+              </span>
+              <span aria-hidden="true" className="hidden web:inline">
+                {cartButtonLabel}
+              </span>
+            </Button>
             <Button
               variant="primary"
-              fullWidth
+              aria-label={`Comprar Agora • ${priceLabel}`}
               disabled={product.status === 'vendido'}
+              className="min-w-0 flex-1 px-2 text-label web:px-6 web:text-body"
               onClick={() => {
                 void protectedBuy.runProtectedAction();
               }}
             >
-              Comprar Agora • {priceLabel}
+              <span aria-hidden="true" className="web:hidden">
+                Comprar
+              </span>
+              <span aria-hidden="true" className="hidden web:inline">
+                Comprar Agora • {priceLabel}
+              </span>
             </Button>
           </div>
         </div>

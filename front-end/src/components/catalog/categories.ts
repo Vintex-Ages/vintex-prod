@@ -31,7 +31,17 @@ export const CATEGORIES = [
  * não cabe numa constante: por isso não está aqui, e o grupo de marca só
  * aparece quando quem usa o painel tiver a lista para passar.
  */
-export const SIZES = ['P', 'M', 'G', 'GG', '38', '40'] as const;
+/**
+ * Os nove tamanhos que o catálogo realmente grava — letra para roupa e
+ * acessório, numeração para calçado. Espelha `app/constants/catalog.py` no
+ * back, que é a fonte: é o mesmo vocabulário que os filtros comparam por
+ * igualdade e que o prompt da IA cita.
+ *
+ * A lista tinha seis e faltavam `PP`, `36` e `42`: peças nesses tamanhos
+ * existiam no catálogo e não apareciam em filtro nenhum, e a sugestão da IA
+ * nesses valores caía fora da lista e era descartada.
+ */
+export const SIZES = ['PP', 'P', 'M', 'G', 'GG', '36', '38', '40', '42'] as const;
 
 export const CONDITIONS = ['Novo com etiqueta', 'Seminovo', 'Usado', 'Marcas de uso'] as const;
 

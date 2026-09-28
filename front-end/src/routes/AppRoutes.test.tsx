@@ -1,19 +1,81 @@
-﻿import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { ToastProvider } from '@/context/ToastContext';
+import { CartContext, type CartContextValue } from '@/context/useCart';
+import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
+import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
+import type { StoreProfile } from '@/types/store';
 import AppRoutes from './AppRoutes';
 import { paths, productDetail, sellerProductPath, storeProfile } from './paths';
 
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  getMyStore: vi.fn(),
+}));
+
+const STORE: StoreProfile = {
+  id: 'store-1',
+  name: 'Brechó da Ana',
+  description: 'Peças garimpadas.',
+  logoUrl: null,
+  city: 'Porto Alegre',
+  state: 'RS',
+  verification: 'pendente',
+  createdAt: '2026-09-01T00:00:00.000Z',
+};
+
+beforeEach(() => {
+  // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
+  vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
+});
+
 afterEach(cleanup);
+
+const CART_VALUE: CartContextValue = {
+  cart: { groups: [] },
+  count: 0,
+  loading: false,
+  error: null,
+  add: async () => {},
+  remove: async () => {},
+  refresh: async () => {},
+};
+
+vi.mock('@/services/preferenceService', () => ({
+  getStyles: vi.fn(),
+  getPreferences: vi.fn(),
+  savePreferences: vi.fn(),
+}));
+
+const MOCK_STYLES = [
+  {
+    type: 'estilo',
+    value: 'streetwear',
+    label: 'Streetwear Urbano',
+    description: 'Oversized, moletons gráficos e sneakers raros',
+  },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getStyles).mockResolvedValue(MOCK_STYLES);
+  vi.mocked(getPreferences).mockResolvedValue([{ type: 'estilo', value: 'streetwear' }]);
+  vi.mocked(savePreferences).mockResolvedValue(undefined);
+});
 
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <AppRoutes />
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -45,11 +107,15 @@ function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
 /** Renderiza `AppRoutes` com uma sessão já dada, em vez do `AuthProvider` real. */
 function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
-    <AuthContext.Provider value={authValue}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </AuthContext.Provider>,
+    <MemoryRouter initialEntries={[path]}>
+      <AuthContext.Provider value={authValue}>
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
+      </AuthContext.Provider>
+    </MemoryRouter>,
   );
 }
 
@@ -167,13 +233,11 @@ describe('<AppRoutes />', () => {
   // --- FE-FND-4 (#205): rotas da Sprint 2 e guardas ---
 
   it.each([
-    [paths.sell, 'Quero vender', SELLER],
     [paths.seller, 'Painel do vendedor', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [paths.cart, 'Carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
-    [paths.profilePreferences, 'Preferências', BUYER],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
       path,
@@ -187,19 +251,78 @@ describe('<AppRoutes />', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
   });
 
+  it('/profile/preferences autenticado renderiza a página real dentro do Layout', async () => {
+    renderAtWithAuth(
+      paths.profilePreferences,
+      makeAuthValue({ isAuthenticated: true, user: BUYER }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Meus Estilos & Preferências da IA' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /streetwear/i })).toBeChecked();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+  });
+
+  it('/profile/preferences sem sessão redireciona para /login', async () => {
+    renderAtWithAuth(
+      paths.profilePreferences,
+      makeAuthValue({ isAuthenticated: false, user: null }),
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+    expect(getStyles).not.toHaveBeenCalled();
+    expect(getPreferences).not.toHaveBeenCalled();
+  });
+
   it('/seller sem sessão redireciona a /login', async () => {
     renderAtWithAuth(paths.seller, makeAuthValue({ isAuthenticated: false, user: null }));
     await screen.findByText('Entre na Vintex');
   });
 
-  it('/seller logado sem papel seller é redirecionado, não mostra o painel', async () => {
-    renderAtWithAuth(paths.seller, makeAuthValue({ isAuthenticated: true, user: BUYER }));
-    expect(await screen.findByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+  it.each([paths.seller, paths.sellerProductNew, sellerProductPath('1')])(
+    'RN-31 (#213): %s logado sem loja vai a /sell com o aviso, não mostra a área do vendedor',
+    async (path) => {
+      vi.mocked(getMyStore).mockResolvedValue(null);
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
+      expect(screen.getByText('Para anunciar, crie sua loja')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    },
+  );
+
+  // --- FE-US006-1 (#212): /sell é a tela real ---
+
+  it('/sell logado sem loja mostra o formulário de criar loja dentro do Layout', async () => {
+    vi.mocked(getMyStore).mockResolvedValue(null);
+
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+    expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abrir minha loja' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+  });
+
+  it('P-06: /sell com loja vai ao painel do vendedor', async () => {
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: SELLER }));
+
+    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Abrir minha loja' })).not.toBeInTheDocument();
+  });
+
+  it('/sell sem sessão redireciona a /login', async () => {
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: false, user: null }));
+
+    expect(await screen.findByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
   });
 
   it('/store/:id abre sem login (leitura pública)', async () => {
     renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
-    expect(await screen.findByRole('heading', { name: 'Brechó Mercado Público' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Brechó Mercado Público' }),
+    ).toBeInTheDocument();
   });
 });
