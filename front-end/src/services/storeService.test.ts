@@ -160,3 +160,110 @@ describe('storeService', () => {
     expect((await getStore(created.id)).metrics).toEqual(created.metrics);
   });
 });
+
+/**
+ * Caminho real de `GET /api/stores/{id}` e `/products` (back-end#142).
+ *
+ * O mapeamento anterior divergia em sete campos e quebrava num oitavo: lia
+ * `city`/`state` no topo (vêm dentro de `address`), esperava `verification`
+ * (vem `verified: boolean`), procurava `created_at` no topo (está em
+ * `metrics`), usava outros nomes para as contagens, e lia `item.store.id` na
+ * lista de peças — que a rota não devolve, porque a loja é a mesma da URL.
+ * Nenhum teste via, porque só o caminho mock era coberto.
+ */
+describe('storeService (API real) — loja pública', () => {
+  const LOJA = {
+    id: 3,
+    name: 'Segunda Chance Modas',
+    description: 'Brechó de Pelotas.',
+    logo_url: null,
+    verified: true,
+    address: {
+      street: 'Rua X',
+      number: '10',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Pelotas',
+      state: 'RS',
+      zip_code: '96010-000',
+    },
+    metrics: {
+      created_at: '2026-03-27T00:00:00',
+      products_listed: 12,
+      products_sold: 4,
+    },
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('desaninha endereço, traduz o selo e lê a data de dentro de metrics', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStore: apiGetStore } = await import('./storeService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({ data: LOJA, status: 200, statusText: 'OK', headers: {}, config });
+
+    const loja = await apiGetStore('3');
+
+    expect(loja.city).toBe('Pelotas');
+    expect(loja.state).toBe('RS');
+    expect(loja.verification).toBe('confiavel');
+    expect(loja.createdAt).toBe('2026-03-27T00:00:00');
+    expect(loja.metrics?.activeProducts).toBe(12);
+    expect(loja.metrics?.soldProducts).toBe(4);
+  });
+
+  it('loja sem selo vira pendente, e sem endereço não quebra', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStore: apiGetStore } = await import('./storeService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: { ...LOJA, verified: false, address: null },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const loja = await apiGetStore('3');
+
+    expect(loja.verification).toBe('pendente');
+    expect(loja.city).toBe('');
+  });
+
+  it('a lista de peças não lê a loja de dentro do item, que a rota não manda', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStoreProducts: apiGetStoreProducts } = await import('./storeService');
+
+    httpClient.defaults.adapter = (config) => {
+      const data = String(config.url).endsWith('/products')
+        ? {
+            items: [{ id: 9, name: 'Jaqueta', price: 120, cover_image_url: null, status: 'ativo' }],
+            page: 1,
+            page_size: 20,
+            total: 1,
+          }
+        : LOJA;
+
+      return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    const pagina = await apiGetStoreProducts('3', {});
+
+    expect(pagina.items[0]).toEqual({
+      id: '9',
+      name: 'Jaqueta',
+      price: 120,
+      coverImageUrl: null,
+      store: { id: '3', name: 'Segunda Chance Modas', city: 'Pelotas' },
+    });
+  });
+});

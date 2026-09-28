@@ -275,6 +275,15 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
 //      (#210), e o back ainda não emite esse chunk.
 // ---------------------------------------------------------------------------
 
+/**
+ * `VITE_API_BASE_URL` **já termina em `/api`** (ver `.env.example`), porque é
+ * ela que o `httpClient` usa como `baseURL`. Então caminho daqui começa depois
+ * do `/api`, igual ao que os outros services passam para o axios. Concatenar
+ * um caminho que comece com `/api` gera `/api/api/...`, que responde 404 — e o
+ * teste não pega se comparar com `toContain`, porque a URL dobrada contém a
+ * certa.
+ */
+
 /** O back não conhece o papel `vintex`; no protocolo dele a resposta é `assistant`. */
 function toWireRole(role: ChatRole): 'user' | 'assistant' {
   return role === 'vintex' ? 'assistant' : 'user';
@@ -287,7 +296,7 @@ async function* realChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
 
   let response: Response;
   try {
-    response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/ai/chat`, {
+    response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/ai/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -480,7 +489,7 @@ async function realSuggestListing(
   }
 
   const resposta = await pedir<ApiImageAnalysisResult>(
-    '/api/ai/listing-suggestions',
+    '/ai/listing-suggestions',
     { image_urls: input.imageUrls },
     prazo,
     opts.signal,
@@ -502,7 +511,7 @@ async function aguardarPipeline(
 ): Promise<ListingSuggestionResult> {
   while (Date.now() < prazo) {
     const resposta = await pedir<ApiProductAIStatus>(
-      `/api/users/me/products/${encodeURIComponent(productId)}/ai-status`,
+      `/users/me/products/${encodeURIComponent(productId)}/ai-status`,
       undefined,
       prazo,
       signal,
