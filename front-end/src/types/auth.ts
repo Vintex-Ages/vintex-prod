@@ -72,6 +72,12 @@ export interface RegisterInput {
   email: string;
   password: string;
   phone?: string;
+  /**
+   * Versão dos termos de uso aceita no cadastro (FE-SVC-legal, #203; vem de
+   * `legalService.getTerms().version`). Opcional até o fluxo de aceite (#214)
+   * existir.
+   */
+  acceptedTermsVersion?: string;
 }
 
 /**

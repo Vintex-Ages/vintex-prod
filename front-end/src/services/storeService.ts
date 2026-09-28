@@ -2,7 +2,7 @@ import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, Store } from '@/types/product';
-import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
+import type { StoreInput, StoreMetrics, StoreProfile } from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
@@ -108,6 +108,34 @@ function writeStoreOwner(userId: string, storeId: string): void {
 }
 
 /**
+ * Versão do contrato de venda aceita ao criar a loja (#203). Fica fora do
+ * `StoreProfile` porque o perfil não expõe esse campo — é só registro do aceite.
+ */
+function storeContractKey(storeId: string): string {
+  return `store-contract:${storeId}`;
+}
+
+function writeAcceptedContractVersion(storeId: string, version: string): void {
+  try {
+    window.sessionStorage.setItem(storeContractKey(storeId), version);
+  } catch {
+    // Sem storage disponível: aceite mockado não é persistido.
+  }
+}
+
+/**
+ * Versão do contrato que a loja aceitou, no mock. Existe pra os testes
+ * conferirem o registro do aceite — fora do mock quem registra é o back.
+ */
+export function getMockAcceptedContractVersion(storeId: string): string | undefined {
+  try {
+    return window.sessionStorage.getItem(storeContractKey(storeId)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Tempo que o mock leva pra "aprovar" a verificação — dá à tela (FE-US007-1)
  * um estado intermediário real pra exibir enquanto a promise não resolve.
  */
@@ -156,6 +184,9 @@ async function mockCreateStore(input: StoreInput): Promise<StoreProfile> {
   };
   saveStore(store);
   writeStoreOwner(user.id, store.id);
+  if (input.acceptedContractVersion) {
+    writeAcceptedContractVersion(store.id, input.acceptedContractVersion);
+  }
   return store;
 }
 
@@ -245,6 +276,9 @@ function mockGetStoreProducts(
 // são leitura pública, não mudam.
 // `POST /users/me/store` vai como multipart quando há `logo`, JSON caso
 // contrário.
+// `accepted_contract_version` (FE-SVC-legal, #203) é proposta do front, ainda
+// não confirmada com o back (back-end#29, #30): confirmar nome e onde o back
+// grava (`Seller.terms_version`?) antes de ligar via API real.
 
 /**
  * Contrato real de `GET /api/stores/{id}` (`StoreDetailResponse`, back-end#142),
@@ -280,19 +314,21 @@ interface ApiStoreProfile {
   metrics: ApiStoreMetrics;
 }
 
+/**
+ * `GET /api/stores/{id}/products` devolve `StoreProductItemResponse`: cinco
+ * campos, e a loja **não** vem em cada item (é a mesma da rota).
+ *
+ * `price` e `number | string` porque o `Decimal` do back nao tem
+ * `field_serializer` nesta resposta e chega como `"199.90"` — ao contrario do
+ * feed e do detalhe, que tem o serializer e chegam como numero. Mesmo padrao
+ * do `sellerProductService`.
+ */
 interface ApiStoreProductItem {
   id: number | string;
   name: string;
-  price: number;
+  price: number | string;
   cover_image_url: string | null;
-  store: {
-    id: number | string;
-    name: string;
-    city?: string;
-    verified?: boolean;
-    logo_url?: string;
-    verification?: StoreVerification;
-  };
+  status: string;
 }
 
 interface ApiPage<T> {
@@ -359,7 +395,7 @@ function mapStoreProductItem(item: ApiStoreProductItem, store: Store): Product {
   return {
     id: String(item.id),
     name: item.name,
-    price: item.price,
+    price: Number(item.price),
     coverImageUrl: item.cover_image_url,
     store,
   };
@@ -394,10 +430,10 @@ function toStoreFormData(input: StoreInput): FormData {
 async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
   try {
     const { data } = input.logo
-      ? await httpClient.post<ApiStoreProfile>('/users/me/store', toStoreFormData(input), {
+      ? await httpClient.post<ApiMyStore>('/users/me/store', toStoreFormData(input), {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
-      : await httpClient.post<ApiStoreProfile>('/users/me/store', {
+      : await httpClient.post<ApiMyStore>('/users/me/store', {
           name: input.name,
           description: input.description,
           document_type: input.document.type,
@@ -406,7 +442,7 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
           address: input.address,
           accepted_contract_version: input.acceptedContractVersion,
         });
-    return mapStoreProfile(data);
+    return mapMyStore(data);
   } catch (error) {
     throw toStoreError(error);
   }
@@ -462,13 +498,23 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
   }
 }
 
+/**
+ * `POST /api/users/me/store/verification` ainda nao existe na `develop`, e o
+ * `back-end#195` a declara devolvendo `SellerVerificationResponse`, que e
+ * `{ verified: boolean }` — uma terceira forma, sem nome, logo nem endereco.
+ * Nao da para montar um `StoreProfile` com isso, e nenhuma das outras duas
+ * rotas devolve `verified` junto dos dados da loja do proprio vendedor.
+ *
+ * Enquanto isso nao se resolve, falhar dizendo o motivo. Antes daqui o codigo
+ * chamava o mapeador publico, que le `metrics.created_at`: dava
+ * `"Erro ao consultar loja."`, mensagem que manda procurar no lugar errado.
+ * Quem fizer a `front-end#224` decide o contrato junto com o back.
+ */
 async function apiRequestVerification(): Promise<StoreProfile> {
-  try {
-    const { data } = await httpClient.post<ApiStoreProfile>('/users/me/store/verification');
-    return mapStoreProfile(data);
-  } catch (error) {
-    throw toStoreError(error);
-  }
+  throw new StoreError(
+    'CONTRACT_MISMATCH',
+    'A verificação do selo ainda não tem contrato fechado com o back (back-end#195).',
+  );
 }
 
 async function apiGetStore(id: string): Promise<StoreProfile> {

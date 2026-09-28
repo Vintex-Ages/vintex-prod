@@ -91,6 +91,8 @@ interface MockAccount {
   user: AuthUser;
   /** Senha em texto puro: o mock também só vive em memória, não há o que proteger. */
   password: string;
+  /** Versão dos termos aceita no cadastro, se veio no `register()`. */
+  acceptedTermsVersion?: string;
 }
 
 /** Contas cadastradas no mock, indexadas por e-mail. */
@@ -132,7 +134,11 @@ async function mockRegister(input: RegisterInput): Promise<AuthResult> {
     is_seller: false,
     is_admin: false,
   };
-  mockAccounts.set(input.email, { user, password: input.password });
+  mockAccounts.set(input.email, {
+    user,
+    password: input.password,
+    acceptedTermsVersion: input.acceptedTermsVersion,
+  });
   mockCurrentEmail = input.email;
 
   return { user, access_token: makeMockToken(user.id) };
@@ -179,6 +185,15 @@ async function mockMarkCurrentAccountAsSeller(): Promise<void> {
     return;
   }
   mockAccounts.set(account.user.email, { ...account, user: { ...account.user, is_seller: true } });
+}
+
+/**
+ * Versão dos termos que a conta aceitou no cadastro, no mock. Existe pra os
+ * testes conferirem o registro do aceite (#203) — `AuthUser` não expõe esse
+ * campo. Fora do mock devolve sempre `undefined`: quem registra é o back.
+ */
+export function getMockAcceptedTermsVersion(email: string): string | undefined {
+  return mockAccounts.get(email)?.acceptedTermsVersion;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +262,27 @@ function toApiError(error: unknown): ApiError {
   };
 }
 
+/**
+ * Corpo de `POST /auth/register`: o back usa snake_case, então
+ * `acceptedTermsVersion` vira `accepted_terms_version`.
+ *
+ * CORREÇÃO PENDENTE NO BACK: o model `User` não tem coluna para a versão dos
+ * termos aceita no cadastro (só `Seller.terms_version` existe) — ponto aberto
+ * na revisão do PR back-end#187. O nome do campo também é proposta do front,
+ * ainda não confirmada. Confirmar com o back-end#140 antes de ligar o
+ * `accepted_terms_version` via API real; até lá, o aceite só fica registrado
+ * no mock.
+ */
+function toRegisterBody({ acceptedTermsVersion, ...rest }: RegisterInput) {
+  return { ...rest, accepted_terms_version: acceptedTermsVersion };
+}
+
 async function apiRegister(input: RegisterInput): Promise<AuthResult> {
   try {
-    const { data } = await httpClient.post<ApiAuthResponse>('/auth/register', input);
+    const { data } = await httpClient.post<ApiAuthResponse>(
+      '/auth/register',
+      toRegisterBody(input),
+    );
     return { user: toAuthUser(data.user, false), access_token: data.access_token };
   } catch (error) {
     throw toApiError(error);

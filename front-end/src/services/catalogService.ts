@@ -167,6 +167,13 @@ interface ApiStore {
  * (back-end#149) devolve exatamente isto, por isso o tipo e o `mapFeedItem`
  * são exportados.
  */
+/**
+ * `price` e `number` porque `ProductFeedItemResponse` tem
+ * `@field_serializer("price")` devolvendo `float` (`app/schemas/product_schema.py`).
+ * Sem esse serializer o `Decimal` do Pydantic sairia como string — e e o que
+ * ainda acontece em `ProductDraftResponse` e `StoreProductItemResponse`, que
+ * nao o tem. Conferido serializando os models em `develop@659951f`.
+ */
 export interface ApiFeedItem {
   id: number | string;
   name: string;
