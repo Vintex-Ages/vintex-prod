@@ -37,6 +37,12 @@ export interface AuthContextValue {
   login: (user: AuthUser, token: string) => void;
   /** Encerra a sessão (limpa estado + `sessionStorage`) e zera o token no httpClient. */
   logout: () => void;
+  /**
+   * Rebusca o usuário atual via `authService.me()` e atualiza estado +
+   * `sessionStorage` — usado quando algo muda o usuário no backend sem exigir
+   * novo login (ex.: FE-SVC-store, criar loja vira vendedor).
+   */
+  refreshUser: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
