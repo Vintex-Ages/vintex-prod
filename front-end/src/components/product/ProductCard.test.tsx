@@ -33,7 +33,7 @@ describe('<ProductCard />', () => {
     renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
 
     expect(screen.getByText('Vestido floral')).toBeTruthy();
-    expect(screen.getByText('Brechó Ana · Porto Alegre')).toBeTruthy();
+    expect(screen.getByText('Brechó Ana - Porto Alegre')).toBeTruthy();
     expect(screen.getByText(/R\$\s?89,90/)).toBeTruthy();
     expect(screen.getByText('Roupas')).toBeTruthy();
 
@@ -41,13 +41,17 @@ describe('<ProductCard />', () => {
     expect(image.tagName).toBe('IMG');
   });
 
-  // A conservacao saiu do cartao na revisao visual: era a quinta linha de texto
-  // empilhada, em cinza pequeno, repetindo o que a ficha da peca ja informa. A
-  // prop continua aceita para nao quebrar quem passa.
-  it('não desenha a conservação, mesmo quando o produto a traz', () => {
+  it('omite centavos quando o preço é inteiro', () => {
+    renderCard(<ProductCard product={{ ...baseProduct, price: 189 }} onOpen={() => {}} />);
+
+    expect(screen.getByText(/R\$\s?189$/)).toBeInTheDocument();
+  });
+
+  // Tamanho e conservação ficam juntos no rodapé quando estão disponíveis.
+  it('renderiza tamanho e conservação no rodapé', () => {
     renderCard(<ProductCard product={baseProduct} onOpen={() => {}} />);
 
-    expect(screen.queryByText('Seminovo')).toBeNull();
+    expect(screen.getByText('M · Seminovo')).toBeInTheDocument();
   });
 
   // Objetivo: sem coverImageUrl, mostra um placeholder e não quebra a renderização.

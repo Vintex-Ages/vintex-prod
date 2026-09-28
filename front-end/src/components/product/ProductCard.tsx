@@ -4,8 +4,8 @@ import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholde
 import type { Product, ProductDetail } from '@/types/product';
 
 export type ProductCardProps = {
-  /** Campos do feed, com categoria e conservação opcionais. */
-  product: Product & Partial<Pick<ProductDetail, 'category' | 'condition'>>;
+  /** Campos do feed, com categoria, tamanho e conservação opcionais. */
+  product: Product & Partial<Pick<ProductDetail, 'category' | 'condition' | 'size'>>;
   onOpen: (id: string) => void;
   /**
    * Rota real do produto, usada como `to` do `<Link>` do título. Enquanto a
@@ -23,6 +23,12 @@ const PLACEHOLDER_PATH = '#';
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
+});
+const wholePriceFormatter = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
 /**
@@ -48,10 +54,8 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
  *
  * Decisões da revisão visual:
  *
- * - **O preço é a âncora.** Era `text-body font-semibold`, o mesmo tamanho do
- *   nome da peça, no meio de cinco linhas de texto empilhadas com o mesmo peso.
- *   Numa grade de compra o preço é o dado que decide, então sobe para `h4` e
- *   fica sozinho na base do cartão.
+ * - **O preço é a âncora.** Ele fica maior que os metadados e divide a base do
+ *   cartão com tamanho e conservação quando estão disponíveis.
  * - **Os preços de uma linha da grade se alinham entre si.** O bloco de texto é
  *   `flex-1` e o preço tem `mt-auto`: como o CSS grid iguala a altura dos itens
  *   de uma mesma linha, o preço encosta na base e todos ficam na mesma altura.
@@ -59,11 +63,10 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
  *   preço para baixo, e a fileira ficava serrilhada.
  * - **O nome é limitado a duas linhas** (`line-clamp-2`), e o brechó a uma
  *   (`truncate`): sem isso um título longo reescrevia a altura do cartão.
- * - **A foto é 3:4, não quadrada** — é a proporção em que as peças chegam
- *   (600×800), então some o corte que cortava barra e gola.
- * - **`condition` sai do cartão.** Era a quinta linha de texto, em cinza
- *   pequeno, e repetia o que a ficha da peça já diz. A prop continua aceita
- *   para não quebrar quem passa, só não é mais desenhada aqui.
+ * - A área de foto segue a proporção horizontal do Figma; a imagem continua
+ *   dinâmica e vem do produto.
+ * - Tamanho e conservação aparecem juntos no rodapé quando os dados existem
+ *   (a listagem atual não fornece esses campos).
  *
  * Usage:
  *   import ProductCard from '@/components/product/ProductCard';
@@ -79,6 +82,7 @@ function ProductCard({
   productPath = PLACEHOLDER_PATH,
   favoriteSlot,
 }: ProductCardProps) {
+  const details = [product.size, product.condition].filter(Boolean).join(' · ');
   const handleOpen = (event: MouseEvent<HTMLAnchorElement>) => {
     if (productPath === PLACEHOLDER_PATH) {
       event.preventDefault();
@@ -87,26 +91,30 @@ function ProductCard({
   };
 
   return (
-    <div className="group relative flex flex-col overflow-hidden border border-linha bg-branco-quente transition-colors hover:border-texto-auxiliar">
-      <div className="aspect-[3/4] w-full shrink-0 overflow-hidden bg-linha">
-        {product.coverImageUrl ? (
-          <img
-            src={product.coverImageUrl}
-            alt={product.name}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
-          />
-        ) : (
-          <ProductImagePlaceholder productName={product.name} />
-        )}
+    <div className="group relative flex flex-col overflow-hidden border border-linha bg-papel shadow-[0_4px_6px_rgba(29,27,26,0.1)] transition-colors hover:border-texto-auxiliar">
+      <div className="aspect-[168/146] w-full shrink-0 overflow-hidden bg-papel-profundo p-2">
+        <div className="h-full w-full overflow-hidden border border-dashed border-tinta/25">
+          {product.coverImageUrl ? (
+            <img
+              src={product.coverImageUrl}
+              alt={product.name}
+              loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none"
+            />
+          ) : (
+            <ProductImagePlaceholder productName={product.name} />
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 p-3">
+      <div className="flex flex-1 flex-col gap-2 bg-papel p-2">
         {product.category && (
-          <span className="text-label text-texto-auxiliar">{product.category}</span>
+          <span className="block w-full whitespace-nowrap font-ui text-[8px] font-bold uppercase leading-normal tracking-[0.3px] text-vermelho-escuro">
+            {product.category}
+          </span>
         )}
 
-        <p className="text-body font-medium leading-snug">
+        <p className="min-h-[34px] font-display text-[16px] leading-[1.05]">
           <Link
             to={productPath}
             onClick={handleOpen}
@@ -116,14 +124,23 @@ function ProductCard({
           </Link>
         </p>
 
-        <p className="truncate text-label text-texto-auxiliar">
+        <p className="truncate font-ui text-[8px] leading-normal text-texto-auxiliar">
           {product.store.name}
-          {product.store.city ? ` · ${product.store.city}` : null}
+          {product.store.city ? ` - ${product.store.city}` : null}
         </p>
 
-        <p className="mt-auto pt-2 text-h4 font-bold text-tinta">
-          {priceFormatter.format(product.price)}
-        </p>
+        <div className="mt-auto flex w-full items-end justify-between gap-2 border-t border-linha pt-2">
+          <p className="font-ui text-[16px] font-bold leading-normal text-tinta">
+            {Number.isInteger(product.price)
+              ? wholePriceFormatter.format(product.price)
+              : priceFormatter.format(product.price)}
+          </p>
+          {details ? (
+            <p className="max-w-[50%] truncate text-right font-ui text-[10px] leading-normal text-texto-auxiliar">
+              {details}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {favoriteSlot ? <div className="absolute right-2 top-2 z-10">{favoriteSlot}</div> : null}
