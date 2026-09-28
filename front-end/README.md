@@ -56,28 +56,24 @@ npm install
 npm run dev
 ```
 
-### Integração local parcial com o back-end
+### Rodar contra a API real
 
-O modo padrão continua usando os mocks locais. Para consumir da API real apenas
-o feed de produtos e o catálogo de estilos, crie ou ajuste `.env.local`:
+O padrão é mock. Para consumir a API do back-end, crie `.env.local` com a flag
+global desligada:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api
-VITE_USE_MOCKS=true
-VITE_USE_MOCKS_FEED=false
-VITE_USE_MOCKS_STYLES=false
+VITE_USE_MOCKS=false
 ```
 
-As flags específicas têm precedência sobre `VITE_USE_MOCKS`. Quando uma delas
-não estiver definida, a operação herda o valor global. O valor `true` seleciona
-o mock, e `false` seleciona a API. Erros HTTP do feed e dos estilos são
-propagados; não há fallback automático para os mocks.
+`VITE_USE_MOCKS` vale para todos os services de uma vez — não há override por
+service. Qualquer valor diferente de `false` mantém o mock, inclusive a variável
+ausente, então o projeto continua rodando sem `.env.local`. Com o mock
+desligado, erro HTTP é erro: não há queda automática para o mock.
 
-Com essa configuração, somente `catalogService.getFeed` e
-`preferenceService.getStyles` usam a API. Autenticação, detalhe de produto, feed
-enriquecido, filtros/busca e leitura/gravação de preferências continuam
-mockados. Auth, detalhe e persistência de preferências dependem de seus
-endpoints serem integrados ao `develop` do back-end.
+`VITE_API_BASE_URL` já termina em `/api` de propósito — é o `baseURL` do
+`httpClient`, e por isso os caminhos nos services começam depois dele
+(`/users/me/store`, e não `/api/users/me/store`).
 
 No repositório do back-end, prepare o ambiente conforme o README próprio e
 inicie a API:
@@ -94,15 +90,26 @@ python -m app.seeds.pecas
 uvicorn app.main:app --reload
 ```
 
-A API ficará disponível em `http://localhost:8000`; o frontend usa o prefixo
-`/api` configurado em `VITE_API_BASE_URL`. Em outro terminal, volte ao
-repositório do frontend e execute:
+A API sobe em `http://localhost:8000`. Em outro terminal, de volta a este
+repositório:
 
 ```bash
 npm run dev
 ```
 
-Reinicie o Vite sempre que alterar qualquer variável de ambiente.
+Reinicie o Vite sempre que alterar qualquer variável de ambiente — o Vite lê o
+`.env` uma vez, no boot.
+
+**O que ainda não funciona com o mock desligado:** salvar preferências, no fim
+do onboarding e na tela de perfil. O front chama `GET` e `PUT
+/users/me/preferences` e a rota não existe na `develop` do back
+(`back-end#80` e `back-end#81`). Ler os estilos funciona (`GET /styles`), então
+a tela carrega e só falha ao concluir.
+
+As partes de IA (conversa com a Vintex e preenchimento da peça pela foto)
+exigem `AI_PROVIDER=google` e uma `GOOGLE_API_KEY` no `.env` do back — com o
+default `unavailable`, o back responde 503 e o front mostra o aviso de
+indisponibilidade.
 
 Outros scripts:
 

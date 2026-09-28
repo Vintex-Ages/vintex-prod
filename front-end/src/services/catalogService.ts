@@ -13,19 +13,13 @@ import type {
 /**
  * Service único de catálogo (FE-SVC-catalog) — feed, detalhe, filtros e
  * busca. Nenhuma tela chama fetch/axios direto (`.ai/coding-rules.md`);
- * tudo passa por aqui. `VITE_USE_MOCKS` define o padrão do service e
- * `VITE_USE_MOCKS_FEED`, quando presente, sobrescreve o modo somente de
- * `getFeed`.
+ * tudo passa por aqui, e a troca mock↔API é só essa flag.
  *
  * Tratamos qualquer valor diferente de `'false'` como mock ativo — assim o
  * projeto continua rodando com mock mesmo sem `.env` local (variável vem
  * `undefined` quando o arquivo não existe).
  */
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
-const useFeedMocks =
-  import.meta.env.VITE_USE_MOCKS_FEED === undefined
-    ? useMocks
-    : import.meta.env.VITE_USE_MOCKS_FEED !== 'false';
 
 /** Mesmo default do back (`app/core/pagination.py`, BE-kit-api). */
 const DEFAULT_PAGE_SIZE = 20;
@@ -393,7 +387,7 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
 // ---- API pública do service ----
 
 export function getFeed(params: FeedParams = {}): Promise<Paginated<Product>> {
-  return useFeedMocks ? Promise.resolve(mockGetFeed(params)) : apiGetFeed(params);
+  return useMocks ? Promise.resolve(mockGetFeed(params)) : apiGetFeed(params);
 }
 
 /** Feed já enriquecido com `category`/`condition`, pro card do catálogo (ver nota de débito técnico acima). */
