@@ -11,6 +11,7 @@ import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import VintexAI from '@/pages/VintexAI/VintexAI';
 import Sell from '@/pages/Sell/Sell';
 import SellerAdmin from '@/pages/SellerAdmin/SellerAdmin';
+import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
@@ -47,7 +48,7 @@ function WithLayout() {
  * Rotas da Sprint 1 (FE-FND-1c, #106) e Sprint 2 (FE-FND-4, #205).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
- * exigem sessão (`RequireAuth`); `/seller` e as duas rotas de peça exigem
+ * exigem sessão (`RequireAuth`); `/seller` e as três rotas de peça exigem
  * loja (`RequireStore`, FE-US006-2 #213 — sem loja, vai a `/sell` com aviso);
  * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
@@ -79,22 +80,19 @@ function AppRoutes() {
             </RequireStore>
           }
         />
+        {/* Cadastro de peça (#216, #217) sob uma rota-pai:
+            o `SellerProductFlow` mantém o mesmo estado entre formulário e
+            revisão, e a guarda roda uma vez para o fluxo todo. */}
         <Route
-          path={paths.sellerProductNew}
           element={
             <RequireStore>
-              <SellerProductForm />
+              <SellerProductFlow />
             </RequireStore>
           }
-        />
-        <Route
-          path={paths.sellerProduct}
-          element={
-            <RequireStore>
-              <SellerProductForm />
-            </RequireStore>
-          }
-        />
+        >
+          <Route path={paths.sellerProductNew} element={<SellerProductForm />} />
+          <Route path={paths.sellerProduct} element={<SellerProductForm />} />
+        </Route>
         <Route
           path={paths.cart}
           element={

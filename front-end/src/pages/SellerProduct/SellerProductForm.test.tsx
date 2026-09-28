@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import SellerProductFlow from './SellerProductFlow';
 import SellerProductForm from './SellerProductForm';
 import * as sellerProductService from '@/services/sellerProductService';
 import * as vintexAiService from '@/services/vintexAiService';
@@ -37,9 +38,11 @@ function renderForm(rota = '/seller/products/new') {
   return render(
     <MemoryRouter initialEntries={[rota]}>
       <Routes>
-        <Route path="/seller/products/new" element={<SellerProductForm />} />
-        <Route path="/seller/products/:id" element={<SellerProductForm />} />
-        <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
+        <Route element={<SellerProductFlow />}>
+          <Route path="/seller/products/new" element={<SellerProductForm />} />
+          <Route path="/seller/products/:id" element={<SellerProductForm />} />
+          <Route path="/seller/products/:id/review" element={<h1>Revisão da peça</h1>} />
+        </Route>
       </Routes>
     </MemoryRouter>,
   );
@@ -231,76 +234,109 @@ describe('SellerProductForm', () => {
     expect(screen.getByLabelText('Descrição')).toHaveValue('Jaqueta de couro sintético preta.');
   });
 
-  it('publicar sem foto cobra a foto e não chama o service (RN-47)', async () => {
+  it('"Continuar para revisão" fica desabilitado sem foto (RN-47)', async () => {
     renderForm();
     preencherObrigatorios();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    expect(screen.getByRole('button', { name: 'Continuar para revisão' })).toBeDisabled();
+
+    await subirFoto();
 
     await waitFor(() =>
-      expect(screen.getByText('Adicione ao menos uma foto.')).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Continuar para revisão' })).toBeEnabled(),
     );
-    expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
   });
 
-  it('publicar sem os campos obrigatórios mostra o erro em cada campo', async () => {
+  it('continuar sem os campos obrigatórios mostra o erro em cada campo', async () => {
     renderForm();
     await subirFoto();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continuar para revisão' }));
 
     await waitFor(() => expect(screen.getByText('Dê um título para a peça.')).toBeInTheDocument());
     expect(screen.getByText('Informe o preço.')).toBeInTheDocument();
     expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
   });
 
-  it('publicar salva o rascunho em reais, publica e vai para o detalhe', async () => {
+  it('continuar salva o rascunho em reais, NÃO publica e vai para a revisão', async () => {
     renderForm();
     await subirFoto();
     preencherObrigatorios();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
 
-    await waitFor(() => expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: 'Revisão da peça' })).toBeInTheDocument();
     const [input] = vi.mocked(sellerProductService.createDraft).mock.calls[0];
     // `PriceInput` entrega centavos; `ProductInput.price` é em reais.
     expect(input.price).toBe(259.9);
     expect(input.quantity).toBe(1);
     expect(input.images).toEqual(['https://api.test/api/media/products/photos/abc']);
-
-    expect(vi.mocked(sellerProductService.publish)).toHaveBeenCalledWith('7');
-    expect(await screen.findByRole('heading', { name: 'Detalhe da peça' })).toBeInTheDocument();
+    // RN-50: só a revisão publica.
+    expect(vi.mocked(sellerProductService.publish)).not.toHaveBeenCalled();
+    // A peça recém-criada já está em memória: nada de `getById` (sem rota no back).
+    expect(vi.mocked(sellerProductService.getById)).not.toHaveBeenCalled();
   });
 
-  it('manda a correção do vendedor sobre a sugestão, para o back guardar', async () => {
+  it('as correções sobre a IA ficam guardadas para o update da revisão, não vão no rascunho', async () => {
     renderForm();
     await subirFoto();
     await waitFor(() => expect(screen.getByLabelText('Cor')).toHaveValue('Preto'));
 
-    fireEvent.change(screen.getByLabelText('Cor'), { target: { value: 'Verde' } });
     preencherObrigatorios();
+    fireEvent.change(screen.getByLabelText('Cor'), { target: { value: 'Verde' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
 
     await waitFor(() => expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalled());
     const [, corrections] = vi.mocked(sellerProductService.createDraft).mock.calls[0];
-    expect(corrections).toEqual([{ field: 'color', suggested: 'Preto', final: 'Verde' }]);
+    expect(corrections).toEqual([]);
   });
 
-  it('erro do service ao publicar aparece na tela, sem navegar', async () => {
+  it('erro do service ao salvar o rascunho aparece na tela, sem navegar', async () => {
     vi.mocked(sellerProductService.createDraft).mockRejectedValue(
-      new Error('Peça sem foto não pode ser publicada.'),
+      new Error('Nome e preço são obrigatórios.'),
     );
     renderForm();
     await subirFoto();
     preencherObrigatorios();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
 
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent('Peça sem foto não pode ser publicada.'),
+      expect(screen.getByRole('alert')).toHaveTextContent('Nome e preço são obrigatórios.'),
     );
-    expect(screen.queryByRole('heading', { name: 'Detalhe da peça' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Revisão da peça' })).not.toBeInTheDocument();
+  });
+
+  it('o Stepper mostra Fotos sem foto e Dados depois da primeira foto', async () => {
+    const { container } = renderForm();
+
+    expect(container.querySelector('[aria-current="step"]')).toHaveTextContent('Fotos');
+
+    await subirFoto();
+
+    await waitFor(() =>
+      expect(container.querySelector('[aria-current="step"]')).toHaveTextContent('Dados'),
+    );
+  });
+
+  it('"Voltar para Fotos" no Stepper leva o foco para a área de fotos', async () => {
+    renderForm();
+    await subirFoto();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Voltar para Fotos' }));
+
+    expect(document.activeElement?.closest('#secao-fotos')).not.toBeNull();
+  });
+
+  it.each([
+    ['preco', 'Preço'],
+    ['descricao', 'Descrição'],
+    ['dados', 'Título'],
+  ])('vindo da revisão com #%s, foca o campo %s', async (secao, rotulo) => {
+    renderForm(`/seller/products/7#${secao}`);
+
+    await waitFor(() => expect(screen.getByLabelText(rotulo)).toHaveFocus());
   });
 
   it('mostra a quantidade fixa, sem campo editável (RN-46)', () => {
@@ -317,9 +353,14 @@ describe('SellerProductForm', () => {
     expect(vi.mocked(sellerProductService.getById)).toHaveBeenCalledWith('7');
     expect(screen.getByLabelText('Preço')).toHaveValue('R$ 259,90');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar peça' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
 
-    await waitFor(() => expect(vi.mocked(sellerProductService.update)).toHaveBeenCalled());
+    expect(await screen.findByRole('heading', { name: 'Revisão da peça' })).toBeInTheDocument();
+    expect(vi.mocked(sellerProductService.update)).toHaveBeenCalledWith(
+      '7',
+      expect.objectContaining({ name: 'Jaqueta de couro' }),
+      [],
+    );
     expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
   });
 
