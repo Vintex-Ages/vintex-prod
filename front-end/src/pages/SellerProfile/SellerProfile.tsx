@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
@@ -7,6 +7,7 @@ import ErrorState from '@/components/common/ErrorState';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
+import NotFound from '@/pages/NotFound/NotFound';
 import { productDetail } from '@/routes/paths';
 import { getStore, getStoreProducts, StoreError } from '@/services/storeService';
 import type { Paginated, Product } from '@/types/product';
@@ -47,9 +48,11 @@ function SellerProfile() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [productsPage, setProductsPage] = useState<Paginated<Product> | null>(null);
+  const [productsError, setProductsError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
 
-  function loadStore() {
+  const loadStore = useCallback(() => {
     if (!id) {
       setStatus('not_found');
       return;
@@ -64,29 +67,39 @@ function SellerProfile() {
         const notFound = error instanceof StoreError && error.code === 'STORE_NOT_FOUND';
         setStatus(notFound ? 'not_found' : 'error');
       });
-  }
-
-  useEffect(() => {
-    loadStore();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
-    if (!id || status !== 'ready') return;
-    getStoreProducts(id, { page: 1, pageSize: PAGE_SIZE }).then((page) => {
-      setProducts(page.items);
-      setProductsPage(page);
-    });
-  }, [id, status]);
+    loadStore();
+  }, [loadStore]);
+
+  /** Primeira página das peças. Falha vira estado de erro com retry, nunca carregamento eterno. */
+  const loadProducts = useCallback(() => {
+    if (!id) return;
+    setProductsError(false);
+    setProductsPage(null);
+    getStoreProducts(id, { page: 1, pageSize: PAGE_SIZE })
+      .then((page) => {
+        setProducts(page.items);
+        setProductsPage(page);
+      })
+      .catch(() => setProductsError(true));
+  }, [id]);
+
+  useEffect(() => {
+    if (status === 'ready') loadProducts();
+  }, [status, loadProducts]);
 
   function loadMore() {
     if (!id || !productsPage) return;
     setLoadingMore(true);
+    setLoadMoreError(false);
     getStoreProducts(id, { page: productsPage.page + 1, pageSize: PAGE_SIZE })
       .then((page) => {
         setProducts((current) => [...current, ...page.items]);
         setProductsPage(page);
       })
+      .catch(() => setLoadMoreError(true))
       .finally(() => setLoadingMore(false));
   }
 
@@ -100,15 +113,9 @@ function SellerProfile() {
     );
   }
 
+  // Loja inexistente cai no 404 do app, como qualquer endereço que não existe (#223).
   if (status === 'not_found') {
-    return (
-      <Container as="main" className="py-10">
-        <ErrorState
-          title="Loja não encontrada"
-          message="Esta loja não existe, ou o endereço está errado."
-        />
-      </Container>
-    );
+    return <NotFound />;
   }
 
   if (status === 'error' || !store) {
@@ -164,15 +171,28 @@ function SellerProfile() {
       <section aria-label="Peças da loja" className="flex flex-col gap-6">
         <h2 className="font-display text-h3 text-tinta">Peças</h2>
 
-        <ProductGrid
-          products={products}
-          loading={status === 'ready' && productsPage === null}
-          onOpen={() => {}}
-          productPath={(productId) => productDetail(productId)}
-          emptyState={<EmptyState message="Essa loja ainda não tem peças ativas." />}
-        />
+        {productsError ? (
+          <ErrorState
+            message="Não foi possível carregar as peças desta loja agora."
+            onRetry={loadProducts}
+          />
+        ) : (
+          <ProductGrid
+            products={products}
+            loading={productsPage === null}
+            onOpen={() => {}}
+            productPath={(productId) => productDetail(productId)}
+            emptyState={<EmptyState message="Essa loja ainda não tem peças ativas." />}
+          />
+        )}
 
-        {hasMore ? (
+        {loadMoreError ? (
+          <p role="alert" className="text-body-sm text-vermelho-escuro">
+            Não foi possível carregar mais peças. Tente de novo.
+          </p>
+        ) : null}
+
+        {hasMore && !productsError ? (
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? 'Carregando...' : 'Carregar mais'}
           </Button>
