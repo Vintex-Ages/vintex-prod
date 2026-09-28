@@ -78,6 +78,14 @@ const SEM_MARCA = 'Marca não identificada: etiqueta ilegível ou ausente.';
 const NADA_IDENTIFICADO =
   'Não identificamos nada nas fotos. Preencha os campos à mão ou tente outra foto.';
 
+// 503 `AI_UNAVAILABLE` (back-end#150): o provedor está fora do ar, e não a
+// foto que está ruim. A distinção existe porque o back passou a separar as
+// duas — antes as duas chegavam como 200 com todos os campos nulos, e o
+// vendedor lia que a foto dele era ilegível enquanto o Gemini estava
+// sobrecarregado.
+const IA_FORA_DO_AR =
+  'A Vintex está indisponível no momento. Tente de novo em instantes ou preencha os campos à mão.';
+
 const IA_INDISPONIVEL = 'Não foi possível analisar as fotos agora. Preencha os campos à mão.';
 const ANALISE_DEMOROU = 'A análise das fotos demorou demais. Preencha os campos à mão.';
 const ANALISE_INTERROMPIDA = 'Análise das fotos interrompida.';
@@ -598,6 +606,10 @@ async function pedir<T>(
     // 422 é o corpo recusado pelo back (mais fotos que o limite, URL inválida).
     if (response.status === 422) {
       return { ok: false, erro: { ok: false, reason: 'invalid-image', message: FOTO_RECUSADA } };
+    }
+
+    if (response.status === 503) {
+      return { ok: false, erro: { ok: false, reason: 'unavailable', message: IA_FORA_DO_AR } };
     }
 
     if (!response.ok) {
