@@ -146,6 +146,7 @@ export interface SellerProduct {
   name: string;
   price: number;
   status: ProductStatus;
+  coverImageUrl?: string | null;
   description?: string;
   category?: string;
   size?: string;
