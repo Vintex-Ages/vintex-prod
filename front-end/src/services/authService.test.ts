@@ -143,6 +143,19 @@ describe('authService (mock, VITE_USE_MOCKS padrão)', () => {
       code: AUTH_REQUIRED,
     });
   });
+
+  it('markCurrentAccountAsSeller: marca is_seller = true na conta logada (usado por storeService.createStore)', async () => {
+    await authService.register({ name: 'Ana', email: 'ana@exemplo.com', password: 'senha123' });
+
+    await authService.markCurrentAccountAsSeller();
+
+    const me = await authService.me();
+    expect(me.is_seller).toBe(true);
+  });
+
+  it('markCurrentAccountAsSeller: sem sessão ativa, não faz nada (não lança)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
+  });
 });
 
 describe('authService (API real, VITE_USE_MOCKS=false)', () => {
@@ -227,17 +240,31 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     await expect(authService.logout()).resolves.toBeUndefined();
   });
 
-  it('me: chama GET /auth/me e mapeia is_seller vindo da API', async () => {
-    httpClientRef.defaults.adapter = successAdapter(200, {
-      id: 7,
-      name: 'Ana Brechó',
-      email: 'ana@exemplo.com',
-      is_admin: false,
-      is_seller: true,
-    });
+  // A URL é verificada de verdade: o título dizia `/auth/me` e o adaptador
+  // respondia a qualquer caminho, então o front chamava uma rota que o back não
+  // tem (o back serve `/users/me`, como o ADR 0001 §4 manda) sem nada acusar.
+  it('me: chama GET /users/me e mapeia is_seller vindo da API', async () => {
+    let pedido: string | undefined;
+    httpClientRef.defaults.adapter = (config) => {
+      pedido = config.url;
+      return Promise.resolve({
+        data: {
+          id: 7,
+          name: 'Ana Brechó',
+          email: 'ana@exemplo.com',
+          is_admin: false,
+          is_seller: true,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
 
     const user = await authService.me();
 
+    expect(pedido).toBe('/users/me');
     expect(user).toMatchObject({ id: '7', is_seller: true });
   });
 
@@ -250,5 +277,9 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     await expect(authService.me()).rejects.toMatchObject({
       code: AUTH_REQUIRED,
     });
+  });
+
+  it('markCurrentAccountAsSeller: no modo API real é um no-op (o backend marca is_seller ao criar a loja)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
   });
 });

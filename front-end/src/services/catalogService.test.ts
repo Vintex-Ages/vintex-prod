@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InternalAxiosRequestConfig } from 'axios';
 import {
   CatalogError,
   getFeed,
@@ -140,6 +141,47 @@ describe('catalogService (mock)', () => {
       expect(result.match_type).toBe('fallback');
       expect(result.items).toEqual([]);
     });
+  });
+});
+
+describe('catalogService.search (HTTP, VITE_USE_MOCKS=false)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Dados adversos para testar rejeição; não são fixtures reais da busca.
+  it.each([
+    {
+      scenario: 'resposta do feed sem match_type',
+      data: { items: [], page: 1, page_size: 20, total: 0 },
+    },
+    {
+      scenario: 'resposta com match_type desconhecido',
+      data: { items: [], total: 0, match_type: 'unknown', suggestions: null },
+    },
+  ])('rejeita $scenario', async ({ data }) => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { search: apiSearch } = await import('./catalogService');
+    const adapter = vi.fn((config: InternalAxiosRequestConfig) =>
+      Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config }),
+    );
+    httpClient.defaults.adapter = adapter;
+
+    const [result] = await Promise.allSettled([apiSearch('vestido', { category: 'Roupas' })]);
+
+    // Confirma o caminho HTTP antes de verificar a rejeição do corpo recebido.
+    expect(adapter).toHaveBeenCalledTimes(1);
+    expect(adapter.mock.calls[0][0]).toMatchObject({
+      method: 'get',
+      url: '/products',
+      params: { q: 'vestido', category: 'Roupas' },
+    });
+    expect(result.status).toBe('rejected');
   });
 });
 

@@ -22,7 +22,7 @@ import { httpClient } from './httpClient';
  *   - ausente ou `'true'` → usa o mock em memória deste módulo (default de dev,
  *     permite tocar o fluxo sem backend de pé);
  *   - `'false'` → usa a API real via `httpClient` (`POST /auth/register`,
- *     `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`; a `baseURL` e o
+ *     `POST /auth/login`, `POST /auth/logout`, `GET /users/me`; a `baseURL` e o
  *     header `Authorization` já vêm do `httpClient`).
  *   A leitura acontece uma única vez, em tempo de import do módulo: as funções
  *   exportadas já ficam ligadas à implementação escolhida. Trocar de modo em
@@ -38,7 +38,7 @@ import { httpClient } from './httpClient';
  *     `'API_ERROR'` e nenhum `field` é inventado;
  *   - `register` e `login` da API real devolvem `user` sem `is_seller` (só
  *     `is_admin`); assume-se `is_seller: false` nesses dois casos e considera-se
- *     que apenas `GET /auth/me` devolve `is_seller` de verdade;
+ *     que apenas `GET /users/me` devolve `is_seller` de verdade;
  *   - o backend envia `user.id` numérico; a conversão para `string` é feita aqui.
  *
  * Usage:
@@ -168,6 +168,19 @@ async function mockMe(): Promise<AuthUser> {
   return account.user;
 }
 
+/**
+ * Marca a conta da sessão ativa como vendedora — no mock nada mais faz isso
+ * (na API real é o backend que marca ao criar a loja). Troca o `user` por um
+ * objeto novo em vez de mutar o que já foi entregue a quem chamou `me()`.
+ */
+async function mockMarkCurrentAccountAsSeller(): Promise<void> {
+  const account = mockCurrentEmail ? mockAccounts.get(mockCurrentEmail) : undefined;
+  if (!account) {
+    return;
+  }
+  mockAccounts.set(account.user.email, { ...account, user: { ...account.user, is_seller: true } });
+}
+
 // ---------------------------------------------------------------------------
 // Modo API REAL — via httpClient; mapeia o corpo do backend para o front.
 // ---------------------------------------------------------------------------
@@ -262,7 +275,7 @@ async function apiLogout(): Promise<void> {
 
 async function apiMe(): Promise<AuthUser> {
   try {
-    const { data } = await httpClient.get<ApiUser>('/auth/me');
+    const { data } = await httpClient.get<ApiUser>('/users/me');
     return toAuthUser(data, Boolean(data.is_seller));
   } catch (error) {
     throw toApiError(error);
@@ -286,3 +299,12 @@ export const logout: () => Promise<void> = useMocks ? mockLogout : apiLogout;
 
 /** Devolve o usuário da sessão atual; rejeita com `ApiError { code: AUTH_REQUIRED }` sem sessão. */
 export const me: () => Promise<AuthUser> = useMocks ? mockMe : apiMe;
+
+/**
+ * Marca a conta logada como vendedora (`is_seller: true`); usado por
+ * `storeService.createStore`. Sem sessão ativa, não faz nada. Na API real é
+ * no-op: o backend já marca `is_seller` ao criar a loja e `me()` devolve isso.
+ */
+export const markCurrentAccountAsSeller: () => Promise<void> = useMocks
+  ? mockMarkCurrentAccountAsSeller
+  : async () => {};

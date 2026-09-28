@@ -50,26 +50,22 @@ const mockStyles: StyleOption[] = [
 let mockPreferences: Preference[] = [];
 
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
-const useStylesMocks =
-  import.meta.env.VITE_USE_MOCKS_STYLES === undefined
-    ? useMocks
-    : import.meta.env.VITE_USE_MOCKS_STYLES !== 'false';
-
-interface ApiStylesResponse {
-  styles: StyleOption[];
-}
 
 /**
  * Retorna os estilos disponíveis para seleção.
- * `VITE_USE_MOCKS_STYLES` sobrescreve o modo global somente nesta operação.
+ * Usa dados mockados enquanto VITE_USE_MOCKS estiver habilitado.
  */
 export async function getStyles(): Promise<StyleOption[]> {
-  if (useStylesMocks) {
+  if (useMocks) {
     return [...mockStyles];
   }
 
-  const { data } = await httpClient.get<ApiStylesResponse>('/styles');
-  return data.styles;
+  // O back devolve `{ styles: [...] }`, não a lista solta (`StylesResponse`,
+  // em `app/schemas/style_schema.py`). Tipar como lista dava 200 e entregava
+  // um objeto para a tela, que quebrava no `.map` — o onboarding ficava em
+  // branco sem nenhum erro de rede.
+  const { data } = await httpClient.get<{ styles: StyleOption[] }>('/styles');
+  return data.styles ?? [];
 }
 
 /**

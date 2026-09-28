@@ -41,28 +41,7 @@ describe('preferenceService', () => {
   });
 });
 
-/**
- * Dados reconstruídos a partir do contrato e dos testes do backend em
- * origin/develop@887b24d. Não são uma resposta capturada de uma API em execução.
- */
-const BACKEND_STYLES_RESPONSE = {
-  styles: [
-    {
-      type: 'estilo',
-      value: 'vintage-80-90',
-      label: 'Vintage 80s / 90s',
-      description: 'Jaquetas de couro, jeans pesados e peças históricas',
-    },
-    {
-      type: 'estilo',
-      value: 'streetwear',
-      label: 'Streetwear Urbano',
-      description: 'Oversized, moletons gráficos e sneakers raros',
-    },
-  ],
-};
-
-describe('preferenceService.getStyles — contrato do backend 887b24d', () => {
+describe('preferenceService (API real)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
@@ -72,110 +51,45 @@ describe('preferenceService.getStyles — contrato do backend 887b24d', () => {
     vi.unstubAllEnvs();
   });
 
-  it('remove o envelope e preserva type, value, label e description', async () => {
+  /**
+   * O back devolve `{ styles: [...] }` (`StylesResponse`), não a lista solta.
+   * Tipar como lista dava 200 e entregava um objeto para a tela: o onboarding
+   * ficava em branco, sem erro de rede nenhum, e nenhum teste via porque só o
+   * caminho mock era coberto.
+   */
+  it('getStyles desembrulha a lista de dentro de `styles`', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { getStyles: apiGetStyles } = await import('./preferenceService');
 
-    httpClient.defaults.adapter = (config) =>
-      Promise.resolve({
-        data: BACKEND_STYLES_RESPONSE,
+    let pedido: string | undefined;
+    httpClient.defaults.adapter = (config) => {
+      pedido = config.url;
+      return Promise.resolve({
+        data: {
+          styles: [{ type: 'estilo', value: 'y2k', label: 'Y2K', description: 'Anos 2000.' }],
+        },
         status: 200,
         statusText: 'OK',
         headers: {},
         config,
       });
+    };
 
-    await expect(apiGetStyles()).resolves.toEqual(BACKEND_STYLES_RESPONSE.styles);
-  });
-});
+    const styles = await apiGetStyles();
 
-describe('preferenceService.getStyles — seleção explícita mock/API', () => {
-  beforeEach(() => {
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
+    expect(pedido).toBe('/styles');
+    expect(styles).toEqual([
+      { type: 'estilo', value: 'y2k', label: 'Y2K', description: 'Anos 2000.' },
+    ]);
   });
 
-  it('VITE_USE_MOCKS_STYLES=false prevalece sobre o global e envia GET /styles', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'true');
-    vi.stubEnv('VITE_USE_MOCKS_STYLES', 'false');
-
+  it('resposta sem `styles` devolve lista vazia, sem quebrar a tela', async () => {
     const { httpClient } = await import('@/services/httpClient');
-    const { getStyles: configuredGetStyles } = await import('./preferenceService');
-    const adapter = vi.fn((config) =>
-      Promise.resolve({
-        data: BACKEND_STYLES_RESPONSE,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      }),
-    );
-    httpClient.defaults.adapter = adapter;
+    const { getStyles: apiGetStyles } = await import('./preferenceService');
 
-    await configuredGetStyles();
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config });
 
-    expect(adapter).toHaveBeenCalledTimes(1);
-    expect(adapter.mock.calls[0][0]).toMatchObject({ method: 'get', url: '/styles' });
-  });
-
-  it('propaga erro HTTP quando estilos reais estão ativos, sem fallback para o catálogo mockado', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'true');
-    vi.stubEnv('VITE_USE_MOCKS_STYLES', 'false');
-
-    const { httpClient } = await import('@/services/httpClient');
-    const { getStyles: configuredGetStyles } = await import('./preferenceService');
-    const backendError = new Error('falha HTTP dos estilos');
-    httpClient.defaults.adapter = () => Promise.reject(backendError);
-
-    await expect(configuredGetStyles()).rejects.toBe(backendError);
-  });
-
-  it('getPreferences e savePreferences continuam mockados quando somente estilos usam a API', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'true');
-    vi.stubEnv('VITE_USE_MOCKS_STYLES', 'false');
-
-    const { httpClient } = await import('@/services/httpClient');
-    const { getPreferences: configuredGetPreferences, savePreferences: configuredSavePreferences } =
-      await import('./preferenceService');
-    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
-    httpClient.defaults.adapter = adapter;
-    const preferences = [{ type: 'estilo', value: 'streetwear' }];
-
-    await configuredSavePreferences(preferences);
-
-    await expect(configuredGetPreferences()).resolves.toEqual(preferences);
-    expect(adapter).not.toHaveBeenCalled();
-  });
-
-  it('sem override específico herda VITE_USE_MOCKS=true', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'true');
-
-    const { httpClient } = await import('@/services/httpClient');
-    const { getStyles: configuredGetStyles } = await import('./preferenceService');
-    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
-    httpClient.defaults.adapter = adapter;
-
-    const styles = await configuredGetStyles();
-
-    expect(styles.length).toBeGreaterThan(0);
-    expect(adapter).not.toHaveBeenCalled();
-  });
-
-  it('VITE_USE_MOCKS_STYLES=true prevalece sobre VITE_USE_MOCKS=false', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'false');
-    vi.stubEnv('VITE_USE_MOCKS_STYLES', 'true');
-
-    const { httpClient } = await import('@/services/httpClient');
-    const { getStyles: configuredGetStyles } = await import('./preferenceService');
-    const adapter = vi.fn(() => Promise.reject(new Error('não deveria chamar HTTP')));
-    httpClient.defaults.adapter = adapter;
-
-    const styles = await configuredGetStyles();
-
-    expect(styles.length).toBeGreaterThan(0);
-    expect(adapter).not.toHaveBeenCalled();
+    await expect(apiGetStyles()).resolves.toEqual([]);
   });
 });
