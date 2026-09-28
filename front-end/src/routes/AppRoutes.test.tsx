@@ -218,7 +218,6 @@ describe('<AppRoutes />', () => {
   // --- FE-FND-4 (#205): rotas da Sprint 2 e guardas ---
 
   it.each([
-    [paths.sell, 'Quero vender', SELLER],
     [paths.seller, 'Painel do vendedor', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
@@ -279,6 +278,31 @@ describe('<AppRoutes />', () => {
       expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
     },
   );
+
+  // --- FE-US006-1 (#212): /sell é a tela real ---
+
+  it('/sell logado sem loja mostra o formulário de criar loja dentro do Layout', async () => {
+    vi.mocked(getMyStore).mockResolvedValue(null);
+
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+    expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abrir minha loja' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+  });
+
+  it('P-06: /sell com loja vai ao painel do vendedor', async () => {
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: SELLER }));
+
+    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Abrir minha loja' })).not.toBeInTheDocument();
+  });
+
+  it('/sell sem sessão redireciona a /login', async () => {
+    renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: false, user: null }));
+
+    expect(await screen.findByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+  });
 
   it('/store/:id abre sem login (leitura pública)', async () => {
     renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
