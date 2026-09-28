@@ -451,6 +451,25 @@ describe('suggestListing (API real)', () => {
     expect(r.suggestion.notes?.join(' ')).toMatch(/não identificamos/i);
   });
 
+  /**
+   * O back distingue "provedor fora do ar" (503) de "a IA respondeu e não viu
+   * nada" (200 vazio). A mensagem tem que distinguir também: dizer que a foto
+   * é ilegível quando o Gemini caiu joga a culpa no vendedor e sugere trocar a
+   * foto, quando a ação certa é tentar de novo.
+   */
+  it('503 avisa que a IA está fora do ar, e manda tentar de novo', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respostaJson({}, 503)));
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('unavailable');
+    expect(r.message).toMatch(/tente de novo/i);
+    expect(r.message).not.toMatch(/outra foto/i);
+  });
+
   it('422 do back vira invalid-image', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respostaJson({}, 422)));
     const { suggestListing } = await import('./vintexAiService');
