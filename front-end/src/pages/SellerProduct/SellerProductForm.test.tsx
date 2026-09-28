@@ -218,6 +218,19 @@ describe('SellerProductForm', () => {
     expect(screen.getByLabelText('Título')).toBeEnabled();
   });
 
+  it('remover todas as fotos limpa os avisos da IA, mas mantém o que já foi preenchido', async () => {
+    renderForm();
+    await subirFoto();
+    await waitFor(() => expect(screen.getByText(/etiqueta ilegível/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover mídia 1' }));
+
+    await waitFor(() => expect(screen.queryByText(/etiqueta ilegível/i)).not.toBeInTheDocument());
+    expect(screen.queryAllByRole('img', { name: 'Sugerido pela IA' })).toHaveLength(0);
+    // O que a IA preencheu e o vendedor pode ter ajustado continua lá.
+    expect(screen.getByLabelText('Descrição')).toHaveValue('Jaqueta de couro sintético preta.');
+  });
+
   it('publicar sem foto cobra a foto e não chama o service (RN-47)', async () => {
     renderForm();
     preencherObrigatorios();

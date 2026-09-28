@@ -252,6 +252,15 @@ export function useProductForm(productId?: string): UseProductFormResult {
     setValues((atual) => ({ ...atual, media: items }));
     setErrors((atual) => ({ ...atual, media: undefined }));
 
+    // Sem foto nenhuma, o que a IA disse deixa de fazer sentido: os avisos
+    // falariam de fotos que não estão mais ali. Os campos ficam, porque o
+    // vendedor pode ter ajustado e não deve perder o que escreveu.
+    if (items.length === 0) {
+      setAiNotes([]);
+      setSuggested(new Set());
+      return;
+    }
+
     const novas = items.filter((item) => item.file);
     if (novas.length === 0) return;
 
