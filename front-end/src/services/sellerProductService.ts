@@ -10,6 +10,7 @@ import type {
   SellerProduct,
   SellerProductDetail,
 } from '@/types/product';
+import { netValue } from '@/utils/commission';
 
 /**
  * Service de peças do vendedor (FE-SVC-seller-products, issue #202) —
@@ -29,13 +30,6 @@ const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
 
 /** Mesmo default do back (`app/core/pagination.py`, BE-kit-api). */
 const DEFAULT_PAGE_SIZE = 20;
-
-/**
- * Comissão da plataforma sobre a venda. Mora aqui temporariamente: deveria vir
- * de `utils/commission.ts` (FE-CMP-21), que ainda não existe — migra quando
- * ela entrar.
- */
-const COMMISSION_RATE = 0.09;
 
 export type SalesPeriod = SalesSummary['period'];
 
@@ -337,8 +331,9 @@ async function mockGetSalesSummary(period: SalesPeriod): Promise<SalesSummary> {
   const user = await me();
   const sold = (await readProducts(user.id)).filter((product) => product.status === 'vendido');
   const gross = roundMoney(sold.reduce((total, product) => total + product.price, 0));
-  const commission = roundMoney(gross * COMMISSION_RATE);
-  return { period, soldCount: sold.length, gross, commission, net: roundMoney(gross - commission) };
+  // Regra dos 9% (RN-11) vem de `utils/commission.ts`, a única implementação.
+  const net = netValue(gross);
+  return { period, soldCount: sold.length, gross, commission: roundMoney(gross - net), net };
 }
 
 /** ObjectURLs no lugar das URLs remotas que a rota de upload vai devolver. */
