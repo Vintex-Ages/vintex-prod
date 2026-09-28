@@ -6,7 +6,7 @@ import StatusBadge from '@/components/product/StatusBadge';
  * Novos usos com diferentes estados devem utilizar StatusBadge diretamente.
  */
 function SoldBadge() {
-  return <StatusBadge status="vendida" label="Já vendida" />;
+  return <StatusBadge status="vendido" />;
 }
 
 export default SoldBadge;

@@ -9,7 +9,7 @@ import {
   setAuthTokenProvider,
   setOnAuthRequired,
 } from '@/services/httpClient';
-import { logout as authServiceLogout } from '@/services/authService';
+import { logout as authServiceLogout, me as authServiceMe } from '@/services/authService';
 
 // Só as integrações com o httpClient são espionadas; o resto do módulo é real.
 vi.mock('@/services/httpClient', async (importOriginal) => {
@@ -22,12 +22,16 @@ vi.mock('@/services/httpClient', async (importOriginal) => {
   };
 });
 
-// authService é totalmente substituído: só `logout` é usado pelo AuthContext.
+// authService é totalmente substituído. `me` entra junto porque o provider
+// confirma o papel do usuário assim que existe token: o login não devolve
+// `is_seller`.
 vi.mock('@/services/authService', () => ({
   logout: vi.fn(),
+  me: vi.fn(),
 }));
 
 const mockedAuthServiceLogout = vi.mocked(authServiceLogout);
+const mockedAuthServiceMe = vi.mocked(authServiceMe);
 
 const SAMPLE_USER: AuthUser = {
   id: 'u_1',
@@ -46,6 +50,8 @@ function Probe() {
   return (
     <div>
       <span data-testid="user">{user?.name ?? 'anon'}</span>
+
+      <span data-testid="is-seller">{String(user?.is_seller ?? false)}</span>
 
       <span data-testid="token">{token ?? 'none'}</span>
 
@@ -227,6 +233,37 @@ describe('AuthContext', () => {
    * FE-US005-2: logout precisa encerrar a sessão no backend, não só
    * localmente.
    */
+  /**
+   * O `POST /auth/login` não devolve `is_seller` (no back, `UserPublic` é
+   * identidade mais `created_at`), então `apiLogin` entrega o usuário com
+   * `is_seller: false` fixo. Sem confirmar pelo `GET /users/me`, um vendedor
+   * de verdade nunca passa pela guarda de `/seller`, por mais que o banco
+   * diga o contrário. Foi o que apareceu no primeiro teste com a API real.
+   */
+  it('confirma o papel pelo /users/me depois do login, porque o login não traz is_seller', async () => {
+    mockedAuthServiceMe.mockResolvedValue({ ...SAMPLE_USER, is_seller: true });
+    renderApp();
+    await settled();
+
+    expect(screen.getByTestId('is-seller')).toHaveTextContent('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'entrar' }));
+
+    await waitFor(() => expect(screen.getByTestId('is-seller')).toHaveTextContent('true'));
+    expect(mockedAuthServiceMe).toHaveBeenCalled();
+  });
+
+  it('falha ao confirmar o papel não derruba a sessão', async () => {
+    mockedAuthServiceMe.mockRejectedValue(new Error('rede fora'));
+    renderApp();
+    await settled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'entrar' }));
+
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('true'));
+    expect(screen.getByTestId('user')).toHaveTextContent('Ana Brechó');
+  });
+
   it('logout chama authService.logout() para encerrar a sessão no backend', async () => {
     window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
 
