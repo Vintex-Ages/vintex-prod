@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import { useAuth } from '@/context/useAuth';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { paths, productDetail } from '@/routes/paths';
@@ -33,9 +34,14 @@ const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
  * - **Erro e vazio têm saída.** O erro era um `<p>` vermelho sem ação; agora
  *   oferece tentar de novo. Falha ao carregar mais não derruba o que já está
  *   na tela: vira aviso ao lado do botão.
+ * - **Convite para vender (FE-US006-1, #212).** Logado e ainda sem loja, a
+ *   Home oferece "Quero vender" (`/sell`), a mesma entrada do menu da conta.
+ *   Como no `Header`, a fonte é `user.is_seller`, sem requisição extra.
  */
 function Home() {
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
+  const showSellInvite = isAuthenticated && !user?.is_seller;
   const [feed, setFeed] = useState<Paginated<Product> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -101,6 +107,27 @@ function Home() {
           />
         </div>
       </Container>
+
+      {showSellInvite ? (
+        <Container as="section" aria-labelledby="vender-titulo" className="pt-6 tablet:pt-8">
+          <div className="flex flex-col gap-4 border border-linha bg-papel-profundo p-6 tablet:flex-row tablet:items-center tablet:justify-between">
+            <div>
+              <h2 id="vender-titulo" className="font-display text-h4 text-tinta">
+                Tem peças paradas no armário?
+              </h2>
+              <p className="mt-1 font-ui text-body text-texto-auxiliar">
+                Abra sua loja na Vintex e comece a vender.
+              </p>
+            </div>
+            <Link
+              to={paths.sell}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-6 font-ui text-body font-semibold text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente"
+            >
+              Quero vender
+            </Link>
+          </div>
+        </Container>
+      ) : null}
 
       <Container
         as="section"
