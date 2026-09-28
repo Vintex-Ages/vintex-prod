@@ -176,6 +176,15 @@ export interface ApiFeedItem {
 }
 
 /**
+ * Item do `GET /products` integrado em origin/develop@887b24d.
+ * O `Decimal` do backend é serializado como string; este tipo e seu mapeador
+ * ficam separados porque `ApiFeedItem` também é usado pela busca (#211).
+ */
+interface ApiProductFeedItem extends Omit<ApiFeedItem, 'price'> {
+  price: string;
+}
+
+/**
  * Diferente do item de lista: `city`/`state` vêm soltos no produto (não em
  * `store`), e `media` já chega no formato que `ProductMedia` espera — sem
  * conversão extra, ao contrário do que eu tinha assumido antes de ver o
@@ -239,6 +248,10 @@ export function mapFeedItem(item: ApiFeedItem): Product {
   };
 }
 
+function mapProductFeedItem(item: ApiProductFeedItem): Product {
+  return mapFeedItem({ ...item, price: Number(item.price) });
+}
+
 /** Capa = primeira imagem por `position`, igual o back já faz no feed (`get_active_feed`). */
 function mapProductDetail(item: ApiProductDetail): ProductDetail {
   const cover = [...item.media].sort((a, b) => a.position - b.position)[0]?.url ?? null;
@@ -300,10 +313,10 @@ async function apiGetFeed({
   pageSize = DEFAULT_PAGE_SIZE,
   sort = 'recent',
 }: FeedParams): Promise<Paginated<Product>> {
-  const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
+  const { data } = await httpClient.get<ApiPage<ApiProductFeedItem>>('/products', {
     params: { page, page_size: pageSize, sort },
   });
-  return mapPage(data, mapFeedItem);
+  return mapPage(data, mapProductFeedItem);
 }
 
 /**
