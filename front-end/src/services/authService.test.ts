@@ -76,6 +76,26 @@ describe('authService (mock, VITE_USE_MOCKS padrão)', () => {
     ).rejects.toMatchObject({ field: 'password' });
   });
 
+  // Objetivo: garantir o registro do aceite dos termos (FE-SVC-legal, #203).
+  it('register: guarda no mock a versão dos termos aceita (acceptedTermsVersion)', async () => {
+    await authService.register({
+      name: 'Ana',
+      email: 'ana@exemplo.com',
+      password: 'senha123',
+      acceptedTermsVersion: 'termos-0.1-placeholder',
+    });
+
+    expect(authService.getMockAcceptedTermsVersion('ana@exemplo.com')).toBe(
+      'termos-0.1-placeholder',
+    );
+  });
+
+  it('register: sem acceptedTermsVersion, nenhuma versão fica registrada', async () => {
+    await authService.register({ name: 'Ana', email: 'ana@exemplo.com', password: 'senha123' });
+
+    expect(authService.getMockAcceptedTermsVersion('ana@exemplo.com')).toBeUndefined();
+  });
+
   it('login: credenciais corretas devolvem user + access_token', async () => {
     await authService.register({ name: 'Ana', email: 'ana@exemplo.com', password: 'senha123' });
 
@@ -143,6 +163,19 @@ describe('authService (mock, VITE_USE_MOCKS padrão)', () => {
       code: AUTH_REQUIRED,
     });
   });
+
+  it('markCurrentAccountAsSeller: marca is_seller = true na conta logada (usado por storeService.createStore)', async () => {
+    await authService.register({ name: 'Ana', email: 'ana@exemplo.com', password: 'senha123' });
+
+    await authService.markCurrentAccountAsSeller();
+
+    const me = await authService.me();
+    expect(me.is_seller).toBe(true);
+  });
+
+  it('markCurrentAccountAsSeller: sem sessão ativa, não faz nada (não lança)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
+  });
 });
 
 describe('authService (API real, VITE_USE_MOCKS=false)', () => {
@@ -187,6 +220,31 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     expect(access_token).toBe('jwt-abc');
   });
 
+  it('register: envia acceptedTermsVersion como accepted_terms_version', async () => {
+    let sentBody: unknown;
+    httpClientRef.defaults.adapter = (config) => {
+      sentBody = JSON.parse(config.data as string);
+      return successAdapter(201, {
+        user: { id: 7, name: 'Ana', email: 'ana@exemplo.com', is_admin: false },
+        access_token: 'jwt-abc',
+      })(config);
+    };
+
+    await authService.register({
+      name: 'Ana',
+      email: 'ana@exemplo.com',
+      password: 'senha123',
+      acceptedTermsVersion: 'termos-0.1-placeholder',
+    });
+
+    expect(sentBody).toEqual({
+      name: 'Ana',
+      email: 'ana@exemplo.com',
+      password: 'senha123',
+      accepted_terms_version: 'termos-0.1-placeholder',
+    });
+  });
+
   it('register: e-mail duplicado (409 EMAIL_TAKEN) rejeita como ApiError tipado no campo email', async () => {
     httpClientRef.defaults.adapter = errorAdapter(409, {
       code: 'EMAIL_TAKEN',
@@ -227,17 +285,31 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     await expect(authService.logout()).resolves.toBeUndefined();
   });
 
-  it('me: chama GET /auth/me e mapeia is_seller vindo da API', async () => {
-    httpClientRef.defaults.adapter = successAdapter(200, {
-      id: 7,
-      name: 'Ana Brechó',
-      email: 'ana@exemplo.com',
-      is_admin: false,
-      is_seller: true,
-    });
+  // A URL é verificada de verdade: o título dizia `/auth/me` e o adaptador
+  // respondia a qualquer caminho, então o front chamava uma rota que o back não
+  // tem (o back serve `/users/me`, como o ADR 0001 §4 manda) sem nada acusar.
+  it('me: chama GET /users/me e mapeia is_seller vindo da API', async () => {
+    let pedido: string | undefined;
+    httpClientRef.defaults.adapter = (config) => {
+      pedido = config.url;
+      return Promise.resolve({
+        data: {
+          id: 7,
+          name: 'Ana Brechó',
+          email: 'ana@exemplo.com',
+          is_admin: false,
+          is_seller: true,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
 
     const user = await authService.me();
 
+    expect(pedido).toBe('/users/me');
     expect(user).toMatchObject({ id: '7', is_seller: true });
   });
 
@@ -250,5 +322,9 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
     await expect(authService.me()).rejects.toMatchObject({
       code: AUTH_REQUIRED,
     });
+  });
+
+  it('markCurrentAccountAsSeller: no modo API real é um no-op (o backend marca is_seller ao criar a loja)', async () => {
+    await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
   });
 });
