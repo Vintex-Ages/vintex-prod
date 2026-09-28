@@ -11,6 +11,7 @@ import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import VintexAI from '@/pages/VintexAI/VintexAI';
 import Sell from '@/pages/Sell/Sell';
 import SellerAdmin from '@/pages/SellerAdmin/SellerAdmin';
+import Review from '@/pages/SellerProduct/Review';
 import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
@@ -80,7 +81,7 @@ function AppRoutes() {
             </RequireStore>
           }
         />
-        {/* Cadastro de peça (#216, #217) sob uma rota-pai:
+        {/* Cadastro de peça (#216, #217) e revisão (#218) sob uma rota-pai:
             o `SellerProductFlow` mantém o mesmo estado entre formulário e
             revisão, e a guarda roda uma vez para o fluxo todo. */}
         <Route
@@ -92,6 +93,7 @@ function AppRoutes() {
         >
           <Route path={paths.sellerProductNew} element={<SellerProductForm />} />
           <Route path={paths.sellerProduct} element={<SellerProductForm />} />
+          <Route path={paths.sellerProductReview} element={<Review />} />
         </Route>
         <Route
           path={paths.cart}
