@@ -72,13 +72,15 @@ describe('VintexAI page', () => {
     expect(screen.getByText('Conversa com a Vintex')).toBeInTheDocument();
   });
 
-  it('um chip de sugestão preenche o campo de busca', () => {
+  it('um chip de sugestão preenche o campo de mensagem', () => {
     fakeChat([{ type: 'done' }]);
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Look para um jantar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manter cor prata' }));
 
-    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue('Look para um jantar');
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue(
+      'Quero alternativas na cor prata',
+    );
   });
 
   it('enviar uma mensagem adiciona a bolha do usuário e a resposta cresce em streaming até done', async () => {

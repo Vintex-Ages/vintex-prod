@@ -10,7 +10,13 @@ export type FilterToggleProps = {
 };
 
 function ChevronDownIcon({ open }: { open: boolean }) {
-  return <img src={chevronDownIcon} alt="" className={clsx('h-[14.4px] w-[14.4px] transition-transform', open && 'rotate-180')} />;
+  return (
+    <img
+      src={chevronDownIcon}
+      alt=""
+      className={clsx('h-[14.4px] w-[14.4px] transition-transform', open && 'rotate-180')}
+    />
+  );
 }
 
 /**

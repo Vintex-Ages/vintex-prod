@@ -189,7 +189,14 @@ const additionalProductSeeds = [
   ['Calça clochard listrada', 94.9, '38', 'Listras bege', 'Amaro', 'calca-jeans.jpg'],
   ['Camisa jeans manga curta', 84.9, 'M', 'Índigo', 'Levi’s', 'camisa-social.jpg'],
   ['Saia envelope estampada', 74.9, 'M', 'Estampa azul', 'Farm', 'vestido-floral.jpg'],
-  ['Jaqueta de sarja verde-musgo', 149.9, 'G', 'Verde-musgo', 'Hering', 'jaqueta-jeans-vintage.jpg'],
+  [
+    'Jaqueta de sarja verde-musgo',
+    149.9,
+    'G',
+    'Verde-musgo',
+    'Hering',
+    'jaqueta-jeans-vintage.jpg',
+  ],
   ['Blusa manga longa canelada', 54.9, 'P', 'Bordô', 'Renner', 'blusa-bordada-vintage.jpg'],
   ['Calça skinny preta', 99.9, '40', 'Preto', 'Zara', 'calca-jeans.jpg'],
   ['Vestido camisola estampado', 89.9, 'G', 'Estampa floral', 'C&A', 'vestido-floral.jpg'],
@@ -203,7 +210,14 @@ const additionalProductSeeds = [
   ['Saia longa jeans', 109.9, '40', 'Azul escuro', 'Levi’s', 'calca-jeans.jpg'],
   ['Camisa de viscose estampada', 79.9, 'M', 'Estampa verde', 'C&A', 'camisa-social.jpg'],
   ['Jaqueta puffer vermelha', 169.9, 'G', 'Vermelho', 'Adidas', 'jaqueta-bomber.jpg'],
-  ['Regata de seda estampada', 89.9, 'P', 'Estampa geométrica', 'Zara', 'blusa-bordada-vintage.jpg'],
+  [
+    'Regata de seda estampada',
+    89.9,
+    'P',
+    'Estampa geométrica',
+    'Zara',
+    'blusa-bordada-vintage.jpg',
+  ],
   ['Calça reta de alfaiataria', 119.9, '38', 'Grafite', 'Amaro', 'calca-jeans.jpg'],
   ['Vestido de poá preto e branco', 129.9, 'M', 'Poá', 'Renner', 'vestido-floral.jpg'],
   ['Suéter listrado colorido', 94.9, 'G', 'Listras coloridas', 'Hering', 'jaqueta-bomber.jpg'],
@@ -221,24 +235,24 @@ export const products: ProductDetail[] = [
   ...baseProducts,
   ...additionalProductSeeds.map(
     ([name, price, size, color, brand, image], index): ProductDetail => {
-    const imageUrl = `/images/products/${image}`;
-    const store = activeStores[index % activeStores.length].store;
+      const imageUrl = `/images/products/${image}`;
+      const store = activeStores[index % activeStores.length].store;
 
-    return {
-      id: String(baseProducts.length + index + 1),
-      name,
-      price,
-      coverImageUrl: imageUrl,
-      store,
-      category: 'Roupas',
-      size,
-      color,
-      brand,
-      condition: conditions[index % conditions.length],
-      description: 'Peça de segunda mão em bom estado, pronta para ganhar novas histórias.',
-      status: 'ativo',
-      media: [{ type: 'image', url: imageUrl, position: 0 }],
-    };
+      return {
+        id: String(baseProducts.length + index + 1),
+        name,
+        price,
+        coverImageUrl: imageUrl,
+        store,
+        category: 'Roupas',
+        size,
+        color,
+        brand,
+        condition: conditions[index % conditions.length],
+        description: 'Peça de segunda mão em bom estado, pronta para ganhar novas histórias.',
+        status: 'ativo',
+        media: [{ type: 'image', url: imageUrl, position: 0 }],
+      };
     },
   ),
 ];

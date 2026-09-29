@@ -49,7 +49,9 @@ function StyleSelector({
     <ul
       className={clsx(
         'flex flex-col',
-        isOnboarding ? 'gap-2.5 tablet:grid tablet:grid-cols-2 tablet:gap-4 web:grid-cols-3' : 'gap-3',
+        isOnboarding
+          ? 'gap-2.5 tablet:grid tablet:grid-cols-2 tablet:gap-4 web:grid-cols-3'
+          : 'gap-3',
       )}
     >
       {styles.map((style) => {
@@ -78,7 +80,9 @@ function StyleSelector({
                   aria-hidden="true"
                   className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-vermelho-escuro"
                 >
-                  {onboardingIcons[style.value] ? <img src={onboardingIcons[style.value]} alt="" /> : null}
+                  {onboardingIcons[style.value] ? (
+                    <img src={onboardingIcons[style.value]} alt="" />
+                  ) : null}
                 </span>
               ) : (
                 <span
@@ -89,7 +93,12 @@ function StyleSelector({
                 </span>
               )}
 
-              <span className={clsx('flex min-w-0 flex-1 flex-col', isOnboarding ? 'gap-0.5' : 'gap-0.5')}>
+              <span
+                className={clsx(
+                  'flex min-w-0 flex-1 flex-col',
+                  isOnboarding ? 'gap-0.5' : 'gap-0.5',
+                )}
+              >
                 <span
                   className={clsx(
                     'font-ui text-tinta',
@@ -104,9 +113,7 @@ function StyleSelector({
                   <span
                     className={clsx(
                       'text-texto-auxiliar',
-                      isOnboarding
-                        ? 'font-ui text-[11px] leading-[1.35]'
-                        : 'text-body-sm',
+                      isOnboarding ? 'font-ui text-[11px] leading-[1.35]' : 'text-body-sm',
                     )}
                   >
                     {style.description}

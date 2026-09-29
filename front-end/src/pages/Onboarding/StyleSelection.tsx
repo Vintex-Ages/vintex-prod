@@ -106,7 +106,9 @@ function StyleSelection() {
         setStyles(availableStyles);
         if (preferences.length === 0) {
           setSelectedStyles(
-            FIGMA_DEFAULT_STYLES.filter((value) => availableStyles.some((style) => style.value === value)),
+            FIGMA_DEFAULT_STYLES.filter((value) =>
+              availableStyles.some((style) => style.value === value),
+            ),
           );
           setClothingSizes(FIGMA_DEFAULT_CLOTHING_SIZES);
           setShoeSizes(FIGMA_DEFAULT_SHOE_SIZES);
@@ -176,7 +178,11 @@ function StyleSelection() {
                 <img src={backIcon} alt="" />
               </span>
             </button>
-            <img src={brand} alt="Vintex" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <img
+              src={brand}
+              alt="Vintex"
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+            />
             <button
               type="button"
               onClick={() => navigate(paths.home)}
@@ -204,9 +210,15 @@ function StyleSelection() {
           </p>
 
           {loading ? (
-            <ul className="flex flex-col gap-2.5 tablet:grid tablet:grid-cols-2 tablet:gap-4 web:grid-cols-3" aria-hidden="true">
+            <ul
+              className="flex flex-col gap-2.5 tablet:grid tablet:grid-cols-2 tablet:gap-4 web:grid-cols-3"
+              aria-hidden="true"
+            >
               {Array.from({ length: 6 }).map((_, index) => (
-                <li key={index} className="h-[77px] animate-pulse border border-linha bg-branco-quente" />
+                <li
+                  key={index}
+                  className="h-[77px] animate-pulse border border-linha bg-branco-quente"
+                />
               ))}
             </ul>
           ) : error ? (

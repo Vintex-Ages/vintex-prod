@@ -63,9 +63,7 @@ function Home() {
   const load = useCallback(() => {
     setLoading(true);
     setError(false);
-    (selectedCategory
-      ? getFeedWithDetails({ category: selectedCategory })
-      : getFeedWithDetails())
+    (selectedCategory ? getFeedWithDetails({ category: selectedCategory }) : getFeedWithDetails())
       .then(setFeed)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
@@ -85,9 +83,10 @@ function Home() {
       .then(([styles, preferences]: [StyleOption[], Preference[]]) => {
         if (!current) return;
         setPreferenceLabels(
-          preferences.filter((preference) => preference.type === 'estilo').map(
-            (preference) => styles.find((style) => style.value === preference.value)?.label,
-          ).filter((label): label is string => Boolean(label)),
+          preferences
+            .filter((preference) => preference.type === 'estilo')
+            .map((preference) => styles.find((style) => style.value === preference.value)?.label)
+            .filter((label): label is string => Boolean(label)),
         );
       })
       .catch(() => {
@@ -160,14 +159,14 @@ function Home() {
             aria-label="Categorias de peças"
             className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:hidden"
           >
-              {CATEGORIES.map(({ label, value }) => (
-                <FilterChip
-                  key={label}
-                  label={label}
-                  active={selectedCategory === value}
-                  onToggle={() => setSelectedCategory(value)}
-                />
-              ))}
+            {CATEGORIES.map(({ label, value }) => (
+              <FilterChip
+                key={label}
+                label={label}
+                active={selectedCategory === value}
+                onToggle={() => setSelectedCategory(value)}
+              />
+            ))}
             <FilterToggle onClick={() => navigate(paths.catalog)} />
           </nav>
         )}

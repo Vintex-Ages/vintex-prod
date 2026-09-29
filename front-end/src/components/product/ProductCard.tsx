@@ -103,11 +103,7 @@ function ProductCard({
           </Link>
         </p>
 
-        <p
-          className={clsx(
-            'truncate font-ui text-[8px] leading-normal text-texto-auxiliar',
-          )}
-        >
+        <p className={clsx('truncate font-ui text-[8px] leading-normal text-texto-auxiliar')}>
           {product.store.name}
           {product.store.city ? ` - ${product.store.city}` : null}
         </p>

@@ -82,18 +82,19 @@ function Catalog() {
 
   useEffect(() => {
     if (!legacyCategory) return;
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete('q');
-      next.set('category', legacyCategory);
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete('q');
+        next.set('category', legacyCategory);
+        return next;
+      },
+      { replace: true },
+    );
   }, [legacyCategory, setSearchParams]);
 
   useEffect(() => {
-    setFilters((current) =>
-      current.category === category ? current : { ...current, category },
-    );
+    setFilters((current) => (current.category === category ? current : { ...current, category }));
   }, [category]);
 
   const run = useCallback(() => {
@@ -133,33 +134,42 @@ function Catalog() {
 
   function handleSubmit(value: string) {
     const trimmed = value.trim();
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (trimmed) next.set('q', trimmed);
-      else next.delete('q');
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (trimmed) next.set('q', trimmed);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   function handleSearchChange(value: string) {
     setInputValue(value);
     const query = value.trim();
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (query) next.set('q', query);
-      else next.delete('q');
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (query) next.set('q', query);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   function handleFiltersChange(nextFilters: CatalogFilters) {
     setFilters(nextFilters);
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (nextFilters.category) next.set('category', nextFilters.category);
-      else next.delete('category');
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (nextFilters.category) next.set('category', nextFilters.category);
+        else next.delete('category');
+        return next;
+      },
+      { replace: true },
+    );
   }
 
   const hasFilters = Object.values(filters).some(
@@ -172,10 +182,7 @@ function Catalog() {
   }
 
   return (
-    <Container
-      as="main"
-      className="flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8"
-    >
+    <Container as="main" className="flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8">
       <div className="-mx-4 -mt-6 tablet:hidden">
         <BrandSignature headingAs="p" />
       </div>

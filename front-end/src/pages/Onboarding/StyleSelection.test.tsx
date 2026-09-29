@@ -71,7 +71,10 @@ describe('StyleSelection', () => {
     const user = userEvent.setup();
     renderScreen();
 
-    expect(await screen.findByRole('button', { name: /^P$/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(await screen.findByRole('button', { name: /^P$/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.getByRole('button', { name: /^37$/ })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: /^PP$/ }));
     await user.click(screen.getByRole('button', { name: /^36$/ }));
@@ -132,7 +135,9 @@ describe('StyleSelection', () => {
     await user.click(screen.getByRole('button', { name: /^M$/ }));
     await user.click(screen.getByRole('button', { name: /^37$/ }));
     await user.click(screen.getByRole('button', { name: /^38$/ }));
-    await user.click(await screen.findByRole('button', { name: 'SALVAR ESTILOS E ABRIR MEU FEED' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'SALVAR ESTILOS E ABRIR MEU FEED' }),
+    );
 
     expect(savePreferences).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();

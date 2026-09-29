@@ -37,7 +37,9 @@ describe('<FilterToggle />', () => {
 
   it('announces active filter counts without changing the visual pill', () => {
     const { rerender } = render(<FilterToggle onClick={vi.fn()} count={3} />);
-    expect(screen.getByRole('button', { name: 'Mais filtros, 3 filtros ativos' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Mais filtros, 3 filtros ativos' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('3')).toBeNull();
 
     rerender(<FilterToggle onClick={vi.fn()} count={0} />);
