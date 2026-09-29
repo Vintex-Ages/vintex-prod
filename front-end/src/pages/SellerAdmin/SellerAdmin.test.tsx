@@ -3,13 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '@/context/ToastContext';
-import { getMine, publish, SellerProductError, unpublish } from '@/services/sellerProductService';
+import {
+  getMine,
+  getSalesSummary,
+  publish,
+  SellerProductError,
+  unpublish,
+} from '@/services/sellerProductService';
 import type { Paginated, SellerProduct } from '@/types/product';
 import SellerAdmin from './SellerAdmin';
 
 vi.mock('@/services/sellerProductService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/sellerProductService')>()),
   getMine: vi.fn(),
+  getSalesSummary: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
 }));
@@ -45,6 +52,13 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getSalesSummary).mockImplementation(async (period) => ({
+    period,
+    soldCount: 0,
+    gross: 0,
+    commission: 0,
+    net: 0,
+  }));
 });
 
 describe('<SellerAdmin />', () => {
@@ -165,7 +179,8 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    expect(screen.getByRole('status')).toHaveTextContent('Carregando suas peças…');
+    // Duas regiões carregam ao mesmo tempo: as peças e o resumo financeiro.
+    expect(screen.getByText('Carregando suas peças…')).toHaveAttribute('role', 'status');
     expect(screen.getByTestId('seller-skeleton')).toBeInTheDocument();
   });
 
@@ -291,6 +306,82 @@ describe('<SellerAdmin />', () => {
         await screen.findByText('Esta peça já foi vendida e não pode mais ser alterada.'),
       ).toBeInTheDocument();
       expect(within(linha('Jaqueta jeans')).getByText('Anunciada')).toBeInTheDocument();
+    });
+  });
+
+  describe('visão financeira (FE-US019-3)', () => {
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina([]));
+    });
+
+    // Objetivo declarado: garantir a visão financeira (RN-51.1, RN-11).
+    it('duas vendas de R$ 100 mostram bruto 200, comissão 18 e líquido 182', async () => {
+      vi.mocked(getSalesSummary).mockResolvedValue({
+        period: 'month',
+        soldCount: 2,
+        gross: 200,
+        commission: 18,
+        net: 182,
+      });
+
+      renderPage();
+
+      const bruto = await screen.findByTestId('financeiro-bruto');
+      expect(within(bruto).getByText('Vendido no período')).toBeInTheDocument();
+      expect(within(bruto).getByText('R$ 200,00')).toBeInTheDocument();
+      const comissao = screen.getByTestId('financeiro-comissao');
+      expect(within(comissao).getByText('Comissão (9%)')).toBeInTheDocument();
+      expect(within(comissao).getByText('R$ 18,00')).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('financeiro-liquido')).getByText('R$ 182,00'),
+      ).toBeInTheDocument();
+      expect(getSalesSummary).toHaveBeenCalledWith('month');
+    });
+
+    // Objetivo declarado: garantir o filtro.
+    it('trocar o período refaz a consulta com skeleton nos cards', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId('financeiro-bruto');
+
+      let resolver: () => void = () => {};
+      vi.mocked(getSalesSummary).mockImplementationOnce(
+        (period) =>
+          new Promise((resolve) => {
+            resolver = () => resolve({ period, soldCount: 1, gross: 100, commission: 9, net: 91 });
+          }),
+      );
+
+      await user.selectOptions(screen.getByLabelText('Período'), 'Últimos 30 dias');
+
+      expect(getSalesSummary).toHaveBeenLastCalledWith('30d');
+      expect(screen.getByTestId('financeiro-skeleton')).toBeInTheDocument();
+
+      resolver();
+      const liquido = await screen.findByTestId('financeiro-liquido');
+      expect(await within(liquido).findByText('R$ 91,00')).toBeInTheDocument();
+    });
+
+    it('sem vendas mostra R$ 0,00 e uma nota', async () => {
+      renderPage();
+
+      const liquido = await screen.findByTestId('financeiro-liquido');
+      expect(within(liquido).getByText('R$ 0,00')).toBeInTheDocument();
+      expect(screen.getByText(/Nenhuma venda neste período ainda/)).toBeInTheDocument();
+    });
+
+    it('erro no resumo mostra tentar de novo, que refaz a consulta', async () => {
+      vi.mocked(getSalesSummary).mockRejectedValueOnce(new Error('fora do ar'));
+      const user = userEvent.setup();
+      renderPage();
+
+      expect(
+        await screen.findByText('Não foi possível carregar o resumo financeiro.'),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+      expect(await screen.findByTestId('financeiro-liquido')).toBeInTheDocument();
+      expect(getSalesSummary).toHaveBeenCalledTimes(2);
     });
   });
 });

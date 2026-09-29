@@ -11,6 +11,7 @@ import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts'
 import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
+import FinancialSummary from './FinancialSummary';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
 const CHIPS: { value: StatusFilter; label: string }[] = [
@@ -32,6 +33,9 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
  *
  * Despublicar confirma com um Toast que oferece "Desfazer" (republica). A
  * linha muda sem recarregar a lista; erro do back vira Toast de erro.
+ *
+ * Abaixo das peças, a seção "Financeiro" (FE-US019-3, #222) com o resumo de
+ * vendas por período — ver `FinancialSummary`.
  */
 const SOLD_REASON = 'Peça vendida não pode ser editada';
 
@@ -191,6 +195,8 @@ function SellerAdmin() {
           )}
         </>
       )}
+
+      <FinancialSummary />
     </Container>
   );
 }
