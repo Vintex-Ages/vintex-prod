@@ -62,7 +62,10 @@ function renderSell() {
 async function renderForm() {
   const utils = renderSell();
   const user = userEvent.setup({ delay: null });
-  await user.click(await screen.findByRole('button', { name: 'Aceitar' }));
+  const aceitar = await screen.findByRole('button', { name: 'Aceitar' });
+  // O modal habilita o Aceitar depois de medir o texto; clicar antes não faz nada.
+  await waitFor(() => expect(aceitar).toBeEnabled());
+  await user.click(aceitar);
   await screen.findByRole('button', { name: 'Abrir minha loja' });
   return utils;
 }
