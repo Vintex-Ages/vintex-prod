@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { getFeed } from '@/services/catalogService';
+import type { AuthUser } from '@/types/auth';
 import type { Paginated, Product } from '@/types/product';
 import Home from './Home';
 
@@ -41,15 +43,36 @@ function VintexProbe() {
   return <p>Vintex recebeu: {message}</p>;
 }
 
-function renderHome() {
+const BUYER: AuthUser = {
+  id: 'u_1',
+  name: 'Ana',
+  email: 'ana@exemplo.com',
+  is_seller: false,
+  is_admin: false,
+};
+
+/** Sem `user`, renderiza a Home anônima. */
+function renderHome(user: AuthUser | null = null) {
+  const auth: AuthContextValue = {
+    user,
+    token: user ? 'token' : null,
+    isAuthenticated: user !== null,
+    loading: false,
+    login: () => {},
+    logout: () => {},
+    refreshUser: async () => {},
+  };
   return render(
-    <MemoryRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
-        <Route path="/vintex" element={<VintexProbe />} />
-      </Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
+          <Route path="/vintex" element={<VintexProbe />} />
+          <Route path="/sell" element={<h1>Página de vender</h1>} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
@@ -163,5 +186,33 @@ describe('<Home />', () => {
     await user.type(input, 'jaqueta de couro{Enter}');
 
     expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
+  });
+  describe('convite "Quero vender" (FE-US006-1, #212)', () => {
+    beforeEach(() => {
+      vi.mocked(getFeed).mockResolvedValue(feed);
+    });
+
+    it('logado sem loja: mostra o convite e ele leva a /sell', async () => {
+      const user = userEvent.setup();
+      renderHome(BUYER);
+
+      await user.click(await screen.findByRole('link', { name: 'Quero vender' }));
+
+      expect(await screen.findByRole('heading', { name: 'Página de vender' })).toBeInTheDocument();
+    });
+
+    it('anônimo não vê o convite', async () => {
+      renderHome();
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+    });
+
+    it('quem já vende não vê o convite', async () => {
+      renderHome({ ...BUYER, is_seller: true });
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+    });
   });
 });
