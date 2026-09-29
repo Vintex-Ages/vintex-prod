@@ -4,7 +4,7 @@ Regra única para hover, foco e pressionado em elementos interativos (botões,
 links, ícone-botão). Todo componente novo já nasce com isto.
 
 Enquanto o Figma não traz valores de hover inspecionáveis, a regra é derivada e
-não cria token de cor novo (a paleta é fechada em 10 cores, ver
+não cria token de cor novo (a paleta é fechada em 11 cores, ver
 `src/styles/tokens.ts`). Se o design especificar valores, troca-se
 `brightness-*` por um token `*-hover` dedicado sem mudar a estrutura das classes.
 Histórico e decisão: issue #130.
