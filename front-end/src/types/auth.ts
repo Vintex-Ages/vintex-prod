@@ -74,8 +74,8 @@ export interface RegisterInput {
   phone?: string;
   /**
    * Versão dos termos de uso aceita no cadastro (FE-SVC-legal, #203; vem de
-   * `legalService.getTerms().version`). Opcional até o fluxo de aceite (#214)
-   * existir.
+   * `legalService.getTerms().version`). A tela de cadastro sempre envia
+   * (FE-US003-1, #214); segue opcional no tipo para os outros chamadores.
    */
   acceptedTermsVersion?: string;
 }
