@@ -105,7 +105,7 @@ export default function SellerProductForm() {
 
   if (loading) {
     return (
-      <Container>
+      <Container as="main">
         <p className="py-10 text-body text-texto-auxiliar" role="status">
           Carregando a peça...
         </p>
@@ -114,7 +114,7 @@ export default function SellerProductForm() {
   }
 
   return (
-    <Container>
+    <Container as="main">
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 py-6 tablet:py-10" noValidate>
         <Stepper
           steps={ETAPAS_CADASTRO}

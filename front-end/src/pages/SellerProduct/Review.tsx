@@ -269,7 +269,7 @@ export default function Review() {
   }
 
   return (
-    <Container>
+    <Container as="main">
       <div className="flex flex-col gap-6 py-6 tablet:py-10">
         <Stepper
           steps={ETAPAS_CADASTRO}
