@@ -7,15 +7,18 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { SearchBar } from '@/components/catalog/SearchBar';
+import { CATEGORIES } from '@/components/catalog/categories';
+import { FilterChip } from '@/components/catalog/FilterChip';
+import FilterToggle from '@/components/catalog/FilterToggle';
 import { useAuth } from '@/context/useAuth';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { paths, productDetail } from '@/routes/paths';
-import { getFeed } from '@/services/catalogService';
+import { getFeedWithDetails } from '@/services/catalogService';
 import { getPreferences, getStyles } from '@/services/preferenceService';
 import { formatPieceCount } from '@/utils/format';
 import type { Preference, StyleOption } from '@/types/preference';
-import type { Paginated, Product } from '@/types/product';
+import type { Paginated, ProductDetail } from '@/types/product';
 
 /**
  * Termos que existem no catálogo — cada um devolve resultado tanto no mock
@@ -48,10 +51,11 @@ function Home() {
   const { user, isAuthenticated } = useAuth();
   const showSellInvite = isAuthenticated && !user?.is_seller;
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
   // ponytail: Home favorites are page-local toggles until a shared favorites service exists.
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [feed, setFeed] = useState<Paginated<Product> | null>(null);
+  const [feed, setFeed] = useState<Paginated<ProductDetail> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
@@ -59,11 +63,13 @@ function Home() {
   const load = useCallback(() => {
     setLoading(true);
     setError(false);
-    getFeed()
+    (selectedCategory
+      ? getFeedWithDetails({ category: selectedCategory })
+      : getFeedWithDetails())
       .then(setFeed)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedCategory]);
 
   useEffect(load, [load]);
 
@@ -79,10 +85,9 @@ function Home() {
       .then(([styles, preferences]: [StyleOption[], Preference[]]) => {
         if (!current) return;
         setPreferenceLabels(
-          preferences.map(
-            (preference) =>
-              styles.find((style) => style.value === preference.value)?.label ?? preference.value,
-          ),
+          preferences.filter((preference) => preference.type === 'estilo').map(
+            (preference) => styles.find((style) => style.value === preference.value)?.label,
+          ).filter((label): label is string => Boolean(label)),
         );
       })
       .catch(() => {
@@ -99,7 +104,10 @@ function Home() {
     setLoadingMore(true);
     setError(false);
     try {
-      const next = await getFeed({ page: feed.page + 1 });
+      const next = await getFeedWithDetails({
+        page: feed.page + 1,
+        ...(selectedCategory ? { category: selectedCategory } : {}),
+      });
       setFeed({ ...next, items: [...feed.items, ...next.items] });
     } catch {
       setError(true);
@@ -128,20 +136,40 @@ function Home() {
 
   return (
     <main className={isAuthenticated ? 'bg-white' : undefined}>
-      <div className="tablet:hidden">
-        <BrandSignature />
-      </div>
+      <Container
+        className={
+          isAuthenticated
+            ? 'pt-5 tablet:pt-8'
+            : 'flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8'
+        }
+      >
+        {!isAuthenticated && (
+          <div className="-mx-4 -mt-6 tablet:hidden">
+            <BrandSignature headingAs="p" />
+          </div>
+        )}
 
-      <Container className="pt-5 tablet:pt-8">
         {!isAuthenticated && (
           <div className="tablet:hidden">
-            <SearchBar
-              value={searchTerm}
-              onChange={setSearchTerm}
-              onSubmit={searchCatalog}
-              placeholder="Busque por peça ou marca"
-            />
+            <SearchBar value={searchTerm} onChange={setSearchTerm} onSubmit={searchCatalog} />
           </div>
+        )}
+
+        {!isAuthenticated && (
+          <nav
+            aria-label="Categorias de peças"
+            className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:hidden"
+          >
+              {CATEGORIES.map(({ label, value }) => (
+                <FilterChip
+                  key={label}
+                  label={label}
+                  active={selectedCategory === value}
+                  onToggle={() => setSelectedCategory(value)}
+                />
+              ))}
+            <FilterToggle onClick={() => navigate(paths.catalog)} />
+          </nav>
         )}
 
         {/* O spotlight segue como caminho de busca com IA na abertura desktop. */}
@@ -247,10 +275,23 @@ function Home() {
         as="section"
         aria-labelledby="feed-titulo"
         aria-busy={loading || loadingMore}
-        className="pt-10 tablet:pt-14"
+        className={isAuthenticated ? 'pt-10 tablet:pt-14' : 'pt-4 tablet:pt-14'}
       >
-        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="feed-titulo" className="font-display text-h2 text-tinta">
+        <div
+          className={clsx(
+            'mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
+            !isAuthenticated &&
+              'mb-[17.6px] flex-col items-start gap-[7.9px] border-b-[0.8px] border-tinta pb-4 tablet:mb-6 tablet:flex-row tablet:items-baseline tablet:gap-y-1 tablet:border-b-0 tablet:pb-0',
+          )}
+        >
+          <h2
+            id="feed-titulo"
+            className={clsx(
+              'font-display text-h2 text-tinta',
+              !isAuthenticated &&
+                'text-[30.8px] font-semibold leading-[30.8px] tracking-[-1.232px] tablet:text-h2 tablet:leading-[1.05] tablet:tracking-normal',
+            )}
+          >
             {isAuthenticated ? 'Garimpados para Você' : 'Feed de achados'}
           </h2>
           {isAuthenticated ? (
@@ -261,8 +302,13 @@ function Home() {
               Editar minhas preferências
             </Link>
           ) : feed && feed.total > 0 ? (
-            <p className="font-ui text-body text-texto-auxiliar">
+            <p className="hidden font-ui text-body-sm text-texto-auxiliar tablet:block">
               {formatPieceCount(feed.total)} à venda agora
+            </p>
+          ) : null}
+          {!isAuthenticated && feed && feed.total > 0 ? (
+            <p className="font-ui text-[12px] leading-normal text-texto-auxiliar tablet:hidden">
+              {formatPieceCount(feed.total)} encontradas
             </p>
           ) : null}
         </div>

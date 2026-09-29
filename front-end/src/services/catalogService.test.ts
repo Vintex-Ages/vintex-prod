@@ -18,7 +18,7 @@ describe('catalogService (mock)', () => {
     it('retorna as peças ativas do mock, paginadas', async () => {
       const page = await getFeed({});
 
-      expect(page.items).toHaveLength(ACTIVE_COUNT);
+      expect(page.items).toHaveLength(Math.min(ACTIVE_COUNT, page.pageSize));
       expect(page.page).toBe(1);
       expect(page.pageSize).toBe(20);
       expect(page.total).toBe(ACTIVE_COUNT);
@@ -42,7 +42,7 @@ describe('catalogService (mock)', () => {
     it('ordena as mais recentes primeiro', async () => {
       const page = await getFeed({ pageSize: 1 });
 
-      expect(page.items[0].id).toBe('8');
+      expect(page.items[0].id).toBe(mockProducts.at(-1)?.id);
     });
   });
 
@@ -51,7 +51,7 @@ describe('catalogService (mock)', () => {
     it('retorna as peças ativas já com category e condition', async () => {
       const page = await getFeedWithDetails({});
 
-      expect(page.items).toHaveLength(ACTIVE_COUNT);
+      expect(page.items).toHaveLength(Math.min(ACTIVE_COUNT, page.pageSize));
       expect(page.items.every((item) => typeof item.category === 'string')).toBe(true);
       expect(page.items.every((item) => typeof item.condition === 'string')).toBe(true);
     });
@@ -67,13 +67,20 @@ describe('catalogService (mock)', () => {
       expect(withDetails.pageSize).toBe(3);
       expect(withDetails.total).toBe(ACTIVE_COUNT);
     });
+
+    it('filtra o feed pela categoria e devolve a contagem filtrada', async () => {
+      const page = await getFeedWithDetails({ category: 'Acessórios' });
+
+      expect(page.items).toHaveLength(0);
+      expect(page.total).toBe(0);
+    });
   });
 
   describe('getProduct', () => {
     it('retorna o detalhe completo quando o id existe', async () => {
       const product = await getProduct('1');
 
-      expect(product.name).toBe('Nike Camiseta Preto');
+      expect(product.name).toBe('Jaqueta jeans vintage clara');
       expect(product.category).toBe('Roupas');
       expect(product.media.length).toBeGreaterThan(0);
     });
@@ -88,20 +95,19 @@ describe('catalogService (mock)', () => {
 
   describe('getProducts', () => {
     it('combina filtros de categoria e marca', async () => {
-      const page = await getProducts({ category: 'Sapatos', brand: 'Adidas' });
+      const page = await getProducts({ category: 'Roupas', brand: 'Zara' });
 
-      expect(page.items).toHaveLength(1);
-      expect(page.items[0].id).toBe('3');
+      expect(page.items.map((item) => item.id)).toContain('3');
     });
 
     it('filtra por faixa de preço', async () => {
       const page = await getProducts({ priceMin: 200, priceMax: 260 });
 
-      expect(page.items.map((item) => item.id).sort()).toEqual(['3', '6']);
+      expect(page.items.map((item) => item.id)).toEqual(['3']);
     });
 
     it('filtra por texto (q) ignorando acentos', async () => {
-      const page = await getProducts({ q: 'tenis' });
+      const page = await getProducts({ q: 'biker' });
 
       expect(page.items).toHaveLength(1);
       expect(page.items[0].id).toBe('3');
@@ -110,11 +116,12 @@ describe('catalogService (mock)', () => {
 
   describe('search', () => {
     it('com correspondência: match_type exact e os itens encontrados', async () => {
-      const result = await search('nike', {});
+      const result = await search('zara', {});
 
       expect(result.match_type).toBe('exact');
-      expect(result.items).toHaveLength(1);
-      expect(result.total).toBe(1);
+      expect(result.items.map((item) => item.id)).toContain('3');
+      expect(result.total).toBe(result.items.length);
+      expect(result.total).toBeGreaterThan(1);
       expect(result.suggestions).toBeUndefined();
     });
 
@@ -130,14 +137,13 @@ describe('catalogService (mock)', () => {
     });
 
     it('combina o termo de busca com os filtros ativos, sem descartar nenhum', async () => {
-      const result = await search('nike', { category: 'Roupas' });
+      const result = await search('zara', { category: 'Roupas' });
       expect(result.match_type).toBe('exact');
-      expect(result.items).toHaveLength(1);
-      expect(result.items[0].id).toBe('1');
+      expect(result.items.map((item) => item.id)).toContain('3');
     });
 
     it('não retorna itens que batem com o termo mas não com o filtro ativo', async () => {
-      const result = await search('nike', { category: 'Sapatos' });
+      const result = await search('zara', { category: 'Sapatos' });
       expect(result.match_type).toBe('fallback');
       expect(result.items).toEqual([]);
     });

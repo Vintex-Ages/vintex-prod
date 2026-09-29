@@ -50,15 +50,15 @@ const CART_WITH_PRODUCT: Cart = {
         {
           product: {
             id: '1',
-            name: 'Nike Camiseta Preto',
-            price: 79.9,
-            coverImageUrl: 'https://picsum.photos/seed/vintex-1-0/600/800',
+            name: 'Jaqueta jeans vintage clara',
+            price: 159.9,
+            coverImageUrl: '/images/products/jaqueta-jeans-vintage.jpg',
             store: { id: '1', name: 'Brechó Mercado Público', city: 'Porto Alegre' },
           },
           addedAt: '2026-09-26T12:00:00Z',
         },
       ],
-      subtotalCents: 7990,
+      subtotalCents: 15990,
     },
   ],
 };
@@ -143,28 +143,44 @@ beforeEach(() => {
 });
 
 describe('<ProductDetail />', () => {
-  // Objetivo declarado do ticket: mostra atributos, preço e card da loja.
-  // NOTA: categoria e cor (também exigidos pelo ticket) ficaram de fora da
-  // ficha visível por decisão explícita, pra bater com o layout do print de
-  // referência (T-02) — ver JSDoc do componente.
-  it('mostra marca, tamanho, conservação, material, medidas, cidade, preço e a história da peça', async () => {
+  it('mostra os atributos do produto, preço, loja e história da peça', async () => {
     renderAt('/product/1');
 
-    expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
-    expect(screen.getByText('Nike')).toBeTruthy();
-    expect(screen.getByText('M (Médio)')).toBeTruthy();
-    expect(screen.getByText('Seminovo')).toBeTruthy();
-    expect(screen.getByText('100% algodão')).toBeTruthy();
-    expect(screen.getByText('Ombro a ombro 44cm • Comprimento 68cm')).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Roupas · Azul claro · Usado')).toBeInTheDocument();
+    expect(screen.getByText('Vintage')).toBeTruthy();
+    expect(screen.getByText('G (Grande)')).toBeTruthy();
+    expect(screen.getByText('Usado')).toBeTruthy();
+    expect(screen.getByText('Denim 100% algodão')).toBeTruthy();
+    expect(screen.getByText('Ombro a ombro 50cm • Comprimento 62cm')).toBeTruthy();
     expect(screen.getAllByText('Porto Alegre').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/R\$\s?79,90/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Peça garimpada no Mercado Público de Porto Alegre/)).toBeTruthy();
+    expect(screen.getAllByText(/R\$\s?159,90/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeTruthy();
+  });
+
+  it('mostra a curadoria do Figma e alterna o item localmente no look', async () => {
+    const user = userEvent.setup();
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+    expect(screen.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Bolsa Baú de Couro Caramelo' })).toBeInTheDocument();
+
+    const addToLook = screen.getByRole('button', { name: '+ Adicionar' });
+    await user.click(addToLook);
+
+    expect(screen.getByRole('button', { name: '✓ Adicionada ao look' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('mostra a trilha de navegação (início / cidade / loja / produto)', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     const trilha = screen.getByRole('navigation', { name: 'Trilha' });
     expect(within(trilha).getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/');
@@ -172,17 +188,22 @@ describe('<ProductDetail />', () => {
     expect(
       within(trilha).getAllByText('Brechó Mercado Público', { exact: false }).length,
     ).toBeGreaterThan(0);
-    expect(within(trilha).getByText('Nike Camiseta Preto')).toHaveAttribute('aria-current', 'page');
+    expect(within(trilha).getByText('Jaqueta jeans vintage clara')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
-  it('mostra a galeria de fotos da peça, com miniaturas de navegação', async () => {
+  it('mostra a foto da peça sem controles de navegação para uma única imagem', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getByRole('group', { name: /Galeria de fotos/ })).toBeTruthy();
-    expect(screen.getByText('Foto 1 de 3')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /Ver foto \d de 3/ })).toHaveLength(3);
+    expect(
+      screen.getByRole('img', { name: /Jaqueta jeans vintage clara — foto 1 de 1/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Próxima foto' })).not.toBeInTheDocument();
   });
 
   it('mostra carregando antes do produto resolver', () => {
@@ -194,7 +215,7 @@ describe('<ProductDetail />', () => {
   it('mostra nome da loja e o selo de verificado quando a loja é verificada', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getAllByText('Brechó Mercado Público').length).toBeGreaterThan(0);
     expect(screen.getByRole('img', { name: 'Confiável' })).toBeTruthy();
@@ -203,7 +224,7 @@ describe('<ProductDetail />', () => {
   it('não mostra o selo de verificado quando a loja não é verificada', async () => {
     renderAt('/product/3');
 
-    await screen.findByRole('heading', { name: 'Adidas Tênis Branco' });
+    await screen.findByRole('heading', { name: 'Jaqueta biker preta' });
 
     expect(screen.getAllByText('Roupa Rodada').length).toBeGreaterThan(0);
     expect(screen.queryByRole('img', { name: 'Confiável' })).toBeNull();
@@ -213,7 +234,7 @@ describe('<ProductDetail />', () => {
   it('o card da loja é um link', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getByRole('link', { name: /Ver loja/ })).toBeTruthy();
   });
@@ -227,15 +248,15 @@ describe('<ProductDetail />', () => {
   it('botão de ação final mostra "Comprar Agora" com o preço', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
-    expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?79,90/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?159,90/ })).toBeTruthy();
   });
 
   it('peça vendida (status "vendido") mostra o selo "Já vendida"', async () => {
     renderAt('/product/4');
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
     expect(screen.getByText('Já vendida')).toBeInTheDocument();
   });
@@ -243,16 +264,16 @@ describe('<ProductDetail />', () => {
   it('peça vendida continua navegável — mostra o resto da ficha normalmente', async () => {
     renderAt('/product/4');
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
-    expect(screen.getByText('Zara')).toBeInTheDocument();
+    expect(screen.getByText('Sem etiqueta')).toBeInTheDocument();
     expect(screen.getAllByText(/R\$\s?149,90/).length).toBeGreaterThan(0);
   });
 
   it('peça ativa (status "ativo") NÃO mostra o selo e mantém "Comprar Agora" habilitado', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.queryByText('Já vendida')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
@@ -267,7 +288,7 @@ describe('<ProductDetail />', () => {
   it('peça vendida: favoritar e comprar ficam desabilitados, mesmo logado', async () => {
     renderAt('/product/4', { authenticated: true });
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
     expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
@@ -312,7 +333,9 @@ describe('<ProductDetail />', () => {
       await user.click(screen.getByRole('button', { name: 'Agora não' }));
 
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
+      expect(
+        await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' }),
+      ).toBeTruthy();
     });
 
     it('logado: favoritar alterna o estado visual sem abrir a barreira', async () => {
@@ -552,16 +575,15 @@ describe('<ProductDetail />', () => {
     const user = userEvent.setup();
     renderIntegratedAt('/product/1');
 
-    const accountButton = await screen.findByRole('button', { name: SAMPLE_USER.name });
-    expect(await screen.findByRole('button', { name: 'Carrinho, 0 itens' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Voltar' });
+    expect(await screen.findByRole('link', { name: 'Sacola (0)' })).toBeInTheDocument();
 
     const addButton = await screen.findByRole('button', { name: 'Adicionar ao carrinho' });
     await waitFor(() => expect(addButton).toBeEnabled());
     await user.click(addButton);
 
     expect(await screen.findByRole('button', { name: 'No carrinho' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Carrinho, 1 itens' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: SAMPLE_USER.name })).toBe(accountButton);
+    expect(screen.getByRole('link', { name: 'Sacola (1)' })).toBeInTheDocument();
     expect(mockedAddItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
   });
 });

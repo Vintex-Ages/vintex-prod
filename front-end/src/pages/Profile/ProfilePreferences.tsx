@@ -15,6 +15,7 @@ function ProfilePreferences() {
   const { toast } = useToast();
   const [styles, setStyles] = useState<StyleOption[]>([]);
   const [selectedValues, setSelectedValues] = useState<string[]>([]);
+  const [otherPreferences, setOtherPreferences] = useState<Preference[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -31,7 +32,12 @@ function ProfilePreferences() {
         if (loadId !== latestLoad.current) return;
 
         setStyles(availableStyles);
-        setSelectedValues(preferences.map((preference) => preference.value));
+        setSelectedValues(
+          preferences
+            .filter((preference) => preference.type === 'estilo')
+            .map((preference) => preference.value),
+        );
+        setOtherPreferences(preferences.filter((preference) => preference.type !== 'estilo'));
       })
       .catch(() => {
         if (loadId === latestLoad.current) setLoadError(true);
@@ -61,7 +67,7 @@ function ProfilePreferences() {
     setSaving(true);
 
     try {
-      await savePreferences(preferences);
+      await savePreferences([...otherPreferences, ...preferences]);
       toast('Preferências salvas com sucesso.', { kind: 'success' });
     } catch {
       toast('Não foi possível salvar suas preferências. Tente novamente.', { kind: 'error' });

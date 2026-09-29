@@ -5,6 +5,8 @@ import { SearchBar } from '@/components/catalog/SearchBar';
 import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
 import { paths } from '@/routes/paths';
+import backIcon from '@/assets/product-detail/back.svg';
+import shareIcon from '@/assets/product-detail/share.svg';
 import { AccountButton } from './AccountButton';
 import { AccountMenu } from './AccountMenu';
 import CartBadge from './CartBadge';
@@ -56,7 +58,8 @@ function Header() {
   const { user, isAuthenticated, logout } = useAuth();
   const { count } = useCart();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
 
   // O Header é montado pela rota-pai e não remonta quando a rota filha troca.
   // Sem isto, abrir "Conta" e clicar em Home ou Catálogo levava o menu aberto
@@ -98,6 +101,23 @@ function Header() {
     navigate(path);
   }
 
+  function handleBack() {
+    if (location.key === 'default') navigate(paths.home);
+    else navigate(-1);
+  }
+
+  async function shareProduct() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: document.title, url: window.location.href });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(window.location.href);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+    }
+  }
+
   const accountItems = [
     ...(user?.is_seller
       ? [
@@ -116,6 +136,48 @@ function Header() {
   /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
   const showSearch = pathname !== paths.home && pathname !== paths.catalog;
 
+  if (pathname.startsWith('/product/')) {
+    return (
+      <header className="sticky top-0 z-30 h-[68px] border-b border-linha bg-papel/95 backdrop-blur-sm">
+        <Container className="flex h-full items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-4">
+            <button
+              type="button"
+              aria-label="Voltar"
+              onClick={handleBack}
+              className="flex size-11 shrink-0 items-center justify-center border border-linha bg-papel text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            >
+              <img src={backIcon} alt="" />
+            </button>
+            <Link
+              to={paths.home}
+              aria-label="Vintex"
+              className="shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
+            >
+              <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
+            </Link>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label="Compartilhar produto"
+              onClick={() => void shareProduct()}
+              className="flex size-11 items-center justify-center border border-linha bg-papel text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            >
+              <img src={shareIcon} alt="" />
+            </button>
+            <Link
+              to={paths.cart}
+              className="flex min-h-11 items-center justify-center border border-linha bg-branco-quente px-3 font-ui text-label font-semibold uppercase tracking-wide text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            >
+              Sacola ({count})
+            </Link>
+          </div>
+        </Container>
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-30 border-b border-linha bg-papel">
       <Container className="flex items-center gap-1 py-3 tablet:gap-6 tablet:py-4">
@@ -126,18 +188,88 @@ function Header() {
           <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
         </Link>
 
-        <div className="relative shrink-0 tablet:hidden">
+        {showSearch ? (
+          <div className="relative shrink-0 tablet:hidden">
+            <button
+              type="button"
+              aria-label={mobileNavOpen ? 'Fechar menu principal' : 'Abrir menu principal'}
+              aria-expanded={mobileNavOpen}
+              aria-controls="mobile-primary-navigation"
+              onClick={() => {
+                setMobileNavOpen((value) => !value);
+                setOpen(false);
+                setMobileSearchOpen(false);
+              }}
+              className="inline-flex min-h-touch min-w-touch items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              >
+                {mobileNavOpen ? (
+                  <>
+                    <path d="m6 6 12 12" />
+                    <path d="m18 6-12 12" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M4 7h16" />
+                    <path d="M4 12h16" />
+                    <path d="M4 17h16" />
+                  </>
+                )}
+              </svg>
+            </button>
+
+            {mobileNavOpen ? (
+              <nav
+                id="mobile-primary-navigation"
+                aria-label="Principal mobile"
+                className="absolute left-0 top-full z-10 mt-2 min-w-40 border border-linha bg-branco-quente p-2"
+              >
+                <ul>
+                  {NAV_LINKS.map((link) => (
+                    <li key={link.href}>
+                      <NavLink
+                        to={link.href}
+                        end={link.href === paths.home}
+                        onClick={() => setMobileNavOpen(false)}
+                        className={({ isActive }) =>
+                          [
+                            'flex min-h-touch items-center px-3 font-ui text-body text-tinta transition-colors',
+                            'hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-tinta',
+                            isActive ? 'underline decoration-2 underline-offset-4' : 'no-underline',
+                          ].join(' ')
+                        }
+                      >
+                        {link.label}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showSearch ? (
           <button
+            ref={mobileSearchToggleRef}
             type="button"
-            aria-label={mobileNavOpen ? 'Fechar menu principal' : 'Abrir menu principal'}
-            aria-expanded={mobileNavOpen}
-            aria-controls="mobile-primary-navigation"
+            aria-label="Buscar"
+            aria-expanded={mobileSearchOpen}
+            aria-controls="mobile-header-search"
             onClick={() => {
-              setMobileNavOpen((value) => !value);
+              setMobileSearchOpen((value) => !value);
+              setMobileNavOpen(false);
               setOpen(false);
-              setMobileSearchOpen(false);
             }}
-            className="inline-flex min-h-touch min-w-touch items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+            className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta tablet:hidden"
           >
             <svg
               viewBox="0 0 24 24"
@@ -147,79 +279,13 @@ function Header() {
               stroke="currentColor"
               strokeWidth="1.8"
               strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              {mobileNavOpen ? (
-                <>
-                  <path d="m6 6 12 12" />
-                  <path d="m18 6-12 12" />
-                </>
-              ) : (
-                <>
-                  <path d="M4 7h16" />
-                  <path d="M4 12h16" />
-                  <path d="M4 17h16" />
-                </>
-              )}
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-4-4" />
             </svg>
           </button>
-
-          {mobileNavOpen ? (
-            <nav
-              id="mobile-primary-navigation"
-              aria-label="Principal mobile"
-              className="absolute left-0 top-full z-10 mt-2 min-w-40 border border-linha bg-branco-quente p-2"
-            >
-              <ul>
-                {NAV_LINKS.map((link) => (
-                  <li key={link.href}>
-                    <NavLink
-                      to={link.href}
-                      end={link.href === paths.home}
-                      onClick={() => setMobileNavOpen(false)}
-                      className={({ isActive }) =>
-                        [
-                          'flex min-h-touch items-center px-3 font-ui text-body text-tinta transition-colors',
-                          'hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-tinta',
-                          isActive ? 'underline decoration-2 underline-offset-4' : 'no-underline',
-                        ].join(' ')
-                      }
-                    >
-                      {link.label}
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ) : null}
-        </div>
-
-        <button
-          ref={mobileSearchToggleRef}
-          type="button"
-          aria-label="Buscar"
-          aria-expanded={mobileSearchOpen}
-          aria-controls="mobile-header-search"
-          onClick={() => {
-            setMobileSearchOpen((value) => !value);
-            setMobileNavOpen(false);
-            setOpen(false);
-          }}
-          className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta tablet:hidden"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            className="h-6 w-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-4-4" />
-          </svg>
-        </button>
+        ) : null}
 
         <nav aria-label="Principal" className="hidden shrink-0 items-center gap-6 tablet:flex">
           {NAV_LINKS.map((link) => (
@@ -243,9 +309,9 @@ function Header() {
         </nav>
 
         {/*
-          No mobile, a lupa acima expande o campo em uma faixa própria para
-          preservar os controles principais em uma linha. A partir de `tablet`,
-          a busca ocupa o espaço que sobra entre a navegação e a conta.
+          No mobile, a lupa expande o campo em uma faixa própria. Os controles
+          mobile somem nas rotas Home e Catálogo, que já oferecem busca própria;
+          nas outras rotas, menu e busca permanecem disponíveis.
 
           Nas rotas que já têm a própria busca em tamanho grande (a abertura da
           home e o catálogo), a versão desktop do cabeçalho não aparece: eram

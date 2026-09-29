@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
+import { CATEGORIES, CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
 import BrandSignature from '@/components/common/BrandSignature';
 import FilterPanel from '@/components/catalog/FilterPanel';
 import { SearchBar } from '@/components/catalog/SearchBar';
@@ -56,10 +56,16 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  */
 function Catalog() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const term = searchParams.get('q') ?? '';
+  const query = searchParams.get('q') ?? '';
+  const categoryParam = searchParams.get('category') || undefined;
+  const legacyCategory = categoryParam
+    ? undefined
+    : CATEGORIES.find((option) => option.value && option.value === query)?.value;
+  const term = legacyCategory ? '' : query;
+  const category = categoryParam ?? legacyCategory;
 
   const [inputValue, setInputValue] = useState(term);
-  const [filters, setFilters] = useState<CatalogFilters>({});
+  const [filters, setFilters] = useState<CatalogFilters>({ category });
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   /** Motivo das sugestões quando a busca não acha nada (RN-61). */
@@ -73,6 +79,22 @@ function Catalog() {
   useEffect(() => {
     setInputValue(term);
   }, [term]);
+
+  useEffect(() => {
+    if (!legacyCategory) return;
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('q');
+      next.set('category', legacyCategory);
+      return next;
+    }, { replace: true });
+  }, [legacyCategory, setSearchParams]);
+
+  useEffect(() => {
+    setFilters((current) =>
+      current.category === category ? current : { ...current, category },
+    );
+  }, [category]);
 
   const run = useCallback(() => {
     const requestId = ++requestSequence.current;
@@ -111,7 +133,33 @@ function Catalog() {
 
   function handleSubmit(value: string) {
     const trimmed = value.trim();
-    setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (trimmed) next.set('q', trimmed);
+      else next.delete('q');
+      return next;
+    }, { replace: true });
+  }
+
+  function handleSearchChange(value: string) {
+    setInputValue(value);
+    const query = value.trim();
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (query) next.set('q', query);
+      else next.delete('q');
+      return next;
+    }, { replace: true });
+  }
+
+  function handleFiltersChange(nextFilters: CatalogFilters) {
+    setFilters(nextFilters);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextFilters.category) next.set('category', nextFilters.category);
+      else next.delete('category');
+      return next;
+    }, { replace: true });
   }
 
   const hasFilters = Object.values(filters).some(
@@ -124,17 +172,20 @@ function Catalog() {
   }
 
   return (
-    <Container as="main" className="flex flex-col gap-6 py-6 tablet:py-8">
-      <div className="-mx-4 -mt-6 -mb-2 tablet:hidden">
+    <Container
+      as="main"
+      className="flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8"
+    >
+      <div className="-mx-4 -mt-6 tablet:hidden">
         <BrandSignature headingAs="p" />
       </div>
 
       <div className="flex flex-col gap-4">
-        <h1 className="font-display text-h2 text-tinta">Catálogo</h1>
+        <h1 className="sr-only">Catálogo</h1>
 
         <SearchBar
           value={inputValue}
-          onChange={setInputValue}
+          onChange={handleSearchChange}
           onSubmit={handleSubmit}
           loading={loading}
         />
@@ -163,7 +214,7 @@ function Catalog() {
 
       <FilterPanel
         filters={filters}
-        onChange={setFilters}
+        onChange={handleFiltersChange}
         sizeOptions={[...SIZES]}
         conditionOptions={[...CONDITIONS]}
         colorOptions={[...COLORS]}

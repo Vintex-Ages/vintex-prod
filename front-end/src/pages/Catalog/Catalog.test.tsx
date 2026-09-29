@@ -103,6 +103,14 @@ describe('Catalog', () => {
     vi.mocked(search).mockReset();
   });
 
+  it('preserva o título acessível sem exibi-lo na página', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+
+    renderCatalog();
+
+    expect(await screen.findByRole('heading', { name: 'Catálogo' })).toHaveClass('sr-only');
+  });
+
   it('busca produtos ao montar e mostra a contagem', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 
@@ -114,6 +122,31 @@ describe('Catalog', () => {
     });
 
     expect(search).toHaveBeenCalledWith('', {});
+  });
+
+  it('move categorias de URLs antigas para o filtro, sem preencher a busca', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+
+    renderCatalog('/catalog?q=Roupas');
+
+    await waitFor(() => {
+      expect(search).toHaveBeenCalledWith('', expect.objectContaining({ category: 'Roupas' }));
+    });
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Roupas' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('atualiza a busca conforme o usuário digita', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    vi.mocked(search).mockClear();
+
+    await user.type(screen.getByRole('searchbox'), 'camiseta');
+
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith('camiseta', {}));
   });
 
   it('buscar combina o termo com os filtros ativos, sem descartá-los', async () => {
@@ -264,7 +297,7 @@ describe('Catalog', () => {
   it('esconde o motivo do fallback anterior enquanto uma nova busca está carregando', async () => {
     const next = deferredSearch();
     const user = userEvent.setup();
-    vi.mocked(search).mockResolvedValueOnce(fallbackResult).mockReturnValueOnce(next.promise);
+    vi.mocked(search).mockResolvedValueOnce(fallbackResult).mockReturnValue(next.promise);
     renderCatalog('/catalog?q=xyz');
     await screen.findByText('Bota Chelsea');
     const reason = 'Nenhum resultado para "xyz". Veja outras peças disponíveis.';

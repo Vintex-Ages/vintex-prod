@@ -1,4 +1,6 @@
 import clsx from 'clsx';
+import chevronDownIcon from '@/assets/catalog/chevron-down.svg';
+import filterIcon from '@/assets/catalog/filter.svg';
 
 export type FilterToggleProps = {
   onClick: () => void;
@@ -7,45 +9,13 @@ export type FilterToggleProps = {
   open?: boolean;
 };
 
-function FilterIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-[14.4px] w-[14.4px]"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-    </svg>
-  );
-}
-
 function ChevronDownIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className={clsx('h-[12.8px] w-[12.8px] transition-transform', open && 'rotate-180')}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
+  return <img src={chevronDownIcon} alt="" className={clsx('h-[14.4px] w-[14.4px] transition-transform', open && 'rotate-180')} />;
 }
 
 /**
- * Botão "Mais filtros" do catálogo — abre o painel de filtros e mostra a
- * contagem de filtros ativos num badge. Apresentação apenas, sem regra de
- * negócio: quem chama controla o estado `open`/`count` e decide o que
- * `onClick` faz.
+ * Botão "Mais filtros" do catálogo — abre o painel e expõe a contagem de
+ * filtros ativos no nome acessível. A apresentação segue o componente Figma.
  *
  * Usage:
  *   import FilterToggle from '@/components/catalog/FilterToggle';
@@ -53,21 +23,19 @@ function ChevronDownIcon({ open }: { open: boolean }) {
  */
 function FilterToggle({ onClick, count, open = false }: FilterToggleProps) {
   const hasCount = typeof count === 'number' && count > 0;
+  const accessibleName = hasCount
+    ? `Mais filtros, ${count} ${count === 1 ? 'filtro ativo' : 'filtros ativos'}`
+    : 'Mais filtros';
 
   return (
     <button
       type="button"
       onClick={onClick}
       aria-expanded={open}
-      className="inline-flex min-h-touch w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-linha bg-branco-quente px-3 py-2 text-label font-semibold leading-normal text-verde-rs transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+      aria-label={accessibleName}
+      className="inline-flex min-h-touch w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-linha bg-branco-quente px-3 py-2 text-verde-rs transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
     >
-      <FilterIcon />
-      <span>Mais filtros</span>
-      {hasCount && (
-        <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-vermelho-escuro px-1 text-[10.6px] font-semibold leading-none text-branco-quente">
-          {count}
-        </span>
-      )}
+      <img src={filterIcon} alt="" className="h-[14.4px] w-[14.4px]" />
       <ChevronDownIcon open={open} />
     </button>
   );

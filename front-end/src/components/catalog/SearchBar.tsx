@@ -107,31 +107,28 @@ export function SearchBar({
       <button
         type="submit"
         disabled={loading}
+        aria-label={loading ? 'Buscando' : undefined}
         className={clsx(
-          'flex shrink-0 items-center justify-center gap-2 bg-vermelho-escuro font-semibold text-branco-quente transition',
+          'relative flex shrink-0 items-center justify-center gap-2 bg-vermelho-escuro font-semibold text-branco-quente transition',
           'hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente',
           'disabled:cursor-not-allowed disabled:opacity-70',
           'min-h-touch',
           compact ? 'px-3 text-body-sm' : 'px-4 text-body',
         )}
       >
-        {loading ? (
-          <>
-            <svg
-              aria-hidden="true"
-              className="h-5 w-5 animate-spin motion-reduce:animate-none"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M21 12a9 9 0 1 1-9-9" />
-            </svg>
-            <span className="sr-only">Buscando</span>
-          </>
-        ) : (
-          submitLabel
+        <span className={loading ? 'invisible' : undefined}>{submitLabel}</span>
+        {loading && (
+          <svg
+            aria-hidden="true"
+            className="absolute h-5 w-5 animate-spin motion-reduce:animate-none"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-9-9" />
+          </svg>
         )}
       </button>
     </form>

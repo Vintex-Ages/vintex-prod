@@ -78,7 +78,7 @@ function FilterPanel({
 
   return (
     <section aria-label="Filtros do catálogo">
-      <div className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 py-1 hide-scrollbar tablet:-mx-6 tablet:px-6 web:-mx-8 web:px-8">
+      <div className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:-mx-6 tablet:px-6 web:-mx-8 web:px-8">
         {CATEGORIES.map((category) => (
           <FilterChip
             key={category.label}
@@ -93,7 +93,7 @@ function FilterPanel({
           onClick={() => setOpen((current) => !current)}
         />
       </div>
-      <p aria-live="polite" className="mt-2 text-right font-ui text-body-sm text-texto-auxiliar">
+      <p aria-live="polite" className="mt-4 text-right font-ui text-body-sm text-texto-auxiliar">
         {typeof resultCount === 'number'
           ? `${formatPieceCount(resultCount)} ${resultCount === 1 ? 'encontrada' : 'encontradas'}`
           : 'Buscando peças…'}

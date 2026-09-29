@@ -80,8 +80,8 @@ function ProductCard({
         {product.category && (
           <span
             className={clsx(
-              'block w-full whitespace-nowrap font-ui text-[8px] font-bold uppercase leading-normal tracking-[0.3px] text-vermelho-escuro',
-              compact && 'tracking-[0.865px] tablet:text-label tablet:text-texto-auxiliar',
+              'block w-full whitespace-nowrap font-ui text-[8px] font-bold uppercase leading-normal tracking-[0.865px] text-vermelho-escuro',
+              compact && 'tablet:text-texto-auxiliar',
             )}
           >
             {product.category}
@@ -91,7 +91,7 @@ function ProductCard({
         <p
           className={clsx(
             'min-h-[34px] font-display text-[16px] leading-[1.05]',
-            compact && 'text-[14px] tablet:font-ui tablet:text-body tablet:leading-snug',
+            compact && 'tablet:font-ui tablet:leading-snug',
           )}
         >
           <Link
@@ -106,7 +106,6 @@ function ProductCard({
         <p
           className={clsx(
             'truncate font-ui text-[8px] leading-normal text-texto-auxiliar',
-            compact && 'tablet:text-label',
           )}
         >
           {product.store.name}
