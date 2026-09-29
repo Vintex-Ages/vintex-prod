@@ -10,7 +10,13 @@ import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
 import AppRoutes from './AppRoutes';
-import { paths, productDetail, sellerProductPath, storeProfile } from './paths';
+import {
+  paths,
+  productDetail,
+  sellerProductPath,
+  sellerProductReviewPath,
+  storeProfile,
+} from './paths';
 
 vi.mock('@/services/storeService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/storeService')>()),
@@ -236,6 +242,7 @@ describe('<AppRoutes />', () => {
     [paths.seller, 'Painel do vendedor', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
+    [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
     [paths.cart, 'Carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
@@ -281,7 +288,12 @@ describe('<AppRoutes />', () => {
     await screen.findByText('Entre na Vintex');
   });
 
-  it.each([paths.seller, paths.sellerProductNew, sellerProductPath('1')])(
+  it.each([
+    paths.seller,
+    paths.sellerProductNew,
+    sellerProductPath('1'),
+    sellerProductReviewPath('1'),
+  ])(
     'RN-31 (#213): %s logado sem loja vai a /sell com o aviso, não mostra a área do vendedor',
     async (path) => {
       vi.mocked(getMyStore).mockResolvedValue(null);
