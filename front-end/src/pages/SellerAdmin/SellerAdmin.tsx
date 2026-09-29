@@ -7,6 +7,7 @@ import Container from '@/components/layout/Container';
 import SellerProductRow from '@/components/seller/SellerProductRow';
 import StatCard from '@/components/seller/StatCard';
 import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts';
+import { paths, sellerProductPath } from '@/routes/paths';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
 const CHIPS: { value: StatusFilter; label: string }[] = [
@@ -28,7 +29,7 @@ function SellerAdmin() {
   const navigate = useNavigate();
   const { state, filter, setFilter, visible, retry } = useSellerProducts();
 
-  const anunciar = () => navigate('/seller/products/new');
+  const anunciar = () => navigate(paths.sellerProductNew);
 
   return (
     <Container as="main" className="flex flex-col gap-6 py-10">
@@ -38,13 +39,26 @@ function SellerAdmin() {
       </div>
 
       {state.status === 'loading' && (
-        <p
-          role="status"
-          aria-label="Carregando"
-          className="font-ui text-body-sm text-texto-auxiliar"
-        >
-          Carregando suas peças…
-        </p>
+        <>
+          <p role="status" className="sr-only">
+            Carregando suas peças…
+          </p>
+          {/* Skeleton de linha (#220): mesmo contorno do SellerProductRow. */}
+          <ul className="flex flex-col gap-3" aria-hidden="true" data-testid="seller-skeleton">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <li
+                key={index}
+                className="flex animate-pulse items-center gap-4 border border-linha bg-branco-quente p-4 motion-reduce:animate-none"
+              >
+                <span className="h-20 w-20 shrink-0 bg-papel-profundo" />
+                <span className="flex flex-1 flex-col gap-2">
+                  <span className="h-4 w-48 max-w-full bg-papel-profundo" />
+                  <span className="h-4 w-24 bg-papel-profundo" />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {state.status === 'error' && (
@@ -106,7 +120,7 @@ function SellerAdmin() {
                   <SellerProductRow
                     product={product}
                     actions={[]}
-                    onOpen={(id) => navigate(`/seller/products/${id}`)}
+                    onOpen={(id) => navigate(sellerProductPath(id))}
                   />
                 </li>
               ))}

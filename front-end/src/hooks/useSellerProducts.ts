@@ -17,6 +17,23 @@ export type SellerProductsState =
   | { status: 'error' }
   | { status: 'ready'; products: SellerProduct[]; counts: SellerProductsCounts };
 
+/** Tamanho de página ao buscar tudo; o `getMine` devolve só 20 por padrão. */
+const PAGE_SIZE = 100;
+
+/**
+ * Busca todas as páginas do `getMine`. As contagens dos cards e o filtro em
+ * memória precisam da lista inteira: com só a primeira página, um vendedor
+ * com mais peças que o tamanho da página veria números e lista incompletos.
+ */
+async function buscarTodas(): Promise<SellerProduct[]> {
+  const todas: SellerProduct[] = [];
+  for (let page = 1; ; page += 1) {
+    const resposta = await getMine({ page, pageSize: PAGE_SIZE });
+    todas.push(...resposta.items);
+    if (resposta.items.length === 0 || todas.length >= resposta.total) return todas;
+  }
+}
+
 /** Uma peça sem status conhecido não entra em nenhuma contagem. */
 function contar(products: SellerProduct[]): SellerProductsCounts {
   return {
@@ -53,10 +70,10 @@ export function useSellerProducts() {
     // `retry` disparou outra antes desta voltar).
     let cancelled = false;
 
-    getMine()
-      .then((page) => {
+    buscarTodas()
+      .then((products) => {
         if (!cancelled) {
-          setState({ status: 'ready', products: page.items, counts: contar(page.items) });
+          setState({ status: 'ready', products, counts: contar(products) });
         }
       })
       .catch(() => {

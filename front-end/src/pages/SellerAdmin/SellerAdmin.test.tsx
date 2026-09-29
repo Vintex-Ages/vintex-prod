@@ -126,6 +126,42 @@ describe('<SellerAdmin />', () => {
     expect(screen.getByText('Jaqueta jeans')).toBeInTheDocument();
   });
 
+  it('conta e lista as peças de todas as páginas, não só da primeira', async () => {
+    const primeira = Array.from({ length: 100 }, (_, i) =>
+      peca({ id: `a${i}`, name: `Anunciada ${i}`, status: 'ativo' }),
+    );
+    vi.mocked(getMine)
+      .mockResolvedValueOnce({ items: primeira, page: 1, pageSize: 100, total: 102 })
+      .mockResolvedValueOnce({
+        items: [
+          peca({ id: 'v1', name: 'Bota Chelsea', status: 'vendido' }),
+          peca({ id: 'p1', name: 'Bolsa palha', status: 'despublicado' }),
+        ],
+        page: 2,
+        pageSize: 100,
+        total: 102,
+      });
+
+    renderPage();
+
+    const anunciadas = await screen.findByTestId('stat-anunciadas');
+    expect(within(anunciadas).getByText('100')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('102 peças no total')).toBeInTheDocument();
+    expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
+    expect(getMine).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100 });
+  });
+
+  it('mostra o skeleton de linha enquanto carrega', () => {
+    vi.mocked(getMine).mockReturnValue(new Promise(() => {}));
+
+    renderPage();
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando suas peças…');
+    expect(screen.getByTestId('seller-skeleton')).toBeInTheDocument();
+  });
+
   it('mostra ErrorState com retry quando a busca falha', async () => {
     vi.mocked(getMine)
       .mockRejectedValueOnce(new Error('rede fora'))
