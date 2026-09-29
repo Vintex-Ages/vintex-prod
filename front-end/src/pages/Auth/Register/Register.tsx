@@ -30,7 +30,7 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
  * Era o emoji 📍 — o único do `src/` inteiro, contra 22 arquivos que desenham
  * ícone como SVG inline. O sinal de "isto é um endereço" é bom e fica; emoji é
  * que não serve aqui: renderiza nas cores do sistema (vermelho e branco no
- * Windows) dentro de uma paleta fechada em 10 cores, muda de desenho por
+ * Windows) dentro de uma paleta fechada em 11 cores, muda de desenho por
  * aparelho, e como texto literal o leitor de tela anuncia "pino redondo" antes
  * do endereço. Em SVG ele herda `currentColor` e acompanha o texto.
  */

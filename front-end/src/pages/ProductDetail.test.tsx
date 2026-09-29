@@ -362,6 +362,14 @@ describe('<ProductDetail />', () => {
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+    it('o link "Ver loja" aponta pra rota real do perfil da loja', async () => {
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+
+      const storeLink = screen.getByRole('link', { name: /Ver loja/ });
+      expect(storeLink.getAttribute('href')).toMatch(/^\/store\//);
+    });
   });
 
   describe('adicionar ao carrinho (FE-US021-1, #225)', () => {
