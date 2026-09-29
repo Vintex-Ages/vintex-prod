@@ -12,6 +12,7 @@ import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 import FinancialSummary from './FinancialSummary';
+import TrustSealCard from './TrustSealCard';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
 const CHIPS: { value: StatusFilter; label: string }[] = [
@@ -35,7 +36,8 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
  * linha muda sem recarregar a lista; erro do back vira Toast de erro.
  *
  * Abaixo das peças, a seção "Financeiro" (FE-US019-3, #222) com o resumo de
- * vendas por período — ver `FinancialSummary`.
+ * vendas por período — ver `FinancialSummary`. No topo, o card do selo
+ * Confiável (FE-US007-1, #224) — ver `TrustSealCard`.
  */
 const SOLD_REASON = 'Peça vendida não pode ser editada';
 
@@ -99,6 +101,8 @@ function SellerAdmin() {
         <h1 className="font-display text-h2 text-tinta">Painel do vendedor</h1>
         <Button onClick={anunciar}>Anunciar peça</Button>
       </div>
+
+      <TrustSealCard />
 
       {state.status === 'loading' && (
         <>

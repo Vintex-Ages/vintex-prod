@@ -2,7 +2,7 @@ import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, Store } from '@/types/product';
-import type { StoreInput, StoreMetrics, StoreProfile } from '@/types/store';
+import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
@@ -644,6 +644,21 @@ export async function createStore(input: StoreInput): Promise<StoreProfile> {
 
 export async function getMyStore(): Promise<StoreProfile | null> {
   return useMocks ? mockGetMyStore() : apiGetMyStore();
+}
+
+/**
+ * Situação do selo Confiável da loja do vendedor logado (FE-US007-1, #224),
+ * ou `null` sem loja. Na API real são duas idas: `GET /users/me/store` não
+ * traz `verified`, então o selo sai do retrato público `GET /stores/{id}`.
+ * PENDENTE NO BACK: incluir `verified` na rota privada tira a segunda ida.
+ */
+export async function getMyVerification(): Promise<StoreVerification | null> {
+  if (useMocks) {
+    return (await mockGetMyStore())?.verification ?? null;
+  }
+  const loja = await apiGetMyStore();
+  if (loja === null) return null;
+  return (await apiGetStore(loja.id)).verification;
 }
 
 export async function requestVerification(): Promise<StoreProfile> {
