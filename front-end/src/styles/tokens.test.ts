@@ -11,7 +11,8 @@ describe('design tokens', () => {
       'texto-auxiliar': '#655E57',
       linha: '#CFC3B3',
       vermelhao: '#982632',
-      'vermelho-escuro': '#741D27',
+      // Valor das telas do Figma, não o #741D27 do style guide v.2 (ver tokens.ts).
+      'vermelho-escuro': '#7D0020',
       'vermelho-suave': '#F0D9D4',
       'verde-rs': '#315443',
       dourado: '#B88C38',

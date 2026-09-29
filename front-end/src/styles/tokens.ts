@@ -1,5 +1,7 @@
 /**
- * Design tokens — Vintex Style Guide v.1 (Figma frame `45:22291`).
+ * Design tokens — Vintex Style Guide v.2 (Figma frame `45:22291`). Comparação
+ * v.2 × código e o que foi decidido para cada diferença: `.ai/architecture.md`
+ * ("Tokens e style guide v.2") e issue #206.
  *
  * Single source of truth consumed by `tailwind.config.ts`. Components must read
  * these values through Tailwind utilities (`bg-papel`, `text-h1`, `tablet:` …),
@@ -33,8 +35,13 @@ const displayFontStack: string[] = [
 ];
 
 /**
- * The ten official colours, keyed by token name (kebab-case so they map to
+ * The eleven official colours, keyed by token name (kebab-case so they map to
  * `bg-*` / `text-* ` / `border-*`). No purple, no pink — stakeholder constraint.
+ *
+ * `vermelho-escuro` fica em `#7D0020` de propósito: o style guide v.2 mostra
+ * `#741D27`, mas as telas do Figma (ex.: detalhe da peça, node 476-765) e as
+ * variáveis do arquivo ainda usam `#7D0020`. Troca quando o design alinhar as
+ * telas à v.2. `vermelhao` entra como token da v.2, ainda sem uso nas telas.
  */
 export const colors: Record<string, string> = {
   papel: '#F6F1E8', // fundo padrão
@@ -43,8 +50,8 @@ export const colors: Record<string, string> = {
   tinta: '#1D1B1A', // texto principal, chip ativo
   'texto-auxiliar': '#655E57', // texto secundário
   linha: '#CFC3B3', // borda e divisória
-  vermelhao: '#982632', // ação e assinatura - vermelho vivo (novo na v.2)
-  'vermelho-escuro': '#741D27', // ação e assinatura - valor atualizado na v.2
+  vermelhao: '#982632', // vermelho vivo da v.2 — ainda sem uso, ver nota acima
+  'vermelho-escuro': '#7D0020', // ação e assinatura (valor das telas; v.2 diz #741D27)
   'vermelho-suave': '#F0D9D4', // fundo de destaque
   'verde-rs': '#315443', // confiança e confirmação
   dourado: '#B88C38', // atenção — nunca CTA
@@ -212,7 +219,7 @@ export const colorTokens: ColorToken[] = [
     key: 'vermelhao',
     bgClass: 'bg-vermelhao',
     hex: colors['vermelhao'],
-    role: 'ação e assinatura',
+    role: 'vermelho vivo da v.2 (ainda sem uso)',
   },
   {
     name: 'Vermelho escuro',
