@@ -318,4 +318,17 @@ describe('Catalog', () => {
     expect(await screen.findByText('Vintex recebeu: vestido floral')).toBeInTheDocument();
     expect(search).not.toHaveBeenCalled();
   });
+
+  // FE-US027-3: "Ver no catálogo" da Vintex chega com os filtros na URL.
+  it('abre com os filtros da URL já aplicados na busca', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+
+    renderCatalog('/catalog?category=Casacos&color=Preto&priceMax=100');
+
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    expect(search).toHaveBeenLastCalledWith(
+      '',
+      expect.objectContaining({ category: 'Casacos', color: 'Preto', priceMax: 100 }),
+    );
+  });
 });

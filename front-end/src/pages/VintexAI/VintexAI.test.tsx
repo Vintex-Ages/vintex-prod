@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
 import { resetVintexChat } from '@/hooks/useVintexChat';
@@ -314,5 +314,68 @@ describe('VintexAI page', () => {
 
     expect(await screen.findByText('bota de cano curto')).toBeInTheDocument();
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  });
+
+  // FE-US027-3 — objetivo declarado: garantir a ponte com a VS-009.
+  it('o chunk interpreted vira chips, e "Ver no catálogo" abre a busca com os mesmos filtros', async () => {
+    fakeChat([
+      { type: 'text', delta: 'Separei algumas opções.' },
+      {
+        type: 'interpreted',
+        interpreted: {
+          filters: { category: 'Casacos', color: 'Preto', priceMax: 100 },
+          similarity: 'streetwear',
+        },
+      },
+      { type: 'done' },
+    ]);
+
+    function CatalogProbe() {
+      const { search } = useLocation();
+      return <h1>Catálogo {search}</h1>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/vintex']}>
+        <Routes>
+          <Route path="/vintex" element={<VintexAI />} />
+          <Route path="/catalog" element={<CatalogProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+      target: { value: 'casaco preto até 100 estilo streetwear' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    const entendeu = await screen.findByRole('region', {
+      name: 'Como a Vintex entendeu seu pedido',
+    });
+    expect(entendeu).toHaveTextContent('Casacos');
+    expect(entendeu).toHaveTextContent('Preto');
+    expect(entendeu).toHaveTextContent('até R$ 100,00');
+    expect(entendeu).toHaveTextContent('parecido com: streetwear');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver no catálogo' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Catálogo ?category=Casacos&color=Preto&priceMax=100',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('sem interpreted, a resposta não mostra a interpretação', async () => {
+    fakeChat([{ type: 'text', delta: 'Oi!' }, { type: 'done' }]);
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+      target: { value: 'oi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    await screen.findByText('Oi!');
+    expect(screen.queryByRole('region', { name: 'Como a Vintex entendeu seu pedido' })).toBeNull();
   });
 });

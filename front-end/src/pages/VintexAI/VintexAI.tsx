@@ -4,8 +4,10 @@ import { ChatBubble } from '@/components/vintex-ai/ChatBubble';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import IconButton from '@/components/common/IconButton';
+import InterpretedQueryChips from '@/components/vintex-ai/InterpretedQueryChips';
 import { useVintexChat } from '@/hooks/useVintexChat';
 import { paths } from '@/routes/paths';
+import { toCatalogSearch } from '@/utils/catalogQuery';
 
 const SUGGESTION_CHIPS = ['Look para um jantar', 'Cores mais neutras', 'Até R$ 250'];
 
@@ -154,6 +156,15 @@ export default function VintexAI() {
                   error={message.id === errorMessageId ? (errorText ?? undefined) : undefined}
                   onRetry={retry}
                 />
+                {/* FE-US027-3: o que a Vintex entendeu, com ponte para o catálogo. */}
+                {message.role === 'vintex' && message.interpreted ? (
+                  <InterpretedQueryChips
+                    interpreted={message.interpreted}
+                    onOpenCatalog={() =>
+                      navigate(`${paths.catalog}${toCatalogSearch(message.interpreted!.filters)}`)
+                    }
+                  />
+                ) : null}
               </div>
             </div>
           ))}
