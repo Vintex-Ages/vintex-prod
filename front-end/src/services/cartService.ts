@@ -143,78 +143,90 @@ async function mockRemoveItem(userId: string, productId: string): Promise<Cart> 
 }
 
 // ---------------------------------------------------------------------------
-// Modo API REAL — via httpClient; formato do backend ainda não confirmado.
+// Modo API REAL — via httpClient, no contrato da `develop` do back.
 // ---------------------------------------------------------------------------
 
 /**
- * Forma assumida da resposta de `GET /users/me/cart`, `POST /users/me/cart/items`
- * e `DELETE /users/me/cart/items/{product_id}` — os três devolvem a lista de
- * grupos por loja JÁ atualizada, com `subtotal` (em reais, `decimal(10,2)`)
- * calculado pelo backend, não uma lista flat de itens.
+ * Contrato real do back (`app/schemas/cart_schema.py`, `cart_routes.py`,
+ * medido na `develop` em 29/09): `GET /users/me/cart`, `POST
+ * /users/me/cart/items` e `DELETE /users/me/cart/items/{product_id}` devolvem
+ * `Page[CartStoreResponse]` — o envelope paginado `{ items, page, page_size,
+ * total }` (`app/core/pagination.py`), em que cada item da página é um GRUPO
+ * por loja, já com `subtotal` (em reais) calculado pelo back.
+ *
+ * A peça vem plana dentro do grupo (`product_id`, `name`, `price`…), a loja
+ * só no grupo, e o que diz se ainda dá para comprar é `available` — o
+ * contrário do `unavailable` da tela. Não há `added_at`.
  */
 interface ApiCartStore {
   id: number | string;
   name: string;
-  city?: string;
-  verified?: boolean;
-  logo_url?: string;
+  verified: boolean;
   /**
-   * Chave Pix do vendedor (RN-18/RN-19). O model `Store` do back já tem
-   * `pix_key`, mas o endpoint do carrinho ainda não confirmou que a envia —
-   * por isso opcional.
+   * Chave Pix do vendedor (RN-18/RN-19). PENDENTE NO BACK: `FeedStoreResponse`
+   * (o `store` do grupo) só tem `id`, `name` e `verified`. A loja já grava a
+   * chave desde o back-end#216; falta ela viajar aqui. Opcional até lá.
    */
-  pix_key?: string;
+  pix_key?: string | null;
 }
 
 interface ApiCartItem {
-  product: {
-    id: number | string;
-    name: string;
-    price: number;
-    cover_image_url: string | null;
-    store: ApiCartStore;
-  };
-  added_at: string;
-  unavailable: boolean;
+  product_id: number | string;
+  name: string;
+  price: number;
+  cover_image_url: string | null;
+  status: string;
+  available: boolean;
 }
 
 interface ApiCartGroup {
   store: ApiCartStore;
   items: ApiCartItem[];
-  /** Em reais (`decimal(10,2)`), não em centavos — RN do back, ver comentário acima. */
+  /** Em reais (`decimal(10,2)` serializado como número), não em centavos. */
   subtotal: number;
+}
+
+interface ApiPage<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total: number;
 }
 
 function mapApiStore(store: ApiCartStore): Store {
   return {
     id: String(store.id),
     name: store.name,
-    city: store.city,
     verified: store.verified,
-    logoUrl: store.logo_url,
   };
 }
 
-function mapApiCartItem(item: ApiCartItem): CartItem {
+function mapApiCartItem(item: ApiCartItem, store: Store): CartItem {
   const product: Product = {
-    id: String(item.product.id),
-    name: item.product.name,
-    price: item.product.price,
-    coverImageUrl: item.product.cover_image_url,
-    store: mapApiStore(item.product.store),
+    id: String(item.product_id),
+    name: item.name,
+    price: Number(item.price),
+    coverImageUrl: item.cover_image_url,
+    store,
   };
 
-  return { product, addedAt: item.added_at, unavailable: item.unavailable };
+  // `available` do back → `unavailable` da tela: peça vendida chega marcada.
+  return { product, unavailable: !item.available };
 }
 
 /** Converte reais (`decimal(10,2)` do back) para centavos, unidade interna de `CartGroup.subtotalCents`. */
 function mapApiCartGroup(group: ApiCartGroup): CartGroup {
+  const store = mapApiStore(group.store);
   return {
-    store: mapApiStore(group.store),
-    items: group.items.map(mapApiCartItem),
-    subtotalCents: Math.round(group.subtotal * 100),
-    pixKey: group.store.pix_key,
+    store,
+    items: group.items.map((item) => mapApiCartItem(item, store)),
+    subtotalCents: Math.round(Number(group.subtotal) * 100),
+    pixKey: group.store.pix_key ?? undefined,
   };
+}
+
+function mapApiCart(page: ApiPage<ApiCartGroup>): Cart {
+  return { groups: page.items.map(mapApiCartGroup) };
 }
 
 /** Normaliza erro do axios pro mesmo `ApiError` do authService — sem `field`, o carrinho não tem campo de formulário. */
@@ -239,8 +251,8 @@ function toApiError(error: unknown): ApiError {
 
 async function apiGetCart(): Promise<Cart> {
   try {
-    const { data } = await httpClient.get<ApiCartGroup[]>('/users/me/cart');
-    return { groups: data.map(mapApiCartGroup) };
+    const { data } = await httpClient.get<ApiPage<ApiCartGroup>>('/users/me/cart');
+    return mapApiCart(data);
   } catch (error) {
     throw toApiError(error);
   }
@@ -248,10 +260,10 @@ async function apiGetCart(): Promise<Cart> {
 
 async function apiAddItem(_userId: string, productId: string): Promise<Cart> {
   try {
-    const { data } = await httpClient.post<ApiCartGroup[]>('/users/me/cart/items', {
+    const { data } = await httpClient.post<ApiPage<ApiCartGroup>>('/users/me/cart/items', {
       product_id: productId,
     });
-    return { groups: data.map(mapApiCartGroup) };
+    return mapApiCart(data);
   } catch (error) {
     throw toApiError(error);
   }
@@ -259,8 +271,10 @@ async function apiAddItem(_userId: string, productId: string): Promise<Cart> {
 
 async function apiRemoveItem(_userId: string, productId: string): Promise<Cart> {
   try {
-    const { data } = await httpClient.delete<ApiCartGroup[]>(`/users/me/cart/items/${productId}`);
-    return { groups: data.map(mapApiCartGroup) };
+    const { data } = await httpClient.delete<ApiPage<ApiCartGroup>>(
+      `/users/me/cart/items/${productId}`,
+    );
+    return mapApiCart(data);
   } catch (error) {
     throw toApiError(error);
   }

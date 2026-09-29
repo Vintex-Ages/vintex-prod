@@ -120,63 +120,96 @@ describe('cartService (API real) — chave Pix do vendedor', () => {
     vi.unstubAllEnvs();
   });
 
-  const apiStore = { id: 5, name: 'Brecho Ana', city: 'Porto Alegre' };
+  const apiStore = { id: 5, name: 'Brecho Ana', verified: true };
 
-  function apiGroup(store: Record<string, unknown>) {
+  /** Grupo no formato de `CartStoreResponse` (`app/schemas/cart_schema.py`). */
+  function apiGroup(store: Record<string, unknown>, available = true) {
     return {
       store,
       items: [
         {
-          product: {
-            id: 1,
-            name: 'Vestido floral',
-            price: 99.9,
-            cover_image_url: null,
-            store,
-          },
-          added_at: '2026-09-24T12:00:00Z',
-          unavailable: false,
+          product_id: 1,
+          name: 'Vestido floral',
+          price: 99.9,
+          cover_image_url: null,
+          status: available ? 'ativo' : 'vendido',
+          available,
         },
       ],
-      subtotal: 99.9,
+      subtotal: available ? 99.9 : 0,
     };
   }
+
+  /** Envelope `Page[CartStoreResponse]` que as três rotas devolvem. */
+  function page(groups: unknown[]) {
+    return { items: groups, page: 1, page_size: 20, total: groups.length };
+  }
+
+  function respondWith(data: unknown, calls: string[] = []) {
+    return async () => {
+      const { httpClient } = await import('@/services/httpClient');
+      httpClient.defaults.adapter = (config) => {
+        calls.push(`${config.method} ${config.url}`);
+        return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+      };
+    };
+  }
+
+  // #226: as três rotas devolvem o envelope paginado, não um array cru.
+  it('as três chamadas leem os grupos de data.items do envelope paginado', async () => {
+    const calls: string[] = [];
+    await respondWith(page([apiGroup(apiStore)]), calls)();
+    const { getCart, addItem, removeItem } = await import('./cartService');
+
+    for (const cart of [
+      await getCart(USER_ID),
+      await addItem(USER_ID, '1'),
+      await removeItem(USER_ID, '1'),
+    ]) {
+      expect(cart.groups).toHaveLength(1);
+      expect(cart.groups[0].store).toEqual({ id: '5', name: 'Brecho Ana', verified: true });
+      expect(cart.groups[0].items[0].product).toMatchObject({
+        id: '1',
+        name: 'Vestido floral',
+        price: 99.9,
+        store: { id: '5' },
+      });
+      expect(cart.groups[0].subtotalCents).toBe(9990);
+    }
+    expect(calls).toEqual([
+      'get /users/me/cart',
+      'post /users/me/cart/items',
+      'delete /users/me/cart/items/1',
+    ]);
+  });
+
+  // #226: `available: false` do back tem de chegar como `unavailable: true`.
+  it('peça vendida (available: false) chega marcada como indisponível', async () => {
+    await respondWith(page([apiGroup(apiStore, false)]))();
+    const { getCart } = await import('./cartService');
+
+    const cart = await getCart(USER_ID);
+
+    expect(cart.groups[0].items[0].unavailable).toBe(true);
+    expect(cart.groups[0].subtotalCents).toBe(0);
+  });
 
   // Revisao PR #228, ponto 3 (RN-18/RN-19): a tela de pagamento mostra a chave
   // Pix de cada vendedor, que so existe se vier no grupo do back.
   it('repassa pix_key da loja do grupo para CartGroup.pixKey', async () => {
-    const { httpClient } = await import('@/services/httpClient');
-    const { getCart: apiGetCart } = await import('./cartService');
+    await respondWith(page([apiGroup({ ...apiStore, pix_key: 'ana@vintex.com' })]))();
+    const { getCart } = await import('./cartService');
 
-    httpClient.defaults.adapter = (config) =>
-      Promise.resolve({
-        data: [apiGroup({ ...apiStore, pix_key: 'ana@vintex.com' })],
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      });
-
-    const cart = await apiGetCart(USER_ID);
+    const cart = await getCart(USER_ID);
 
     expect(cart.groups[0].pixKey).toBe('ana@vintex.com');
-    expect(cart.groups[0].subtotalCents).toBe(9990);
   });
 
   it('deixa pixKey undefined quando o back nao envia pix_key', async () => {
-    const { httpClient } = await import('@/services/httpClient');
-    const { getCart: apiGetCart } = await import('./cartService');
+    await respondWith(page([apiGroup(apiStore)]))();
+    const { getCart } = await import('./cartService');
 
-    httpClient.defaults.adapter = (config) =>
-      Promise.resolve({
-        data: [apiGroup(apiStore)],
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      });
-
-    const cart = await apiGetCart(USER_ID);
+    const cart = await getCart(USER_ID);
 
     expect(cart.groups[0].pixKey).toBeUndefined();
   });
