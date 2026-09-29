@@ -9,6 +9,7 @@ import Select from '@/components/common/Select';
 import Stepper from '@/components/common/Stepper';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
+import PriceBreakdown from '@/components/seller/PriceBreakdown';
 import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
 import {
   ETAPAS_CADASTRO,
@@ -69,6 +70,7 @@ export default function SellerProductForm() {
   const location = useLocation();
   const {
     values,
+    priceReais,
     errors,
     suggested,
     aiNotes,
@@ -248,14 +250,18 @@ export default function SellerProductForm() {
             labelAdornment={marca('brand')}
           />
 
-          <PriceInput
-            id="preco"
-            label="Preço"
-            value={values.priceCents}
-            onChange={(cents) => setField('priceCents', cents)}
-            error={errors.priceCents}
-            disabled={saving}
-          />
+          <div className="flex flex-col gap-2">
+            <PriceInput
+              id="preco"
+              label="Preço"
+              value={values.priceCents}
+              onChange={(cents) => setField('priceCents', cents)}
+              error={errors.priceCents}
+              disabled={saving}
+            />
+            {/* RN-15: quanto o vendedor recebe, recalculado a cada tecla (FE-US017-1). */}
+            <PriceBreakdown price={priceReais} />
+          </div>
         </div>
 
         <TextArea

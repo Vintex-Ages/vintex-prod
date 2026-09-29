@@ -370,4 +370,21 @@ describe('SellerProductForm', () => {
 
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
   });
+
+  // FE-US017-1 — objetivo declarado: garantir o recálculo (RN-11, RN-15).
+  it('mostra quanto o vendedor recebe abaixo do preço e recalcula sem enviar', async () => {
+    renderForm();
+    await subirFoto();
+
+    // Sem preço: placeholders no lugar dos valores.
+    expect(screen.getByText('Você recebe')).toBeInTheDocument();
+    expect(screen.getAllByText('—')).toHaveLength(3);
+
+    fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '100,00' } });
+    expect(await screen.findByText('R$ 91,00')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '200,00' } });
+    expect(await screen.findByText('R$ 182,00')).toBeInTheDocument();
+    expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
+  });
 });
