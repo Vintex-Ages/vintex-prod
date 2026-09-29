@@ -4,10 +4,13 @@ import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
-import SellerProductRow from '@/components/seller/SellerProductRow';
+import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
 import StatCard from '@/components/seller/StatCard';
+import { useToast } from '@/context/useToast';
 import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts';
 import { paths, sellerProductPath } from '@/routes/paths';
+import { SellerProductError } from '@/services/sellerProductService';
+import type { SellerProduct } from '@/types/product';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
 const CHIPS: { value: StatusFilter; label: string }[] = [
@@ -22,14 +25,69 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
  * totais. Visão de saldo, não de estoque (RN-51): cada peça é única, então o
  * que importa é em que situação ela está, não quantas unidades existem.
  *
- * As ações de cada linha chegam na FE-US019-2 (#221); por ora as linhas só
- * listam e abrem a peça.
+ * Ações por linha (FE-US019-2, #221), decididas pelo valor do status:
+ * - `ativo` → Editar · Despublicar (pausa; sai da vitrine, fica no histórico — RN-52)
+ * - `despublicado` → Editar · Republicar (`publish`)
+ * - `vendido` → Editar desabilitado com o motivo (RN-53), sem despublicar
+ *
+ * Despublicar confirma com um Toast que oferece "Desfazer" (republica). A
+ * linha muda sem recarregar a lista; erro do back vira Toast de erro.
  */
+const SOLD_REASON = 'Peça vendida não pode ser editada';
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof SellerProductError && error.code === 'PRODUCT_SOLD') {
+    return 'Esta peça já foi vendida e não pode mais ser alterada.';
+  }
+  return fallback;
+}
+
 function SellerAdmin() {
   const navigate = useNavigate();
-  const { state, filter, setFilter, visible, retry } = useSellerProducts();
+  const { toast } = useToast();
+  const { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct } =
+    useSellerProducts();
 
   const anunciar = () => navigate(paths.sellerProductNew);
+
+  async function republicar(product: SellerProduct) {
+    try {
+      await republishProduct(product.id);
+      toast('Anúncio publicado de novo', { kind: 'success' });
+    } catch (error) {
+      toast(errorMessage(error, 'Não foi possível republicar a peça agora.'), { kind: 'error' });
+    }
+  }
+
+  async function despublicar(product: SellerProduct) {
+    try {
+      await unpublishProduct(product.id);
+      toast('Anúncio pausado', {
+        kind: 'success',
+        action: { label: 'Desfazer', onSelect: () => void republicar(product) },
+      });
+    } catch (error) {
+      toast(errorMessage(error, 'Não foi possível pausar o anúncio agora.'), { kind: 'error' });
+    }
+  }
+
+  function acoes(product: SellerProduct): RowAction[] {
+    const editar: RowAction = {
+      label: 'Editar',
+      onSelect: () => navigate(sellerProductPath(product.id)),
+    };
+
+    switch (product.status) {
+      case 'ativo':
+        return [editar, { label: 'Despublicar', onSelect: () => void despublicar(product) }];
+      case 'despublicado':
+        return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
+      case 'vendido':
+        return [{ ...editar, disabled: true, disabledReason: SOLD_REASON }];
+      default:
+        return [];
+    }
+  }
 
   return (
     <Container as="main" className="flex flex-col gap-6 py-10">
@@ -119,8 +177,13 @@ function SellerAdmin() {
                 <li key={product.id}>
                   <SellerProductRow
                     product={product}
-                    actions={[]}
-                    onOpen={(id) => navigate(sellerProductPath(id))}
+                    actions={acoes(product)}
+                    // Vendida não abre o formulário (RN-53): o nome fica só como texto.
+                    onOpen={
+                      product.status === 'vendido'
+                        ? undefined
+                        : (id) => navigate(sellerProductPath(id))
+                    }
                   />
                 </li>
               ))}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDraft,
   getById,
@@ -169,5 +169,60 @@ describe('sellerProductService', () => {
 
     expect(urls).toHaveLength(2);
     urls.forEach((url) => expect(typeof url).toBe('string'));
+  });
+});
+
+describe('sellerProductService com a API real', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // FE-US019-2 (#221): a rota é a declarada na back-end#234.
+  it('getById busca GET /users/me/products/{id} e mapeia a peça completa', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getById: apiGetById } = await import('./sellerProductService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(`${config.method} ${config.url}`);
+      return Promise.resolve({
+        data: {
+          id: 7,
+          name: 'Jaqueta jeans',
+          price: '120.00',
+          status: 'despublicado',
+          description: null,
+          category: 'Roupas',
+          size: 'M',
+          color: 'Azul',
+          brand: null,
+          condition: 'Seminovo',
+          style: null,
+          images: ['https://api.test/foto.jpg'],
+          store: { id: 3, name: 'Brechó da Ana', city: 'Porto Alegre' },
+          ai_corrections: [],
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    const peca = await apiGetById('7');
+
+    expect(urls).toEqual(['get /users/me/products/7']);
+    expect(peca).toMatchObject({
+      id: '7',
+      price: 120,
+      status: 'despublicado',
+      images: ['https://api.test/foto.jpg'],
+      store: { id: '3', name: 'Brechó da Ana' },
+    });
   });
 });
