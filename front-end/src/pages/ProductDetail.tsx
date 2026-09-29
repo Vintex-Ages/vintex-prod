@@ -21,7 +21,7 @@ import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
 import { useToast } from '@/context/useToast';
 import { useProtectedAction } from '@/hooks/useProtectedAction';
-import { paths } from '@/routes/paths';
+import { paths, storeProfile } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
 
@@ -275,9 +275,8 @@ function ProductDetail() {
             </p>
           </div>
 
-          <a
-            href="#"
-            onClick={preventLinkActivation}
+          <Link
+            to={storeProfile(product.store.id)}
             className="mt-6 flex items-center gap-3 border border-linha bg-branco-quente p-4 no-underline hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta"
           >
             <Avatar name={product.store.name} src={product.store.logoUrl} />
@@ -293,7 +292,7 @@ function ProductDetail() {
             <span className="shrink-0 border border-linha px-3 py-2 text-body-sm font-semibold text-tinta">
               Ver loja
             </span>
-          </a>
+          </Link>
 
           {/*
             A historia da peca e o conteudo que vende a peca, nao legenda: sai do
