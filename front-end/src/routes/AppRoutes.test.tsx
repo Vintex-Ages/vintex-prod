@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
@@ -34,6 +35,16 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+const CART_VALUE: CartContextValue = {
+  cart: { groups: [] },
+  count: 0,
+  loading: false,
+  error: null,
+  add: async () => {},
+  remove: async () => {},
+  refresh: async () => {},
+};
+
 vi.mock('@/services/preferenceService', () => ({
   getStyles: vi.fn(),
   getPreferences: vi.fn(),
@@ -60,9 +71,11 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <ToastProvider>
-          <AppRoutes />
-        </ToastProvider>
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -94,13 +107,15 @@ function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
 /** Renderiza `AppRoutes` com uma sessão já dada, em vez do `AuthProvider` real. */
 function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
-    <AuthContext.Provider value={authValue}>
-      <ToastProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <AppRoutes />
-        </MemoryRouter>
-      </ToastProvider>
-    </AuthContext.Provider>,
+    <MemoryRouter initialEntries={[path]}>
+      <AuthContext.Provider value={authValue}>
+        <CartContext.Provider value={CART_VALUE}>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </CartContext.Provider>
+      </AuthContext.Provider>
+    </MemoryRouter>,
   );
 }
 
@@ -222,7 +237,7 @@ describe('<AppRoutes />', () => {
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [paths.cart, 'Carrinho', BUYER],
-    [storeProfile('1'), 'Perfil da loja', null],
+    [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
       path,
@@ -306,6 +321,8 @@ describe('<AppRoutes />', () => {
 
   it('/store/:id abre sem login (leitura pública)', async () => {
     renderAtWithAuth(storeProfile('1'), makeAuthValue({ isAuthenticated: false, user: null }));
-    expect(await screen.findByRole('heading', { name: 'Perfil da loja' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Brechó Mercado Público' }),
+    ).toBeInTheDocument();
   });
 });
