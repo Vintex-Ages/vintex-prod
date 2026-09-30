@@ -103,8 +103,12 @@ export default function Review() {
     formError,
     priceReais,
     publishBlocked,
+    productStatus,
     publishDraft,
   } = useProductFlow();
+
+  // Peça já anunciada ou pausada: a revisão só grava a edição (FE-US019-2).
+  const editandoPublicada = productStatus !== undefined && productStatus !== 'rascunho';
 
   function editar(secao: SecaoCadastro) {
     if (id) navigate(sellerProductPath(id, secao));
@@ -119,6 +123,11 @@ export default function Review() {
 
     if (resultado.status === 'published') {
       toast('Peça publicada! Ela já aparece como anunciada no seu painel.', { kind: 'success' });
+      navigate(paths.seller);
+      return;
+    }
+    if (resultado.status === 'saved') {
+      toast('Alterações salvas.', { kind: 'success' });
       navigate(paths.seller);
       return;
     }
@@ -261,7 +270,13 @@ export default function Review() {
             onClick={handlePublicar}
             disabled={saving || publishBlocked !== null}
           >
-            {saving ? 'Publicando...' : 'Publicar'}
+            {editandoPublicada
+              ? saving
+                ? 'Salvando...'
+                : 'Salvar alterações'
+              : saving
+                ? 'Publicando...'
+                : 'Publicar'}
           </Button>
         </div>
       </>

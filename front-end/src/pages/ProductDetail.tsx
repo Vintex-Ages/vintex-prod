@@ -283,7 +283,10 @@ function ProductDetail() {
             <div className="flex flex-1 flex-col gap-1">
               <span className="text-body font-medium text-tinta">{product.store.name}</span>
               <div className="flex flex-wrap items-center gap-2">
-                <VerifiedBadge verified={Boolean(product.store.verified)} label="Confiável" />
+                <VerifiedBadge
+                  state={product.store.verified ? 'confiavel' : 'pendente'}
+                  label="Confiável"
+                />
                 {product.store.city ? (
                   <span className="text-label text-texto-auxiliar">{product.store.city}</span>
                 ) : null}
