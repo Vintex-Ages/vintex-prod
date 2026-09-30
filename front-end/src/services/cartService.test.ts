@@ -25,7 +25,7 @@ describe('cartService (mock)', () => {
   });
 
   it('addItem: adiciona a peca, agrupada pela loja dela', async () => {
-    const cart = await cartService.addItem(USER_ID, '1'); // Nike Camiseta Preto, loja '1'
+    const cart = await cartService.addItem(USER_ID, '1'); // Jaqueta jeans, loja '1'
 
     expect(cart.groups).toHaveLength(1);
     expect(cart.groups[0].store.id).toBe('1');
@@ -58,13 +58,13 @@ describe('cartService (mock)', () => {
   });
 
   it('subtotalCents soma os itens disponiveis do grupo, em centavos', async () => {
-    const cart = await cartService.addItem(USER_ID, '1'); // Nike Camiseta Preto, R$79,90
+    const cart = await cartService.addItem(USER_ID, '1'); // Jaqueta jeans, R$159,90
 
-    expect(cart.groups[0].subtotalCents).toBe(7990);
+    expect(cart.groups[0].subtotalCents).toBe(15990);
   });
 
   it('getCart marca unavailable a peca vendida e exclui do subtotal', async () => {
-    await cartService.addItem(USER_ID, '4'); // Zara Vestido Estampado, status "vendido" no mock
+    await cartService.addItem(USER_ID, '4'); // Vestido floral midi, status "vendido" no mock
 
     const cart = await cartService.getCart(USER_ID);
 

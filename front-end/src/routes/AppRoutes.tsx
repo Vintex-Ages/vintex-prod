@@ -27,6 +27,7 @@ import { paths } from './paths';
  * Ficam DE FORA, de propósito:
  * - `/login` e `/register`: telas de autenticação de página inteira, com a
  *   própria volta e o próprio título.
+ * - `/onboarding`: a tela mobile tem cabeçalho e fluxo próprios do Figma.
  * - `/vintex`: a conversa tem cabeçalho próprio e é `h-screen overflow-hidden`;
  *   dentro do Layout a página ganharia dois `banner` e o campo de mensagem
  *   cairia abaixo da dobra.
@@ -34,12 +35,11 @@ import { paths } from './paths';
  */
 function WithLayout() {
   const { pathname } = useLocation();
-  // O detalhe da peça ancora a barra de favoritar/comprar no rodapé da
-  // viewport abaixo de `web`. Só ela precisa da faixa extra no fim.
-  const hasFixedBottomBar = matchPath(paths.product, pathname) !== null;
+  // O detalhe da peça usa a composição própria do frame do Figma.
+  const isProductDetail = matchPath(paths.product, pathname) !== null;
 
   return (
-    <Layout bottomSpacer={hasFixedBottomBar}>
+    <Layout productDetailLayout={isProductDetail}>
       <Outlet />
     </Layout>
   );
@@ -64,7 +64,6 @@ function AppRoutes() {
         <Route path={paths.home} element={<Home />} />
         <Route path={paths.catalog} element={<Catalog />} />
         <Route path={paths.product} element={<ProductDetail />} />
-        <Route path={paths.onboarding} element={<StyleSelection />} />
         <Route
           path={paths.sell}
           element={
@@ -113,6 +112,7 @@ function AppRoutes() {
           }
         />
       </Route>
+      <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path={paths.vintex} element={<VintexAI />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />

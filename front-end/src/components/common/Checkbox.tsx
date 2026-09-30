@@ -29,11 +29,12 @@ export type CheckboxProps = {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: ReactNode;
+  checkedMark?: ReactNode;
   disabled?: boolean;
   id: string;
 };
 
-function Checkbox({ checked, onChange, label, disabled = false, id }: CheckboxProps) {
+function Checkbox({ checked, onChange, label, checkedMark, disabled = false, id }: CheckboxProps) {
   return (
     // `items-start` e nao `items-center`: com rotulo de duas linhas (o aceite
     // dos termos no cadastro) a caixa ficava boiando no meio do paragrafo em
@@ -48,20 +49,26 @@ function Checkbox({ checked, onChange, label, disabled = false, id }: CheckboxPr
           onChange={(event) => onChange(event.target.checked)}
           className="peer h-4 w-4 cursor-pointer appearance-none border border-linha bg-branco-quente transition-colors checked:border-verde-rs checked:bg-verde-rs disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-verde-rs"
         />
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 16 16"
-          className="pointer-events-none absolute inset-0 h-4 w-4 text-branco-quente opacity-0 peer-checked:opacity-100"
-        >
-          <path
-            d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {checkedMark ? (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 peer-checked:opacity-100">
+            {checkedMark}
+          </span>
+        ) : (
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="pointer-events-none absolute inset-0 h-4 w-4 text-branco-quente opacity-0 peer-checked:opacity-100"
+          >
+            <path
+              d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
       </span>
       {label ? (
         <label

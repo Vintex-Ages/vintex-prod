@@ -20,6 +20,7 @@ type ProductGridProps = {
    * "voltar" do navegador não sai da peça. Ver o JSDoc do `ProductCard`.
    */
   productPath?: (id: string) => string;
+  compactCards?: boolean;
   onToggleFavorite?: (id: string) => void;
   isFavorite?: (id: string) => boolean;
   /**
@@ -59,6 +60,7 @@ export function ProductGrid({
   skeletonCount = 8,
   onOpen,
   productPath,
+  compactCards = false,
   onToggleFavorite,
   isFavorite,
   emptyState,
@@ -85,6 +87,7 @@ export function ProductGrid({
           product={product}
           onOpen={onOpen}
           productPath={productPath?.(product.id)}
+          compact={compactCards}
           favoriteSlot={
             onToggleFavorite && isFavorite ? (
               <FavoriteButton
