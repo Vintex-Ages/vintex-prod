@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import ActiveFilters from '@/components/catalog/ActiveFilters';
-import { CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
+import { Link, useSearchParams } from 'react-router-dom';
+import { CATEGORIES, CONDITIONS, COLORS, SIZES } from '@/components/catalog/categories';
+import BrandSignature from '@/components/common/BrandSignature';
 import FilterPanel from '@/components/catalog/FilterPanel';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { SuggestionBlock } from '@/components/catalog/SuggestionBlock';
@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
-import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { paths, productDetail } from '@/routes/paths';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
@@ -60,15 +59,24 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  *   da Vintex (FE-US027-3) abre a busca já filtrada.
  */
 function Catalog() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const term = searchParams.get('q') ?? '';
+  const query = searchParams.get('q') ?? '';
+  const categoryParam = searchParams.get('category') || undefined;
+  const legacyCategory = categoryParam
+    ? undefined
+    : CATEGORIES.find((option) => option.value && option.value === query)?.value;
+  const term = legacyCategory ? '' : query;
+  const category = categoryParam ?? legacyCategory;
 
   const [inputValue, setInputValue] = useState(term);
-  const [filters, setFilters] = useState<CatalogFilters>(() => fromCatalogSearch(searchParams));
+  const [filters, setFilters] = useState<CatalogFilters>(() => ({
+    ...fromCatalogSearch(searchParams),
+    ...(category ? { category } : {}),
+  }));
   // Chegar de novo por um link com outros filtros (ex.: outra resposta da
-  // Vintex) substitui o painel. A chave só muda quando a URL muda — mexer no
-  // painel não escreve na URL, então não é sobrescrito.
+  // Vintex) substitui o painel. A categoria escolhida no painel também vai
+  // para a URL; `handleFiltersChange` atualiza a chave antes de escrever, para
+  // esta troca não apagar os outros filtros do painel.
   const urlFiltersKey = JSON.stringify(fromCatalogSearch(searchParams));
   const lastUrlFiltersKey = useRef(urlFiltersKey);
   useEffect(() => {
@@ -89,6 +97,23 @@ function Catalog() {
   useEffect(() => {
     setInputValue(term);
   }, [term]);
+
+  useEffect(() => {
+    if (!legacyCategory) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete('q');
+        next.set('category', legacyCategory);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [legacyCategory, setSearchParams]);
+
+  useEffect(() => {
+    setFilters((current) => (current.category === category ? current : { ...current, category }));
+  }, [category]);
 
   const run = useCallback(() => {
     const requestId = ++requestSequence.current;
@@ -128,9 +153,37 @@ function Catalog() {
   function handleSubmit(value: string) {
     const trimmed = value.trim();
     // Troca só o `q`: filtros que vieram pela URL continuam valendo.
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (trimmed) next.set('q', trimmed);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function handleSearchChange(value: string) {
+    setInputValue(value);
+    const query = value.trim();
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (query) next.set('q', query);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function handleFiltersChange(nextFilters: CatalogFilters) {
+    setFilters(nextFilters);
     const next = new URLSearchParams(searchParams);
-    if (trimmed) next.set('q', trimmed);
-    else next.delete('q');
+    if (nextFilters.category) next.set('category', nextFilters.category);
+    else next.delete('category');
+    lastUrlFiltersKey.current = JSON.stringify(fromCatalogSearch(next));
     setSearchParams(next, { replace: true });
   }
 
@@ -144,49 +197,51 @@ function Catalog() {
   }
 
   return (
-    <Container as="main" className="flex flex-col gap-6 py-6 tablet:py-8">
+    <Container as="main" className="flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8">
+      <div className="-mx-4 -mt-6 tablet:hidden">
+        <BrandSignature headingAs="p" />
+      </div>
+
       <div className="flex flex-col gap-4">
-        <h1 className="font-display text-h2 text-tinta">Catálogo</h1>
+        <h1 className="sr-only">Catálogo</h1>
 
         <SearchBar
           value={inputValue}
-          onChange={setInputValue}
+          onChange={handleSearchChange}
           onSubmit={handleSubmit}
           loading={loading}
         />
       </div>
 
-      {/*
-        #207: caminho em destaque para a IA, a partir do `tablet`
-        (RN-94/RN-54) — no mobile o FAB já cobre esse papel. A SearchBar
-        tradicional acima continua visível em todo breakpoint: a IA é um
-        caminho a mais, não o único.
-      */}
       <div className="hidden tablet:block">
-        <VintexSearchSpotlight
-          size="compact"
-          headingAs="h2"
-          heading="Prefere descrever o que procura?"
-          eyebrow=""
-          isOnline={false}
-          suggestions={[]}
-          placeholder="Descreva a peça ou o estilo..."
-          onSubmit={(query) => navigate(paths.vintex, { state: { message: query } })}
-        />
+        <Link
+          to={paths.vintex}
+          className="flex min-h-touch items-center justify-between gap-4 bg-vermelho-escuro px-5 py-3 font-ui text-branco-quente transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-branco-quente"
+        >
+          <span className="font-display text-h4 web:text-h3">Prefere descrever o que procura?</span>
+          <span className="inline-flex shrink-0 items-center gap-2 text-body-sm font-semibold underline underline-offset-4">
+            Conversar com a Vintex
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+              <path
+                d="M5 12h14m-6-6 6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </Link>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <FilterPanel
-          filters={filters}
-          onChange={setFilters}
-          sizeOptions={[...SIZES]}
-          conditionOptions={[...CONDITIONS]}
-          colorOptions={[...COLORS]}
-          resultCount={loading ? undefined : total}
-        />
-
-        <ActiveFilters filters={filters} onChange={setFilters} total={total} loading={loading} />
-      </div>
+      <FilterPanel
+        filters={filters}
+        onChange={handleFiltersChange}
+        sizeOptions={[...SIZES]}
+        conditionOptions={[...CONDITIONS]}
+        colorOptions={[...COLORS]}
+        resultCount={loading ? undefined : total}
+      />
 
       {error ? (
         <ErrorState message="Não foi possível carregar as peças agora." onRetry={run} />

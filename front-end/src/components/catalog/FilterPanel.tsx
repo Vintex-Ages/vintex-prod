@@ -15,7 +15,7 @@ type FilterPanelProps = {
   brandOptions?: string[];
   conditionOptions?: string[];
   colorOptions?: string[];
-  /** Quantas peças o filtro atual devolve — vira o rótulo da saída da folha no celular. */
+  /** Quantas peças o filtro atual devolve; também indica carregamento quando omitido. */
   resultCount?: number;
 };
 
@@ -78,7 +78,7 @@ function FilterPanel({
 
   return (
     <section aria-label="Filtros do catálogo">
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:-mx-6 tablet:px-6 web:-mx-8 web:px-8">
         {CATEGORIES.map((category) => (
           <FilterChip
             key={category.label}
@@ -87,13 +87,17 @@ function FilterPanel({
             onToggle={() => updateFilter('category', category.value)}
           />
         ))}
-
         <FilterToggle
           open={open}
           count={activeCount}
           onClick={() => setOpen((current) => !current)}
         />
       </div>
+      <p aria-live="polite" className="mt-4 text-right font-ui text-body-sm text-texto-auxiliar">
+        {typeof resultCount === 'number'
+          ? `${formatPieceCount(resultCount)} ${resultCount === 1 ? 'encontrada' : 'encontradas'}`
+          : 'Buscando peças…'}
+      </p>
 
       {open && (
         <div

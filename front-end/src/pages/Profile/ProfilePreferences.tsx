@@ -20,6 +20,7 @@ function ProfilePreferences() {
   const { toast } = useToast();
   const [styles, setStyles] = useState<StyleOption[]>([]);
   const [selectedValues, setSelectedValues] = useState<string[]>([]);
+  const [otherPreferences, setOtherPreferences] = useState<Preference[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [preferencesError, setPreferencesError] = useState(false);
@@ -42,9 +43,16 @@ function ProfilePreferences() {
         } else {
           setStyles(stylesResult.value);
           if (preferencesResult.status === 'fulfilled') {
-            setSelectedValues(preferencesResult.value.map((preference) => preference.value));
+            const preferences = preferencesResult.value;
+            setSelectedValues(
+              preferences
+                .filter((preference) => preference.type === 'estilo')
+                .map((preference) => preference.value),
+            );
+            setOtherPreferences(preferences.filter((preference) => preference.type !== 'estilo'));
           } else {
             setSelectedValues([]);
+            setOtherPreferences([]);
             setPreferencesError(true);
           }
         }
@@ -73,7 +81,7 @@ function ProfilePreferences() {
     setSaving(true);
 
     try {
-      await savePreferences(preferences);
+      await savePreferences([...otherPreferences, ...preferences]);
       setPreferencesError(false);
       toast('Preferências salvas com sucesso.', { kind: 'success' });
     } catch {

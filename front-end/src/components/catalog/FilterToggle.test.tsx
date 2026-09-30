@@ -16,24 +16,36 @@ describe('<FilterToggle />', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('matches the other filter chips in height and colors', () => {
+    render(<FilterToggle onClick={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Mais filtros' })).toHaveClass(
+      'min-h-touch',
+      'border-linha',
+      'bg-branco-quente',
+    );
+  });
+
   it('rotates the chevron (rotate-180) only when open is true', () => {
     const { container, rerender } = render(<FilterToggle onClick={vi.fn()} open />);
 
-    // O chevron é o único <svg> com a classe de transição; o ícone de filtro não tem className.
-    expect(container.querySelector('svg.transition-transform')).toHaveClass('rotate-180');
+    expect(container.querySelector('img.transition-transform')).toHaveClass('rotate-180');
 
     rerender(<FilterToggle onClick={vi.fn()} open={false} />);
-    expect(container.querySelector('svg.transition-transform')).not.toHaveClass('rotate-180');
+    expect(container.querySelector('img.transition-transform')).not.toHaveClass('rotate-180');
   });
 
-  it('shows the count badge only when count is greater than 0', () => {
+  it('announces active filter counts without changing the visual pill', () => {
     const { rerender } = render(<FilterToggle onClick={vi.fn()} count={3} />);
-    expect(screen.getByText('3')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Mais filtros, 3 filtros ativos' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('3')).toBeNull();
 
     rerender(<FilterToggle onClick={vi.fn()} count={0} />);
-    expect(screen.queryByText('0')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mais filtros' })).toBeInTheDocument();
 
     rerender(<FilterToggle onClick={vi.fn()} />);
-    expect(screen.queryByText('0')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mais filtros' })).toBeInTheDocument();
   });
 });

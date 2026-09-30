@@ -15,6 +15,7 @@ export type IconButtonProps = {
   ariaLabel: string;
   variant?: 'default' | 'primary';
   disabled?: boolean;
+  className?: string;
 };
 
 function IconButton({
@@ -23,6 +24,7 @@ function IconButton({
   ariaLabel,
   variant = 'default',
   disabled = false,
+  className,
 }: IconButtonProps) {
   return (
     <button
@@ -36,6 +38,7 @@ function IconButton({
           ? 'border border-vermelho-escuro bg-vermelho-escuro text-branco-quente hover:brightness-110 focus-visible:ring-branco-quente'
           : 'border-2 border-linha bg-branco-quente text-tinta hover:bg-papel-profundo focus-visible:ring-tinta',
         disabled && 'cursor-not-allowed opacity-50',
+        className,
       )}
     >
       {icon}

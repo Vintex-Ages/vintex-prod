@@ -129,7 +129,7 @@ describe('<AppRoutes />', () => {
   it.each([
     [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],
-    [productDetail('1'), 'Nike Camiseta Preto'],
+    [productDetail('1'), 'Jaqueta jeans vintage clara'],
     [paths.login, 'Entre na Vintex'],
     [paths.register, 'Crie sua conta'],
     [paths.onboarding, 'Qual é a sua estética?'],
@@ -139,20 +139,31 @@ describe('<AppRoutes />', () => {
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
   });
 
-  /**
-   * O `Layout` (#105) existia testado e não era montado por ninguém: nenhuma
-   * tela tinha marca, navegação, área de conta ou rodapé. Estes dois testes
-   * travam onde ele entra — e, principalmente, onde ele NÃO entra.
-   */
-  it.each([paths.home, paths.catalog, productDetail('1'), paths.onboarding])(
-    'veste %s com o esqueleto do app',
-    async (path) => {
-      renderAt(path);
-      expect(await screen.findByRole('banner')).toBeInTheDocument();
-      expect(screen.getByRole('contentinfo')).toBeInTheDocument();
-      expect(screen.getByRole('navigation', { name: 'Principal' })).toBeInTheDocument();
-    },
-  );
+  /** O detalhe mantém a casca do app com uma barra própria e sem rodapé global. */
+  it.each([paths.home, paths.catalog])('veste %s com o esqueleto do app', async (path) => {
+    renderAt(path);
+    expect(await screen.findByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Principal' })).toBeInTheDocument();
+  });
+
+  it('veste o detalhe com a barra do Figma e sem rodapé global', async () => {
+    renderAt(productDetail('1'));
+
+    expect(await screen.findByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sacola (0)' })).toHaveAttribute('href', paths.cart);
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+  });
+
+  it('renderiza onboarding com o cabeçalho próprio, sem o rodapé global', async () => {
+    renderAt(paths.onboarding);
+    expect(
+      await screen.findByRole('heading', { name: 'Qual é a sua estética?' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+  });
 
   it.each([paths.vintex, paths.login, paths.register])(
     'deixa %s fora do esqueleto, com o próprio cabeçalho',
@@ -191,7 +202,7 @@ describe('<AppRoutes />', () => {
   it.each([
     [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],
-    [productDetail('1'), 'Nike Camiseta Preto'],
+    [productDetail('1'), 'Jaqueta jeans vintage clara'],
   ])('RN-26: %s continua acessível sem login', async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
@@ -199,7 +210,7 @@ describe('<AppRoutes />', () => {
 
   // --- #207: pontos de entrada da Vintex (FAB) ---
 
-  it.each([paths.home, paths.catalog, productDetail('1')])(
+  it.each([paths.home, paths.catalog])(
     'mostra o FAB da Vintex em %s (dentro do Layout)',
     async (path) => {
       renderAt(path);
@@ -220,12 +231,13 @@ describe('<AppRoutes />', () => {
     },
   );
 
-  it('no detalhe do produto, o FAB sobe (raised) para não sobrepor a barra fixa', async () => {
+  it('não mostra o FAB global no detalhe, que já tem curadoria inline', async () => {
     renderAt(productDetail('1'));
 
-    const fab = await screen.findByRole('button', { name: 'Abrir assistente Vintex' });
-    expect(fab.parentElement).toHaveClass('bottom-24');
-    expect(fab.parentElement).toHaveClass('web:bottom-5');
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+    expect(
+      screen.queryByRole('button', { name: 'Abrir assistente Vintex' }),
+    ).not.toBeInTheDocument();
   });
 
   it('na Home (sem barra fixa), o FAB fica na posição padrão, não raised', async () => {
