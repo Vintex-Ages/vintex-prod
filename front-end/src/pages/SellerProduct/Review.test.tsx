@@ -337,4 +337,35 @@ describe('Review', () => {
 
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
   });
+
+  // FE-US019-2 (#221): editar peça anunciada ou pausada não passa pelo `publish`.
+  describe('editando peça já publicada', () => {
+    it.each([
+      { status: 'ativo', rotulo: 'anunciada' },
+      { status: 'despublicado', rotulo: 'pausada' },
+    ] as const)(
+      'peça $rotulo: salva as alterações sem publicar e volta ao painel',
+      async ({ status }) => {
+        vi.spyOn(sellerProductService, 'getById').mockResolvedValue({ ...PECA, status });
+        vi.spyOn(sellerProductService, 'update').mockImplementation(async (_id, input) => ({
+          ...ecoar(input),
+          status,
+        }));
+
+        renderFluxo('/seller/products/7/review');
+
+        const salvar = await screen.findByRole('button', { name: 'Salvar alterações' });
+        expect(screen.queryByRole('button', { name: 'Publicar' })).toBeNull();
+
+        fireEvent.click(salvar);
+
+        expect(
+          await screen.findByRole('heading', { name: 'Painel do vendedor' }),
+        ).toBeInTheDocument();
+        expect(sellerProductService.update).toHaveBeenCalledWith('7', expect.any(Object), []);
+        expect(sellerProductService.publish).not.toHaveBeenCalled();
+        expect(screen.getByText('Alterações salvas.')).toBeInTheDocument();
+      },
+    );
+  });
 });

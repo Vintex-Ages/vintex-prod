@@ -81,13 +81,6 @@ function missingRequiredFields(): SellerProductError {
   return new SellerProductError('VALIDATION_ERROR', 'Nome e preço são obrigatórios.');
 }
 
-function endpointUnavailable(method: string): SellerProductError {
-  return new SellerProductError(
-    'NOT_IMPLEMENTED',
-    `${method} ainda não tem rota no back — só funciona com VITE_USE_MOCKS.`,
-  );
-}
-
 function paginate<T>(items: T[], page: number, pageSize: number): Paginated<T> {
   const start = (page - 1) * pageSize;
   return { items: items.slice(start, start + pageSize), page, pageSize, total: items.length };
@@ -345,8 +338,8 @@ function mockUploadMedia(files: File[]): string[] {
 // Rotas e schemas lidos dos PRs `back-end#157` e `back-end#159` (ver tabela
 // "API real" da #202). Prefixo `/users/me/products` (ADR 0001 §4), mesmo que
 // alguns endpoints ainda estejam em `/products/{id}` nos PRs — o combinado é
-// mover. `getById` e `uploadMedia` não têm rota no back ainda: sem mock,
-// devolvem `NOT_IMPLEMENTED` em vez de chutar um endpoint.
+// mover. `getById` usa a rota declarada na back-end#234, que o back ainda
+// não entregou (ver `apiGetById`).
 
 interface ApiCorrection {
   field: string;
@@ -488,11 +481,9 @@ async function apiUpdate(
 
 /**
  * Contrato: `publish`, `unpublish` e `update` devolvem `ProductDraftResponse`
- * (com `images`, `store` e `ai_corrections`), confirmado com o autor da #202.
- * CORREÇÃO PENDENTE NO BACK: o PR back-end#157 ainda devolve
- * `ProductManagementResponse` (sem esses campos) em `unpublish` e `update`, e
- * vai ser ajustado pra seguir este contrato. Até lá, desligar o mock nessas
- * rotas quebra `mapSellerProductDetail` (`item.store` indefinido).
+ * (com `images`, `store` e `ai_corrections`). Alinhado no back pela
+ * back-end#230 (29/09): `publish` aceita `rascunho` e `despublicado`, e a rota
+ * `republish` deixou de existir.
  */
 async function apiTransition(
   id: string,
@@ -502,6 +493,22 @@ async function apiTransition(
     const { data } = await httpClient.post<ApiSellerProductDetail>(
       `/users/me/products/${id}/${action}`,
     );
+    return mapSellerProductDetail(data);
+  } catch (error) {
+    throw toSellerProductError(error);
+  }
+}
+
+/**
+ * `GET /users/me/products/{id}` — pedida na #202 e registrada como
+ * back-end#234; ainda não existe na `develop` do back (29/09). O contrato
+ * esperado é o mesmo `ProductDraftResponse` das transições, em qualquer
+ * status. Enquanto a rota não chega, a API real devolve 404/405 e o
+ * formulário de edição mostra o erro de carregamento.
+ */
+async function apiGetById(id: string): Promise<SellerProductDetail> {
+  try {
+    const { data } = await httpClient.get<ApiSellerProductDetail>(`/users/me/products/${id}`);
     return mapSellerProductDetail(data);
   } catch (error) {
     throw toSellerProductError(error);
@@ -558,13 +565,10 @@ export async function createDraft(
 /**
  * Peça do vendedor em qualquer status, pro formulário de edição (#216/#221) —
  * o detalhe público não serve: responde 404 pra `despublicado` e não traz
- * rascunho. `GET /users/me/products/{id}` ainda não existe no back.
+ * rascunho. A rota real é a back-end#234 (ver `apiGetById`).
  */
 export async function getById(id: string): Promise<SellerProductDetail> {
-  if (!useMocks) {
-    throw endpointUnavailable('getById');
-  }
-  return mockGetById(id);
+  return useMocks ? mockGetById(id) : apiGetById(id);
 }
 
 export async function update(
