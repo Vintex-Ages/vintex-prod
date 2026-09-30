@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InternalAxiosRequestConfig } from 'axios';
+import contrato from './__contracts__/preferences.json';
 import { getPreferences, getStyles, savePreferences } from './preferenceService';
 
 describe('preferenceService', () => {
@@ -91,5 +93,46 @@ describe('preferenceService (API real)', () => {
       Promise.resolve({ data: {}, status: 200, statusText: 'OK', headers: {}, config });
 
     await expect(apiGetStyles()).resolves.toEqual([]);
+  });
+
+  /**
+   * Contrato de `/users/me/preferences` (#287): o envelope vem do teste do
+   * back-end#236 (`__contracts__/preferences.json`), não do que o front espera —
+   * mock escrito a partir do front só confirma a suposição do próprio front.
+   */
+  async function comAdapter(data: unknown) {
+    const { httpClient } = await import('@/services/httpClient');
+    const pedidos: InternalAxiosRequestConfig[] = [];
+    httpClient.defaults.adapter = (config) => {
+      pedidos.push(config);
+      return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+    };
+    return { pedidos, service: await import('./preferenceService') };
+  }
+
+  it('getPreferences lê a lista de dentro de `preferences`', async () => {
+    const { pedidos, service } = await comAdapter(contrato.response);
+
+    const preferences = await service.getPreferences();
+
+    expect(pedidos[0].method).toBe('get');
+    expect(pedidos[0].url).toBe('/users/me/preferences');
+    expect(preferences).toEqual(contrato.response.preferences);
+  });
+
+  it('resposta sem `preferences` devolve lista vazia', async () => {
+    const { service } = await comAdapter({});
+
+    await expect(service.getPreferences()).resolves.toEqual([]);
+  });
+
+  it('savePreferences manda o corpo `{ preferences: [...] }` que o back aceita', async () => {
+    const { pedidos, service } = await comAdapter(contrato.response);
+
+    await service.savePreferences(contrato.request.preferences);
+
+    expect(pedidos[0].method).toBe('put');
+    expect(pedidos[0].url).toBe('/users/me/preferences');
+    expect(JSON.parse(pedidos[0].data as string)).toEqual(contrato.request);
   });
 });

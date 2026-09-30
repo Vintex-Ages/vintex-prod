@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import { useToast } from '@/context/useToast';
 import StyleSelector from '@/components/preferences/StyleSelector';
 import { paths } from '@/routes/paths';
 import { getStyles, savePreferences } from '@/services/preferenceService';
@@ -28,6 +29,7 @@ const RECOMMENDED = 2;
  */
 function StyleSelection() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [styles, setStyles] = useState<StyleOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +70,13 @@ function StyleSelection() {
       try {
         await savePreferences(prefs);
       } catch {
-        // Falha ao salvar não pode travar o fluxo do onboarding.
+        // Falha ao salvar não pode travar o fluxo do onboarding, mas também não
+        // pode sumir: sem o aviso, a pessoa achava que os estilos estavam
+        // gravados (#287). O toast sobrevive à navegação para a Home.
+        toast(
+          'Não foi possível salvar seus estilos. Você pode escolher de novo em Perfil › Preferências.',
+          { kind: 'error' },
+        );
       }
     }
 

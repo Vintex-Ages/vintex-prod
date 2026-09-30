@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import StyleSelection from './StyleSelection';
+import { ToastProvider } from '@/context/ToastContext';
 import { getStyles, savePreferences } from '@/services/preferenceService';
 
 vi.mock('@/services/preferenceService', () => ({
@@ -19,10 +20,12 @@ const mockStyles = [
 function renderScreen() {
   return render(
     <MemoryRouter initialEntries={['/onboarding']}>
-      <Routes>
-        <Route path="/onboarding" element={<StyleSelection />} />
-        <Route path="/" element={<h1>Início</h1>} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/onboarding" element={<StyleSelection />} />
+          <Route path="/" element={<h1>Início</h1>} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
@@ -114,5 +117,19 @@ describe('StyleSelection', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
     });
+    // #287: a falha não pode sumir — o aviso chega junto na Home.
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível salvar seus estilos.');
+  });
+
+  it('salvar com sucesso não mostra aviso de erro', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    const user = userEvent.setup();
+    renderScreen();
+
+    await user.click(await screen.findByRole('checkbox', { name: /vintage/i }));
+    await user.click(screen.getByRole('button', { name: /salvar/i }));
+
+    await screen.findByRole('heading', { name: 'Início' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
