@@ -20,13 +20,29 @@ export type AuthTokenProvider = () => string | null | undefined;
 export type AuthRequiredHandler = (from: string) => void;
 
 /**
- * Renova a sessão. Devolve o novo access token, ou `null` quando não há como
- * renovar (sem refresh token guardado, ou o backend recusou o que havia).
+ * Resultado de uma tentativa de renovação.
+ *
+ * Os dois modos de falha são diferentes e recebiam o mesmo `null` antes:
+ *
+ * - `sessao-encerrada`: o backend recusou o refresh token, ou não havia nenhum
+ *   guardado. A sessão acabou de verdade e o usuário vai ao login.
+ * - `falha-transitoria`: não deu para *tentar* — rede fora, timeout, CORS, 5xx.
+ *   A sessão pode muito bem estar viva. Mandar o usuário ao login aqui é o
+ *   defeito que este PR existe para não cometer: um blip de rede no minuto 31
+ *   de uma reunião de 90 derrubava a sessão exatamente como o token expirando.
+ */
+export type RefreshResult =
+  | { estado: 'renovada'; token: string }
+  | { estado: 'sessao-encerrada' }
+  | { estado: 'falha-transitoria' };
+
+/**
+ * Renova a sessão.
  *
  * Quem registra é o `AuthProvider`, que é o dono do refresh token e de onde
  * ele é persistido. O interceptor não conhece React nem `sessionStorage`.
  */
-export type SessionRefresher = () => Promise<string | null>;
+export type SessionRefresher = () => Promise<RefreshResult>;
 
 /** Chave usada para guardar a rota de origem durante o fluxo de autenticação. */
 export const REDIRECT_STORAGE_KEY = 'vintex.auth.redirectTo';
@@ -48,13 +64,20 @@ let sessionRefresher: SessionRefresher | null = null;
  * carregam, e três delas derrubariam a sessão que a primeira acabou de
  * renovar. Com o single-flight, as quatro esperam a mesma promessa.
  */
-let renovacaoEmCurso: Promise<string | null> | null = null;
+let renovacaoEmCurso: Promise<RefreshResult> | null = null;
 
 /**
  * Marca de "já tentei renovar por causa desta requisição". Sem ela, uma
  * requisição que continua tomando 401 depois da renovação entra em laço.
+ *
+ * **Chave string, não `Symbol`.** O `mergeConfig` do Axios só passou a copiar
+ * símbolos enumeráveis na 1.19.0; em 1.7 a 1.18 ele itera `Object.keys`, que
+ * descarta `Symbol`. O `package.json` declara `^1.7.4`, então uma instalação
+ * que resolvesse abaixo de 1.19 perderia a marca na repetição, injetaria o
+ * token velho e voltaria ao laço de renovar. Com chave string não depende da
+ * versão.
  */
-const JA_RENOVOU = Symbol('vintex.auth.jaRenovou');
+const JA_RENOVOU = '_vintexJaRenovou';
 
 type ConfigComMarca = InternalAxiosRequestConfig & { [JA_RENOVOU]?: true };
 
@@ -114,12 +137,14 @@ export function setSessionRefresher(refresher: SessionRefresher | null): void {
 }
 
 /** Renova no máximo uma vez por rajada de 401. */
-function renovarUmaVez(): Promise<string | null> {
-  if (!sessionRefresher) return Promise.resolve(null);
+function renovarUmaVez(): Promise<RefreshResult> {
+  if (!sessionRefresher) return Promise.resolve({ estado: 'sessao-encerrada' });
   if (renovacaoEmCurso) return renovacaoEmCurso;
 
   renovacaoEmCurso = sessionRefresher()
-    .catch(() => null)
+    // Refresher que lança é falha de quem renova, não recusa do backend: não é
+    // motivo para deslogar.
+    .catch((): RefreshResult => ({ estado: 'falha-transitoria' }))
     .finally(() => {
       renovacaoEmCurso = null;
     });
@@ -195,11 +220,18 @@ httpClient.interceptors.response.use(
     // meio, e a única saída era logar de novo.
     if (config && !config[JA_RENOVOU]) {
       config[JA_RENOVOU] = true;
-      const novoToken = await renovarUmaVez();
+      const resultado = await renovarUmaVez();
 
-      if (novoToken) {
-        config.headers.set('Authorization', `Bearer ${novoToken}`);
+      if (resultado.estado === 'renovada') {
+        config.headers.set('Authorization', `Bearer ${resultado.token}`);
         return httpClient.request(config);
+      }
+
+      // Não deu para tentar renovar: esta requisição falha, e a sessão fica de
+      // pé para a próxima. Mandar ao login aqui trocaria um erro de rede por um
+      // logout, que é pior e é irreversível para quem estava no meio de algo.
+      if (resultado.estado === 'falha-transitoria') {
+        return Promise.reject(error);
       }
     }
 

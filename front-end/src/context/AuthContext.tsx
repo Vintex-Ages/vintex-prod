@@ -11,8 +11,9 @@ import {
   setAuthTokenProvider,
   setOnAuthRequired,
   setSessionRefresher,
+  type RefreshResult,
 } from '@/services/httpClient';
-import type { AuthUser } from '@/types/auth';
+import { AUTH_REQUIRED, type AuthUser } from '@/types/auth';
 import {
   AUTH_REFRESH_TOKEN_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
@@ -68,6 +69,19 @@ import {
 const DEFAULT_AFTER_LOGIN_PATH = '/';
 
 /**
+ * O backend recusou o refresh token, e não apenas deixou de responder.
+ *
+ * `AUTH_REQUIRED` é o código que `app/core/errors.py::Unauthorized` usa; um
+ * `TOKEN_*` cobre um código mais específico que o backend venha a devolver.
+ * Qualquer outra coisa — inclusive erro sem `response`, que o `toApiError` do
+ * `authService` mapeia para `API_ERROR` — não é afirmação sobre a sessão.
+ */
+function recusaDeSessao(erro: unknown): boolean {
+  const code = (erro as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && (code === AUTH_REQUIRED || code.startsWith('TOKEN_'));
+}
+
+/**
  * Lê e valida a sessão persistida.
  *
  * Retorna `null` quando os dados não existem ou estão corrompidos.
@@ -114,6 +128,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * faz a cada renovação.
    */
   const refreshTokenRef = useRef<string | null>(null);
+
+  /**
+   * Conta quantas sessões já foram encerradas nesta montagem.
+   *
+   * Uma renovação em curso quando o usuário sai chegava depois do `logout` e
+   * regravava o par que ele tinha acabado de apagar, ressuscitando a sessão com
+   * o usuário já mandado ao login. O refresher guarda o valor no começo e só
+   * grava se ele não mudou no meio.
+   */
+  const sessaoRef = useRef(0);
 
   const guardarRefreshToken = useCallback((proximo: string | null) => {
     refreshTokenRef.current = proximo;
@@ -177,6 +201,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * UI à espera dessa chamada.
    */
   const logout = useCallback(() => {
+    // Invalida qualquer renovação em curso: a resposta dela não grava mais nada.
+    sessaoRef.current += 1;
+
     // Lido antes de limpar: é o que o backend precisa para revogar a sessão.
     const refreshToken = refreshTokenRef.current;
 
@@ -264,20 +291,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /**
    * Renova a sessão quando o `httpClient` toma um `401 AUTH_REQUIRED` (#275).
    *
-   * Devolve o novo access token, ou `null` quando não há refresh guardado ou o
-   * backend recusou o que havia — e aí o interceptor segue para o login, como
-   * fazia antes deste efeito existir.
+   * Devolve `sessao-encerrada` quando não há refresh guardado ou o backend
+   * recusou o que havia — e aí o interceptor segue para o login, como fazia
+   * antes deste efeito existir. `falha-transitoria` quando não houve resposta:
+   * a sessão fica de pé e só aquela requisição falha.
    *
    * O backend rotaciona o refresh a cada renovação, então o par novo é guardado
    * antes de a promessa resolver.
    */
   useEffect(() => {
-    setSessionRefresher(async () => {
+    setSessionRefresher(async (): Promise<RefreshResult> => {
       const atual = refreshTokenRef.current;
-      if (!atual) return null;
+      if (!atual) return { estado: 'sessao-encerrada' };
+
+      const sessao = sessaoRef.current;
 
       try {
         const renovada = await authServiceRefresh(atual);
+
+        // Saiu no meio: a resposta não regrava o que o `logout` apagou.
+        if (sessao !== sessaoRef.current) return { estado: 'sessao-encerrada' };
+
         guardarRefreshToken(renovada.refresh_token);
 
         try {
@@ -287,12 +321,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setToken(renovada.access_token);
-        return renovada.access_token;
-      } catch {
-        // Refresh recusado: a sessão acabou de verdade. Limpar aqui evita que a
-        // próxima requisição tente renovar com um token já morto.
-        guardarRefreshToken(null);
-        return null;
+        return { estado: 'renovada', token: renovada.access_token };
+      } catch (erro) {
+        if (sessao !== sessaoRef.current) return { estado: 'sessao-encerrada' };
+
+        // Só recusa identificável mata o refresh token. Rede fora, timeout,
+        // CORS e 5xx chegam aqui como `API_ERROR` e não dizem nada sobre a
+        // sessão: apagar o token neles forçava login por um blip.
+        if (recusaDeSessao(erro)) {
+          guardarRefreshToken(null);
+          return { estado: 'sessao-encerrada' };
+        }
+
+        return { estado: 'falha-transitoria' };
       }
     });
 

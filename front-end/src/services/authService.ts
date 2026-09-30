@@ -375,9 +375,16 @@ async function apiLogout(refreshToken?: string | null): Promise<void> {
  */
 async function apiRefresh(refreshToken: string): Promise<AuthResult> {
   try {
+    // `baseURL` do próprio `httpClient`, e não a env crua: uma barra no fim da
+    // variável produzia `//auth/refresh`, e variável ausente produzia
+    // `undefined/auth/refresh`. Os dois falham como erro de rede, e erro de
+    // rede aqui é tratado como falha transitória — o defeito ficaria calado.
     const { data } = await axios.post<ApiAuthResponse>(
-      `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
-      { refresh_token: refreshToken },
+      '/auth/refresh',
+      {
+        refresh_token: refreshToken,
+      },
+      { baseURL: httpClient.defaults.baseURL },
     );
     return {
       user: toAuthUser(data.user, false),

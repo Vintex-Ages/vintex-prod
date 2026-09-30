@@ -6,6 +6,7 @@ import {
   setAuthTokenProvider,
   setOnAuthRequired,
   setSessionRefresher,
+  type RefreshResult,
 } from './httpClient';
 
 /** Adapter falso: registra a config final e responde 200. */
@@ -155,6 +156,14 @@ describe('httpClient', () => {
 });
 
 /**
+ * Os três resultados do contrato de renovação, tipados de propósito: um
+ * `vi.fn().mockResolvedValue(...)` solto é `any` e aceitaria forma errada.
+ */
+const RENOVADA: RefreshResult = { estado: 'renovada', token: 'token-novo' };
+const SESSAO_ENCERRADA: RefreshResult = { estado: 'sessao-encerrada' };
+const FALHA_TRANSITORIA: RefreshResult = { estado: 'falha-transitoria' };
+
+/**
  * Renovação de sessão (#275).
  *
  * O access token do backend vive 30 minutos. Antes disto, uma sessão morria no
@@ -211,7 +220,7 @@ describe('httpClient — renovação de sessão', () => {
     const onAuthRequired = vi.fn();
     setOnAuthRequired(onAuthRequired);
     setAuthTokenProvider(() => 'token-velho');
-    const renovar = vi.fn().mockResolvedValue('token-novo');
+    const renovar = vi.fn().mockResolvedValue(RENOVADA);
     setSessionRefresher(renovar);
 
     httpClient.defaults.adapter = adapterQue401(1, vistos);
@@ -229,7 +238,7 @@ describe('httpClient — renovação de sessão', () => {
     const vistos: (string | undefined)[] = [];
     const onAuthRequired = vi.fn();
     setOnAuthRequired(onAuthRequired);
-    setSessionRefresher(vi.fn().mockResolvedValue(null));
+    setSessionRefresher(vi.fn().mockResolvedValue(SESSAO_ENCERRADA));
 
     httpClient.defaults.adapter = adapterQue401(1, vistos);
 
@@ -240,7 +249,7 @@ describe('httpClient — renovação de sessão', () => {
     expect(vistos).toHaveLength(1);
   });
 
-  it('renovação que lança é tratada como recusa', async () => {
+  it('renovação que lança não desloga: vale como falha transitória', async () => {
     const vistos: (string | undefined)[] = [];
     const onAuthRequired = vi.fn();
     setOnAuthRequired(onAuthRequired);
@@ -250,16 +259,72 @@ describe('httpClient — renovação de sessão', () => {
 
     await expect(httpClient.get('/users/me/products')).rejects.toBeInstanceOf(AxiosError);
 
-    expect(onAuthRequired).toHaveBeenCalledTimes(1);
+    // Refresher que estoura é defeito de quem renova, não recusa do backend.
+    // Deslogar aqui apagaria a sessão por causa de um bug nosso.
+    expect(onAuthRequired).not.toHaveBeenCalled();
+    expect(vistos).toHaveLength(1);
+  });
+
+  it('falha transitória rejeita a requisição original e mantém a sessão', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+    setAuthTokenProvider(() => 'token-velho');
+    setSessionRefresher(vi.fn().mockResolvedValue(FALHA_TRANSITORIA));
+
+    httpClient.defaults.adapter = adapterQue401(1, vistos);
+
+    const erro: unknown = await httpClient.get('/users/me/products').then(
+      () => null,
+      (motivo: unknown) => motivo,
+    );
+
+    // O erro da requisição original chega em quem chamou: a tela mostra "não
+    // deu, tenta de novo", e não uma tela de login.
+    expect(erro).toBeInstanceOf(AxiosError);
+    expect((erro as AxiosError).response?.status).toBe(401);
+    expect((erro as AxiosError).config?.url).toBe('/users/me/products');
+
+    // Um blip de rede não pode valer o mesmo que refresh token recusado.
+    expect(onAuthRequired).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBeNull();
+    // Uma tentativa só: sem token novo não há o que repetir.
+    expect(vistos).toHaveLength(1);
+  });
+
+  it('a marca de repetição sobrevive à repetição', async () => {
+    const vistos: (string | undefined)[] = [];
+    const configs: InternalAxiosRequestConfig[] = [];
+    const responder = adapterQue401(1, vistos);
+    setAuthTokenProvider(() => 'token-velho');
+    setSessionRefresher(vi.fn().mockResolvedValue(RENOVADA));
+
+    httpClient.defaults.adapter = (config) => {
+      configs.push(config);
+      return responder(config);
+    };
+
+    await httpClient.get('/users/me/products');
+
+    // O interceptor de request só preserva o token novo se enxergar a marca: o
+    // `tokenProvider` ainda devolve o velho, porque o estado React não
+    // acompanha a renovação no tempo da repetição.
+    expect(vistos).toEqual(['Bearer token-velho', 'Bearer token-novo']);
+
+    // E a marca precisa ser chave própria *string*. O `mergeConfig` do Axios só
+    // copia `Symbol` enumerável a partir da 1.19.0, e o `package.json` declara
+    // `^1.7.4`: com `Symbol`, uma instalação abaixo de 1.19 perderia a marca
+    // aqui e a repetição sairia com o token velho.
+    expect(Object.keys(configs[1])).toContain('_vintexJaRenovou');
   });
 
   it('quatro 401 simultâneos renovam uma vez só', async () => {
     const vistos: (string | undefined)[] = [];
     setAuthTokenProvider(() => 'token-velho');
-    let liberar: ((valor: string) => void) | undefined;
+    let liberar: ((valor: RefreshResult) => void) | undefined;
     const renovar = vi.fn(
       () =>
-        new Promise<string | null>((resolve) => {
+        new Promise<RefreshResult>((resolve) => {
           liberar = resolve;
         }),
     );
@@ -276,7 +341,7 @@ describe('httpClient — renovação de sessão', () => {
 
     // Espera as quatro tomarem 401 antes de liberar a renovação.
     await vi.waitFor(() => expect(renovar).toHaveBeenCalled());
-    liberar?.('token-novo');
+    liberar?.(RENOVADA);
 
     const respostas = await chamadas;
 
@@ -291,7 +356,7 @@ describe('httpClient — renovação de sessão', () => {
     const vistos: (string | undefined)[] = [];
     const onAuthRequired = vi.fn();
     setOnAuthRequired(onAuthRequired);
-    const renovar = vi.fn().mockResolvedValue('token-novo');
+    const renovar = vi.fn().mockResolvedValue(RENOVADA);
     setSessionRefresher(renovar);
 
     // Nunca deixa de responder 401, mesmo com token novo.
@@ -318,7 +383,7 @@ describe('httpClient — renovação de sessão', () => {
   });
 
   it('um 401 de outro code não renova', async () => {
-    const renovar = vi.fn().mockResolvedValue('token-novo');
+    const renovar = vi.fn().mockResolvedValue(RENOVADA);
     setSessionRefresher(renovar);
 
     httpClient.defaults.adapter = unauthorizedAdapter('INVALID_CREDENTIALS');
