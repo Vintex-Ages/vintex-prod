@@ -6,13 +6,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import type { ApiError } from '@/types/auth';
-import type { Cart as CartModel, CartGroup, CartItem } from '@/types/cart';
+import type { Cart as CartModel, CartGroup, CartItem, UnavailableReason } from '@/types/cart';
 import CartPage from './Cart';
 
 const ANA = { id: 'loja-ana', name: 'Brechó da Ana' };
 const BIA = { id: 'loja-bia', name: 'Brechó da Bia' };
 
-function item(id: string, name: string, price: number, store = ANA, unavailable = false): CartItem {
+function item(
+  id: string,
+  name: string,
+  price: number,
+  store = ANA,
+  unavailable?: UnavailableReason,
+): CartItem {
   return {
     product: { id, name, price, coverImageUrl: null, store },
     unavailable,
@@ -166,7 +172,10 @@ describe('<Cart />', () => {
     const spies = renderCart({
       initial: {
         groups: [
-          group(ANA, [item('1', 'Vestido floral', 100), item('2', 'Saia midi', 50, ANA, true)]),
+          group(ANA, [
+            item('1', 'Vestido floral', 100),
+            item('2', 'Saia midi', 50, ANA, 'vendido'),
+          ]),
         ],
       },
     });
@@ -179,9 +188,30 @@ describe('<Cart />', () => {
     expect(screen.getByTestId('subtotal-loja-ana')).toHaveTextContent('R$ 100,00');
   });
 
+  // #297: pausa é temporária — a peça fica, marcada, sem aviso de venda.
+  it('peça pausada fica no carrinho marcada como indisponível, sem aviso e fora do subtotal', async () => {
+    const spies = renderCart({
+      initial: {
+        groups: [
+          group(ANA, [
+            item('1', 'Vestido floral', 100),
+            item('2', 'Saia midi', 50, ANA, 'pausado'),
+          ]),
+        ],
+      },
+    });
+
+    const ana = within(await screen.findByRole('region', { name: 'Brechó da Ana' }));
+    expect(ana.getByText('Saia midi')).toBeInTheDocument();
+    expect(ana.getByText('Indisponível')).toBeInTheDocument();
+    expect(screen.getByTestId('subtotal-loja-ana')).toHaveTextContent('R$ 100,00');
+    expect(screen.queryByText('Saia midi foi vendida e saiu do seu carrinho')).toBeNull();
+    expect(spies.remove).not.toHaveBeenCalled();
+  });
+
   it('avisa uma vez só, mesmo que o carrinho recarregue', async () => {
     renderCart({
-      initial: { groups: [group(ANA, [item('2', 'Saia midi', 50, ANA, true)])] },
+      initial: { groups: [group(ANA, [item('2', 'Saia midi', 50, ANA, 'vendido')])] },
     });
 
     await screen.findByText('Saia midi foi vendida e saiu do seu carrinho');

@@ -68,7 +68,7 @@ describe('cartService (mock)', () => {
 
     const cart = await cartService.getCart(USER_ID);
 
-    expect(cart.groups[0].items[0].unavailable).toBe(true);
+    expect(cart.groups[0].items[0].unavailable).toBe('vendido');
     expect(cart.groups[0].subtotalCents).toBe(0);
   });
 
@@ -123,7 +123,7 @@ describe('cartService (API real) — chave Pix do vendedor', () => {
   const apiStore = { id: 5, name: 'Brecho Ana', verified: true };
 
   /** Grupo no formato de `CartStoreResponse` (`app/schemas/cart_schema.py`). */
-  function apiGroup(store: Record<string, unknown>, available = true) {
+  function apiGroup(store: Record<string, unknown>, available = true, status?: string) {
     return {
       store,
       items: [
@@ -132,7 +132,7 @@ describe('cartService (API real) — chave Pix do vendedor', () => {
           name: 'Vestido floral',
           price: 99.9,
           cover_image_url: null,
-          status: available ? 'ativo' : 'vendido',
+          status: status ?? (available ? 'ativo' : 'vendido'),
           available,
         },
       ],
@@ -183,15 +183,34 @@ describe('cartService (API real) — chave Pix do vendedor', () => {
     ]);
   });
 
-  // #226: `available: false` do back tem de chegar como `unavailable: true`.
-  it('peça vendida (available: false) chega marcada como indisponível', async () => {
+  // #226: `available: false` do back tem de chegar indisponível.
+  it('peça vendida (available: false) chega indisponível por venda', async () => {
     await respondWith(page([apiGroup(apiStore, false)]))();
     const { getCart } = await import('./cartService');
 
     const cart = await getCart(USER_ID);
 
-    expect(cart.groups[0].items[0].unavailable).toBe(true);
+    expect(cart.groups[0].items[0].unavailable).toBe('vendido');
     expect(cart.groups[0].subtotalCents).toBe(0);
+  });
+
+  // #297: o back também marca `available: false` a peça despublicada.
+  it('peça despublicada chega indisponível por pausa, não por venda', async () => {
+    await respondWith(page([apiGroup(apiStore, false, 'despublicado')]))();
+    const { getCart } = await import('./cartService');
+
+    const cart = await getCart(USER_ID);
+
+    expect(cart.groups[0].items[0].unavailable).toBe('pausado');
+  });
+
+  it('peça disponível chega sem motivo de indisponibilidade', async () => {
+    await respondWith(page([apiGroup(apiStore)]))();
+    const { getCart } = await import('./cartService');
+
+    const cart = await getCart(USER_ID);
+
+    expect(cart.groups[0].items[0].unavailable).toBeUndefined();
   });
 
   // Revisao PR #228, ponto 3 (RN-18/RN-19): a tela de pagamento mostra a chave

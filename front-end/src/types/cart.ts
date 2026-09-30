@@ -13,6 +13,9 @@ import type { Product, Store } from '@/types/product';
  * cruzando lojas neste tipo.
  */
 
+/** Por que a peça do carrinho não pode ser comprada agora. */
+export type UnavailableReason = 'vendido' | 'pausado';
+
 /** Item do carrinho: a peça e quando foi adicionada. */
 export interface CartItem {
   product: Product;
@@ -21,8 +24,11 @@ export interface CartItem {
    * tem: a API real (`CartItemResponse`) não manda `added_at`.
    */
   addedAt?: string;
-  /** `true` quando a peça não está mais disponível para compra (ex.: vendida). */
-  unavailable?: boolean;
+  /**
+   * Presente quando a peça está **Indisponível** (ver `CONTEXT.md`), com o
+   * motivo: `vendido` não volta, `pausado` o vendedor pode republicar (#297).
+   */
+  unavailable?: UnavailableReason;
 }
 
 /** Itens do carrinho agrupados por loja, com subtotal próprio do grupo. */

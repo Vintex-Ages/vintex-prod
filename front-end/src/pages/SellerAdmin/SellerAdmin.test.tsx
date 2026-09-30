@@ -113,6 +113,33 @@ describe('<SellerAdmin />', () => {
     expect(getMine).toHaveBeenCalledTimes(1);
   });
 
+  // docs/adr/0001 (#297): o back devolve rascunho na listagem sem filtro.
+  it('rascunho não aparece na lista, nos cards nem no total', async () => {
+    vi.mocked(getMine).mockResolvedValue(
+      pagina([
+        peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
+        peca({ id: '2', name: 'Saia abandonada', status: 'rascunho' }),
+      ]),
+    );
+
+    renderPage();
+
+    expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
+    expect(screen.queryByText('Saia abandonada')).toBeNull();
+    expect(screen.getByText('1 peça no total')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+  });
+
+  it('só rascunhos conta como painel vazio', async () => {
+    vi.mocked(getMine).mockResolvedValue(
+      pagina([peca({ id: '2', name: 'Saia abandonada', status: 'rascunho' })]),
+    );
+
+    renderPage();
+
+    expect(await screen.findByText('Nenhuma peça por aqui')).toBeInTheDocument();
+  });
+
   it('peça vendida continua listada, como histórico', async () => {
     vi.mocked(getMine).mockResolvedValue(
       pagina([peca({ id: '1', name: 'Bota Chelsea', status: 'vendido' })]),
@@ -377,6 +404,22 @@ describe('<SellerAdmin />', () => {
       const liquido = await screen.findByTestId('financeiro-liquido');
       expect(within(liquido).getByText('R$ 0,00')).toBeInTheDocument();
       expect(screen.getByText(/Nenhuma venda neste período ainda/)).toBeInTheDocument();
+    });
+
+    // docs/adr/0002 (#297): rota ausente no back não é falha que se tenta de novo.
+    it('resumo sem rota no back mostra que ainda não está disponível, sem tentar de novo', async () => {
+      vi.mocked(getSalesSummary).mockRejectedValue(
+        new SellerProductError(
+          'NOT_AVAILABLE_YET',
+          'O resumo financeiro ainda não está disponível.',
+        ),
+      );
+      renderPage();
+
+      expect(
+        await screen.findByText('O resumo financeiro ainda não está disponível.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Não foi possível carregar o resumo financeiro.')).toBeNull();
     });
 
     it('erro no resumo mostra tentar de novo, que refaz a consulta', async () => {

@@ -67,6 +67,27 @@ function noImage(): SellerProductError {
   return new SellerProductError('NO_IMAGE', 'Adicione ao menos uma foto antes de publicar.');
 }
 
+/**
+ * Código só do front: a operação depende de rota que o back ainda não tem
+ * (`docs/adr/0002`). A tela mostra "ainda não disponível", sem "Tentar de
+ * novo" — tentar de novo não muda nada até o back entregar.
+ */
+export const NOT_AVAILABLE_YET = 'NOT_AVAILABLE_YET';
+
+function notAvailableYet(message: string): SellerProductError {
+  return new SellerProductError(NOT_AVAILABLE_YET, message);
+}
+
+/**
+ * Rota que não existe no back: o envelope dele responde 405
+ * `METHOD_NOT_ALLOWED` quando o caminho existe com outro método (o `PATCH`
+ * de `/users/me/products/{id}`) e 404 `NOT_FOUND` genérico quando o caminho
+ * não existe — nunca o `PRODUCT_NOT_FOUND` de peça inexistente.
+ */
+function isMissingRoute(error: SellerProductError): boolean {
+  return error.code === 'METHOD_NOT_ALLOWED' || error.code === 'NOT_FOUND';
+}
+
 function productNotEditable(message: string): SellerProductError {
   return new SellerProductError('PRODUCT_NOT_EDITABLE', message);
 }
@@ -499,19 +520,84 @@ async function apiTransition(
   }
 }
 
+/** `ProductDetailResponse` do detalhe público: vazio chega como `""`, não `null`. */
+interface ApiPublicProductDetail {
+  id: number | string;
+  name: string;
+  description: string;
+  category: string;
+  style: string;
+  brand: string;
+  color: string;
+  size: string;
+  condition: string;
+  price: number | string;
+  status: ProductStatus;
+  city: string;
+  media: { url: string; position: number }[];
+  store: { id: number | string; name: string };
+}
+
+function blankToUndefined(value: string): string | undefined {
+  return value === '' ? undefined : value;
+}
+
+function mapPublicDetail(item: ApiPublicProductDetail): SellerProductDetail {
+  return {
+    id: String(item.id),
+    name: item.name,
+    price: Number(item.price),
+    status: item.status,
+    description: blankToUndefined(item.description),
+    category: blankToUndefined(item.category),
+    size: blankToUndefined(item.size),
+    color: blankToUndefined(item.color),
+    brand: blankToUndefined(item.brand),
+    condition: blankToUndefined(item.condition),
+    style: blankToUndefined(item.style),
+    images: [...item.media].sort((a, b) => a.position - b.position).map((media) => media.url),
+    quantity: 1,
+    store: { id: String(item.store.id), name: item.store.name, city: item.city || null },
+    // O back acumula as correções no `PATCH`; o formulário só manda as novas.
+    aiCorrections: [],
+  };
+}
+
+/**
+ * Fallback provisório (`docs/adr/0002`, #297) até a back-end#234: o detalhe
+ * público traz todos os campos do formulário, mas responde
+ * `PRODUCT_NOT_FOUND` para peça `despublicado`.
+ */
+async function apiGetPublicDetail(id: string): Promise<SellerProductDetail> {
+  try {
+    const { data } = await httpClient.get<ApiPublicProductDetail>(`/products/${id}`);
+    return mapPublicDetail(data);
+  } catch (error) {
+    const normalized = toSellerProductError(error);
+    if (normalized.code === 'PRODUCT_NOT_FOUND') {
+      throw notAvailableYet(
+        'Editar peça pausada ainda não está disponível. Republique a peça para editá-la.',
+      );
+    }
+    throw normalized;
+  }
+}
+
 /**
  * `GET /users/me/products/{id}` — pedida na #202 e registrada como
  * back-end#234; ainda não existe na `develop` do back (29/09). O contrato
  * esperado é o mesmo `ProductDraftResponse` das transições, em qualquer
- * status. Enquanto a rota não chega, a API real devolve 404/405 e o
- * formulário de edição mostra o erro de carregamento.
+ * status. Enquanto a rota não chega, cai no detalhe público
+ * (`docs/adr/0002`); remover o fallback quando a #234 entrar.
  */
 async function apiGetById(id: string): Promise<SellerProductDetail> {
   try {
     const { data } = await httpClient.get<ApiSellerProductDetail>(`/users/me/products/${id}`);
     return mapSellerProductDetail(data);
   } catch (error) {
-    throw toSellerProductError(error);
+    const normalized = toSellerProductError(error);
+    if (isMissingRoute(normalized)) return apiGetPublicDetail(id);
+    throw normalized;
   }
 }
 
@@ -535,7 +621,10 @@ async function apiGetMine({
   }
 }
 
-/** Rota proposta na #202; a back-end#146 ainda não tem branch. */
+/**
+ * Rota proposta na #202; a back-end#146 ainda não tem branch. Sem a rota, a
+ * tela mostra "ainda não disponível" em vez de erro (`docs/adr/0002`).
+ */
 async function apiGetSalesSummary(period: SalesPeriod): Promise<SalesSummary> {
   try {
     const { data } = await httpClient.get<ApiSalesSummary>('/users/me/sales/summary', {
@@ -549,7 +638,11 @@ async function apiGetSalesSummary(period: SalesPeriod): Promise<SalesSummary> {
       net: Number(data.net),
     };
   } catch (error) {
-    throw toSellerProductError(error);
+    const normalized = toSellerProductError(error);
+    if (isMissingRoute(normalized)) {
+      throw notAvailableYet('O resumo financeiro ainda não está disponível.');
+    }
+    throw normalized;
   }
 }
 

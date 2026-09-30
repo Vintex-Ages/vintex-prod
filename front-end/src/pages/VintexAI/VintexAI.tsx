@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ChatBubble } from '@/components/vintex-ai/ChatBubble';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { FilterChip } from '@/components/catalog/FilterChip';
+import Button from '@/components/common/Button';
 import IconButton from '@/components/common/IconButton';
 import InterpretedQueryChips from '@/components/vintex-ai/InterpretedQueryChips';
 import { useVintexChat } from '@/hooks/useVintexChat';
@@ -164,6 +165,18 @@ export default function VintexAI() {
                       navigate(`${paths.catalog}${toCatalogSearch(message.interpreted!.filters)}`)
                     }
                   />
+                ) : null}
+                {message.role === 'vintex' && message.catalogQuery ? (
+                  <div className="mt-3">
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        navigate(`${paths.catalog}${toCatalogSearch({ q: message.catalogQuery })}`)
+                      }
+                    >
+                      Buscar no catálogo
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             </div>

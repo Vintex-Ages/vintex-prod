@@ -225,4 +225,116 @@ describe('sellerProductService com a API real', () => {
       store: { id: '3', name: 'Brechó da Ana' },
     });
   });
+
+  // docs/adr/0002 (#297): sem a rota do vendedor, cai no detalhe público.
+  describe('sem a rota do vendedor (back-end#234)', () => {
+    type Resposta = { status: number; data: unknown };
+
+    /** Responde por URL; status >= 400 rejeita como o axios, com o envelope do back. */
+    async function responderPorUrl(respostas: Record<string, Resposta>) {
+      const { httpClient } = await import('@/services/httpClient');
+      const urls: string[] = [];
+      httpClient.defaults.adapter = (config) => {
+        urls.push(`${config.method} ${config.url}`);
+        const resposta = respostas[config.url ?? ''];
+        const response = {
+          data: resposta.data,
+          status: resposta.status,
+          statusText: '',
+          headers: {},
+          config,
+        };
+        return resposta.status >= 400
+          ? Promise.reject(Object.assign(new Error('HTTP'), { response, config }))
+          : Promise.resolve(response);
+      };
+      return urls;
+    }
+
+    function erro(status: number, code: string): Resposta {
+      return { status, data: { error: { code, message: code } } };
+    }
+
+    /** `ProductDetailResponse` do back: vazio vem como `""`, fotos em `media`. */
+    const detalhePublico = {
+      id: 7,
+      name: 'Jaqueta jeans',
+      description: '',
+      category: 'Roupas',
+      style: '',
+      brand: '',
+      color: 'Azul',
+      size: 'M',
+      condition: 'Seminovo',
+      price: '120.00',
+      status: 'ativo',
+      city: 'Porto Alegre',
+      state: 'RS',
+      media: [
+        { type: 'image', url: 'https://api.test/2.jpg', position: 1 },
+        { type: 'image', url: 'https://api.test/1.jpg', position: 0 },
+      ],
+      store: { id: 3, name: 'Brechó da Ana', verified: false, logo_url: null },
+    };
+
+    it('405 da rota do vendedor cai no detalhe público e mapeia para o formulário', async () => {
+      const urls = await responderPorUrl({
+        '/users/me/products/7': erro(405, 'METHOD_NOT_ALLOWED'),
+        '/products/7': { status: 200, data: detalhePublico },
+      });
+      const { getById: apiGetById } = await import('./sellerProductService');
+
+      const peca = await apiGetById('7');
+
+      expect(urls).toEqual(['get /users/me/products/7', 'get /products/7']);
+      expect(peca).toEqual({
+        id: '7',
+        name: 'Jaqueta jeans',
+        price: 120,
+        status: 'ativo',
+        description: undefined,
+        category: 'Roupas',
+        size: 'M',
+        color: 'Azul',
+        brand: undefined,
+        condition: 'Seminovo',
+        style: undefined,
+        images: ['https://api.test/1.jpg', 'https://api.test/2.jpg'],
+        quantity: 1,
+        store: { id: '3', name: 'Brechó da Ana', city: 'Porto Alegre' },
+        aiCorrections: [],
+      });
+    });
+
+    it('peça pausada (PRODUCT_NOT_FOUND no público) vira NOT_AVAILABLE_YET', async () => {
+      await responderPorUrl({
+        '/users/me/products/7': erro(405, 'METHOD_NOT_ALLOWED'),
+        '/products/7': erro(404, 'PRODUCT_NOT_FOUND'),
+      });
+      const { getById: apiGetById } = await import('./sellerProductService');
+
+      await expect(apiGetById('7')).rejects.toMatchObject({ code: 'NOT_AVAILABLE_YET' });
+    });
+
+    it('erro de verdade da rota do vendedor não cai no fallback', async () => {
+      const urls = await responderPorUrl({
+        '/users/me/products/7': erro(404, 'PRODUCT_NOT_FOUND'),
+      });
+      const { getById: apiGetById } = await import('./sellerProductService');
+
+      await expect(apiGetById('7')).rejects.toMatchObject({ code: 'PRODUCT_NOT_FOUND' });
+      expect(urls).toEqual(['get /users/me/products/7']);
+    });
+
+    it('resumo financeiro sem rota (NOT_FOUND genérico) vira NOT_AVAILABLE_YET', async () => {
+      await responderPorUrl({
+        '/users/me/sales/summary': erro(404, 'NOT_FOUND'),
+      });
+      const { getSalesSummary: apiGetSalesSummary } = await import('./sellerProductService');
+
+      await expect(apiGetSalesSummary('month')).rejects.toMatchObject({
+        code: 'NOT_AVAILABLE_YET',
+      });
+    });
+  });
 });
