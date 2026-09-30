@@ -15,6 +15,7 @@ import { paths, productDetail } from '@/routes/paths';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
 import type { FilterParams, Product, SearchResult } from '@/types/product';
+import { fromCatalogSearch } from '@/utils/catalogQuery';
 
 /**
  * Converte os filtros do painel (múltipla escolha) para o formato aceito
@@ -54,6 +55,9 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  *   opções de tamanho, conservação e cor, mas nenhuma tela passava nada — os
  *   grupos apareciam como legendas soltas sem nada embaixo.
  * - **Vazio e erro têm saída** — limpar os filtros e tentar de novo.
+ * - **Filtros também chegam pela URL** (`?category=…&color=…&priceMax=…`, ver
+ *   `utils/catalogQuery.ts`): é assim que "Ver no catálogo" da interpretação
+ *   da Vintex (FE-US027-3) abre a busca já filtrada.
  */
 function Catalog() {
   const navigate = useNavigate();
@@ -61,7 +65,17 @@ function Catalog() {
   const term = searchParams.get('q') ?? '';
 
   const [inputValue, setInputValue] = useState(term);
-  const [filters, setFilters] = useState<CatalogFilters>({});
+  const [filters, setFilters] = useState<CatalogFilters>(() => fromCatalogSearch(searchParams));
+  // Chegar de novo por um link com outros filtros (ex.: outra resposta da
+  // Vintex) substitui o painel. A chave só muda quando a URL muda — mexer no
+  // painel não escreve na URL, então não é sobrescrito.
+  const urlFiltersKey = JSON.stringify(fromCatalogSearch(searchParams));
+  const lastUrlFiltersKey = useRef(urlFiltersKey);
+  useEffect(() => {
+    if (urlFiltersKey === lastUrlFiltersKey.current) return;
+    lastUrlFiltersKey.current = urlFiltersKey;
+    setFilters(JSON.parse(urlFiltersKey) as CatalogFilters);
+  }, [urlFiltersKey]);
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   /** Motivo das sugestões quando a busca não acha nada (RN-61). */
@@ -113,7 +127,11 @@ function Catalog() {
 
   function handleSubmit(value: string) {
     const trimmed = value.trim();
-    setSearchParams(trimmed ? { q: trimmed } : {}, { replace: true });
+    // Troca só o `q`: filtros que vieram pela URL continuam valendo.
+    const next = new URLSearchParams(searchParams);
+    if (trimmed) next.set('q', trimmed);
+    else next.delete('q');
+    setSearchParams(next, { replace: true });
   }
 
   const hasFilters = Object.values(filters).some(
