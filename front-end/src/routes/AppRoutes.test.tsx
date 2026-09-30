@@ -243,7 +243,7 @@ describe('<AppRoutes />', () => {
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
-    [paths.cart, 'Carrinho', BUYER],
+    [paths.cart, 'Seu carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
