@@ -214,7 +214,11 @@ function Register() {
     setSubmitError(null);
 
     try {
-      const { user, access_token: token } = await register({
+      const {
+        user,
+        access_token: token,
+        refresh_token: refreshToken,
+      } = await register({
         name: name.trim(),
         email: email.trim(),
         password,
@@ -227,7 +231,7 @@ function Register() {
       const stateReturnTo = getStateReturnTo(location.state);
       const hadStoredReturnTo = hasStoredReturnTo();
 
-      login(user, token);
+      login(user, token, refreshToken);
 
       if (stateReturnTo) {
         // `login()` não conhece location.state; navega por cima do destino que ela aplicou.

@@ -5,6 +5,7 @@ import {
   httpClient,
   setAuthTokenProvider,
   setOnAuthRequired,
+  setSessionRefresher,
 } from './httpClient';
 
 /** Adapter falso: registra a config final e responde 200. */
@@ -49,6 +50,9 @@ describe('httpClient', () => {
   beforeEach(() => {
     setAuthTokenProvider(() => null);
     setOnAuthRequired(null);
+    // Sem refresher, o 401 cai direto no handler: e o comportamento que os
+    // testes deste bloco descrevem, de antes do #275.
+    setSessionRefresher(null);
     window.sessionStorage.clear();
     window.history.pushState({}, '', '/');
   });
@@ -147,5 +151,180 @@ describe('httpClient', () => {
 
     expect(onAuthRequired).not.toHaveBeenCalled();
     expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBeNull();
+  });
+});
+
+/**
+ * Renovação de sessão (#275).
+ *
+ * O access token do backend vive 30 minutos. Antes disto, uma sessão morria no
+ * meio de uma reunião de 90 e a única saída era logar de novo.
+ */
+describe('httpClient — renovação de sessão', () => {
+  beforeEach(() => {
+    setAuthTokenProvider(() => null);
+    setOnAuthRequired(null);
+    setSessionRefresher(null);
+    window.sessionStorage.clear();
+    window.history.pushState({}, '', '/');
+  });
+
+  afterEach(() => {
+    setSessionRefresher(null);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Responde 401 `AUTH_REQUIRED` nas `quantos` primeiras chamadas e 200 depois.
+   * Registra o Authorization de cada tentativa, que é como se verifica que a
+   * repetição saiu com o token novo e não com o antigo.
+   */
+  function adapterQue401(quantos: number, vistos: (string | undefined)[]) {
+    let chamadas = 0;
+    return (config: InternalAxiosRequestConfig) => {
+      chamadas += 1;
+      vistos.push(config.headers.get('Authorization') as string | undefined);
+      if (chamadas <= quantos) {
+        return Promise.reject(
+          new AxiosError('Request failed with status code 401', 'ERR_BAD_REQUEST', config, null, {
+            data: { error: { code: 'AUTH_REQUIRED', message: 'Sessão expirada.' } },
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            config,
+          }),
+        );
+      }
+      return Promise.resolve({
+        data: { ok: true },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+  }
+
+  it('renova e repete a requisição original com o token novo', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+    setAuthTokenProvider(() => 'token-velho');
+    const renovar = vi.fn().mockResolvedValue('token-novo');
+    setSessionRefresher(renovar);
+
+    httpClient.defaults.adapter = adapterQue401(1, vistos);
+
+    const resposta = await httpClient.get('/users/me/products');
+
+    expect(resposta.data).toEqual({ ok: true });
+    expect(renovar).toHaveBeenCalledTimes(1);
+    expect(vistos).toEqual(['Bearer token-velho', 'Bearer token-novo']);
+    // A sessão foi renovada: o usuário não vê tela de login.
+    expect(onAuthRequired).not.toHaveBeenCalled();
+  });
+
+  it('renovação recusada cai no fluxo de login e rejeita', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+    setSessionRefresher(vi.fn().mockResolvedValue(null));
+
+    httpClient.defaults.adapter = adapterQue401(1, vistos);
+
+    await expect(httpClient.get('/users/me/products')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(onAuthRequired).toHaveBeenCalledTimes(1);
+    // Uma tentativa só: sem token novo não há o que repetir.
+    expect(vistos).toHaveLength(1);
+  });
+
+  it('renovação que lança é tratada como recusa', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+    setSessionRefresher(vi.fn().mockRejectedValue(new Error('rede caiu')));
+
+    httpClient.defaults.adapter = adapterQue401(1, vistos);
+
+    await expect(httpClient.get('/users/me/products')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(onAuthRequired).toHaveBeenCalledTimes(1);
+  });
+
+  it('quatro 401 simultâneos renovam uma vez só', async () => {
+    const vistos: (string | undefined)[] = [];
+    setAuthTokenProvider(() => 'token-velho');
+    let liberar: ((valor: string) => void) | undefined;
+    const renovar = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          liberar = resolve;
+        }),
+    );
+    setSessionRefresher(renovar);
+
+    httpClient.defaults.adapter = adapterQue401(4, vistos);
+
+    const chamadas = Promise.all([
+      httpClient.get('/a'),
+      httpClient.get('/b'),
+      httpClient.get('/c'),
+      httpClient.get('/d'),
+    ]);
+
+    // Espera as quatro tomarem 401 antes de liberar a renovação.
+    await vi.waitFor(() => expect(renovar).toHaveBeenCalled());
+    liberar?.('token-novo');
+
+    const respostas = await chamadas;
+
+    expect(respostas).toHaveLength(4);
+    // O backend rotaciona o refresh token: uma segunda renovação usaria um
+    // token que a primeira acabou de invalidar, e derrubaria a sessão.
+    expect(renovar).toHaveBeenCalledTimes(1);
+    expect(vistos.filter((v) => v === 'Bearer token-novo')).toHaveLength(4);
+  });
+
+  it('401 que persiste depois da renovação não entra em laço', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+    const renovar = vi.fn().mockResolvedValue('token-novo');
+    setSessionRefresher(renovar);
+
+    // Nunca deixa de responder 401, mesmo com token novo.
+    httpClient.defaults.adapter = adapterQue401(Number.MAX_SAFE_INTEGER, vistos);
+
+    await expect(httpClient.get('/users/me/products')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(renovar).toHaveBeenCalledTimes(1);
+    expect(vistos).toHaveLength(2);
+    expect(onAuthRequired).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem refresher registrado, o 401 vai direto para o login', async () => {
+    const vistos: (string | undefined)[] = [];
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+
+    httpClient.defaults.adapter = adapterQue401(1, vistos);
+
+    await expect(httpClient.get('/users/me/products')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(onAuthRequired).toHaveBeenCalledTimes(1);
+    expect(vistos).toHaveLength(1);
+  });
+
+  it('um 401 de outro code não renova', async () => {
+    const renovar = vi.fn().mockResolvedValue('token-novo');
+    setSessionRefresher(renovar);
+
+    httpClient.defaults.adapter = unauthorizedAdapter('INVALID_CREDENTIALS');
+
+    await expect(httpClient.post('/auth/login')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(renovar).not.toHaveBeenCalled();
   });
 });

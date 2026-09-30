@@ -68,6 +68,7 @@ describe('Login', () => {
         is_admin: false,
       },
       access_token: 'tok-123',
+      refresh_token: 'refresh-tok-123',
     });
     renderLogin();
 
@@ -90,6 +91,7 @@ describe('Login', () => {
         is_admin: false,
       },
       access_token: 'tok-123',
+      refresh_token: 'refresh-tok-123',
     });
     renderLogin([{ pathname: '/login', state: { from: '/catalogo?q=jaqueta' } }]);
 

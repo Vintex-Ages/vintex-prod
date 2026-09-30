@@ -49,10 +49,16 @@ import { httpClient } from './httpClient';
  *   const atual = await me(); // rejeita com ApiError { code: AUTH_REQUIRED } sem sessão
  */
 
-/** Retorno das operações que abrem sessão (`register` e `login`). */
+/** Retorno das operações que abrem sessão (`register`, `login` e `refresh`). */
 export interface AuthResult {
   user: AuthUser;
   access_token: string;
+  /**
+   * Token de renovação (#275). O backend **rotaciona** a cada
+   * `POST /auth/refresh`: quem renova precisa guardar o novo e descartar o
+   * anterior, que passa a ser inválido.
+   */
+  refresh_token: string;
 }
 
 /** Código de erro (suposição) para senha que não cumpre a política mínima. */
@@ -106,6 +112,13 @@ function makeMockToken(userId: string): string {
   return `mock.${userId}.${Date.now().toString(36)}`;
 }
 
+function makeMockRefreshToken(userId: string): string {
+  return `mock-refresh.${userId}.${(mockRefreshSeq += 1)}`;
+}
+
+/** Sequência do refresh mockado: dois seguidos precisam ser diferentes. */
+let mockRefreshSeq = 0;
+
 function rejectApiError(error: ApiError): Promise<never> {
   return Promise.reject(error);
 }
@@ -141,7 +154,11 @@ async function mockRegister(input: RegisterInput): Promise<AuthResult> {
   });
   mockCurrentEmail = input.email;
 
-  return { user, access_token: makeMockToken(user.id) };
+  return {
+    user,
+    access_token: makeMockToken(user.id),
+    refresh_token: makeMockRefreshToken(user.id),
+  };
 }
 
 async function mockLogin(input: LoginInput): Promise<AuthResult> {
@@ -156,11 +173,37 @@ async function mockLogin(input: LoginInput): Promise<AuthResult> {
   }
 
   mockCurrentEmail = input.email;
-  return { user: account.user, access_token: makeMockToken(account.user.id) };
+  return {
+    user: account.user,
+    access_token: makeMockToken(account.user.id),
+    refresh_token: makeMockRefreshToken(account.user.id),
+  };
 }
 
 async function mockLogout(): Promise<void> {
   mockCurrentEmail = null;
+}
+
+/**
+ * Renovação mockada: exige sessão aberta e devolve par novo, como a API real.
+ *
+ * Ignora o token recebido — o mock não guarda refresh emitido, e por isso nem
+ * declara o parâmetro. O que importa reproduzir é o contrato: par novo a cada
+ * renovação, e recusa quando não há sessão.
+ */
+async function mockRefresh(): Promise<AuthResult> {
+  const account = mockCurrentEmail ? mockAccounts.get(mockCurrentEmail) : undefined;
+  if (!account) {
+    return rejectApiError({
+      code: AUTH_REQUIRED,
+      message: 'É necessário estar autenticado.',
+    });
+  }
+  return {
+    user: account.user,
+    access_token: makeMockToken(account.user.id),
+    refresh_token: makeMockRefreshToken(account.user.id),
+  };
 }
 
 async function mockMe(): Promise<AuthUser> {
@@ -212,6 +255,7 @@ interface ApiUser {
 interface ApiAuthResponse {
   user: ApiUser;
   access_token: string;
+  refresh_token: string;
 }
 
 /** Converte o `user` do backend para `AuthUser`, forçando o `is_seller` informado. */
@@ -283,7 +327,11 @@ async function apiRegister(input: RegisterInput): Promise<AuthResult> {
       '/auth/register',
       toRegisterBody(input),
     );
-    return { user: toAuthUser(data.user, false), access_token: data.access_token };
+    return {
+      user: toAuthUser(data.user, false),
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    };
   } catch (error) {
     throw toApiError(error);
   }
@@ -292,15 +340,50 @@ async function apiRegister(input: RegisterInput): Promise<AuthResult> {
 async function apiLogin(input: LoginInput): Promise<AuthResult> {
   try {
     const { data } = await httpClient.post<ApiAuthResponse>('/auth/login', input);
-    return { user: toAuthUser(data.user, false), access_token: data.access_token };
+    return {
+      user: toAuthUser(data.user, false),
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    };
   } catch (error) {
     throw toApiError(error);
   }
 }
 
-async function apiLogout(): Promise<void> {
+async function apiLogout(refreshToken?: string | null): Promise<void> {
   try {
-    await httpClient.post('/auth/logout');
+    // Com o refresh token, o backend revoga aquela sessão em vez de só
+    // esquecer o access token; o corpo é opcional lá (`RefreshTokenRequest |
+    // None`), então sem token guardado a chamada segue como antes.
+    await httpClient.post(
+      '/auth/logout',
+      refreshToken ? { refresh_token: refreshToken } : undefined,
+    );
+  } catch (error) {
+    throw toApiError(error);
+  }
+}
+
+/**
+ * Renova a sessão (#275).
+ *
+ * **Fora do `httpClient` de propósito.** Esta chamada é o que o interceptor de
+ * 401 dispara; se ela passasse pelo mesmo interceptor, um refresh token
+ * expirado faria o interceptor tentar renovar a própria renovação. Aqui usa-se
+ * `axios` cru, com a mesma `baseURL` e sem interceptor, e nenhum header de
+ * sessão: o refresh token vai no corpo e é a única credencial que vale.
+ */
+async function apiRefresh(refreshToken: string): Promise<AuthResult> {
+  try {
+    const { data } = await axios.post<ApiAuthResponse>(
+      `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
+      { refresh_token: refreshToken },
+    );
+    return {
+      user: toAuthUser(data.user, false),
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    };
   } catch (error) {
     throw toApiError(error);
   }
@@ -327,8 +410,23 @@ export const register: (input: RegisterInput) => Promise<AuthResult> = useMocks
 /** Autentica com e-mail e senha e devolve o usuário + token de acesso. */
 export const login: (input: LoginInput) => Promise<AuthResult> = useMocks ? mockLogin : apiLogin;
 
-/** Encerra a sessão atual. Sempre resolve. */
-export const logout: () => Promise<void> = useMocks ? mockLogout : apiLogout;
+/**
+ * Encerra a sessão atual. Com o refresh token, o backend revoga a sessão em
+ * vez de só esquecer o access token.
+ */
+export const logout: (refreshToken?: string | null) => Promise<void> = useMocks
+  ? mockLogout
+  : apiLogout;
+
+/**
+ * Troca o refresh token por um par novo (#275).
+ *
+ * Rejeita com `ApiError` quando o token não vale mais — e é isso que diz ao
+ * `AuthProvider` que a sessão acabou de verdade e o usuário precisa logar.
+ */
+export const refresh: (refreshToken: string) => Promise<AuthResult> = useMocks
+  ? mockRefresh
+  : apiRefresh;
 
 /** Devolve o usuário da sessão atual; rejeita com `ApiError { code: AUTH_REQUIRED }` sem sessão. */
 export const me: () => Promise<AuthUser> = useMocks ? mockMe : apiMe;

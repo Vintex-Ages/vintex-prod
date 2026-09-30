@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { paths } from '@/routes/paths';
-import { logout as authServiceLogout, me } from '@/services/authService';
+import {
+  logout as authServiceLogout,
+  me,
+  refresh as authServiceRefresh,
+} from '@/services/authService';
 import {
   REDIRECT_STORAGE_KEY,
   setAuthTokenProvider,
   setOnAuthRequired,
+  setSessionRefresher,
 } from '@/services/httpClient';
 import type { AuthUser } from '@/types/auth';
 import {
+  AUTH_REFRESH_TOKEN_STORAGE_KEY,
   AUTH_TOKEN_STORAGE_KEY,
   AUTH_USER_STORAGE_KEY,
   AuthContext,
@@ -25,6 +31,7 @@ import {
  * - restaurar a sessão persistida ao montar;
  * - disponibilizar login e logout para o restante da aplicação;
  * - fornecer o token atual ao `httpClient`;
+ * - renovar a sessão com o refresh token, a pedido do `httpClient` (#275);
  * - tratar respostas `401 AUTH_REQUIRED`;
  * - retornar à rota de origem depois de uma autenticação concluída.
  *
@@ -68,6 +75,7 @@ const DEFAULT_AFTER_LOGIN_PATH = '/';
 function readStoredSession(): {
   user: AuthUser;
   token: string;
+  refreshToken: string | null;
 } | null {
   try {
     const rawUser = window.sessionStorage.getItem(AUTH_USER_STORAGE_KEY);
@@ -81,6 +89,9 @@ function readStoredSession(): {
     return {
       user: JSON.parse(rawUser) as AuthUser,
       token,
+      // Sessão aberta antes do #275 não tem refresh guardado: ela continua
+      // válida e apenas não se renova.
+      refreshToken: window.sessionStorage.getItem(AUTH_REFRESH_TOKEN_STORAGE_KEY),
     };
   } catch {
     return null;
@@ -95,6 +106,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   /**
+   * Refresh token atual, em ref e não em estado.
+   *
+   * Quem lê é a função de renovação registrada no `httpClient`, registrada uma
+   * vez. Em estado, ela leria pela closure o valor do render em que foi
+   * registrada — o token anterior, já invalidado pela rotação que o backend
+   * faz a cada renovação.
+   */
+  const refreshTokenRef = useRef<string | null>(null);
+
+  const guardarRefreshToken = useCallback((proximo: string | null) => {
+    refreshTokenRef.current = proximo;
+    try {
+      if (proximo) {
+        window.sessionStorage.setItem(AUTH_REFRESH_TOKEN_STORAGE_KEY, proximo);
+      } else {
+        window.sessionStorage.removeItem(AUTH_REFRESH_TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // Storage indisponível: renovação segue possível nesta aba, em memória.
+    }
+  }, []);
+
+  /**
    * Registra uma sessão autenticada.
    *
    * Depois de persistir os dados da sessão, verifica se existe uma rota de
@@ -104,8 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * reconhecer a intenção pendente e retomar a ação correspondente.
    */
   const login = useCallback(
-    (nextUser: AuthUser, nextToken: string) => {
+    (nextUser: AuthUser, nextToken: string, nextRefreshToken?: string | null) => {
       let redirectTo = DEFAULT_AFTER_LOGIN_PATH;
+
+      guardarRefreshToken(nextRefreshToken ?? null);
 
       try {
         window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(nextUser));
@@ -127,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         replace: true,
       });
     },
-    [navigate],
+    [navigate, guardarRefreshToken],
   );
 
   /**
@@ -141,6 +177,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * UI à espera dessa chamada.
    */
   const logout = useCallback(() => {
+    // Lido antes de limpar: é o que o backend precisa para revogar a sessão.
+    const refreshToken = refreshTokenRef.current;
+
     try {
       window.sessionStorage.removeItem(AUTH_USER_STORAGE_KEY);
 
@@ -149,13 +188,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Nada a fazer quando o storage está indisponível.
     }
 
+    guardarRefreshToken(null);
+
     setUser(null);
     setToken(null);
 
-    void authServiceLogout().catch(() => {
+    void authServiceLogout(refreshToken).catch(() => {
       // Melhor esforço: falha no backend não deve impedir o logout local.
     });
-  }, []);
+  }, [guardarRefreshToken]);
 
   /**
    * Rebusca o usuário atual no backend e atualiza estado + `sessionStorage`
@@ -185,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (stored) {
       setUser(stored.user);
       setToken(stored.token);
+      refreshTokenRef.current = stored.refreshToken;
     }
 
     setLoading(false);
@@ -218,6 +260,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // mantém o usuário que o login entregou, sem derrubar a sessão.
     });
   }, [token, refreshUser]);
+
+  /**
+   * Renova a sessão quando o `httpClient` toma um `401 AUTH_REQUIRED` (#275).
+   *
+   * Devolve o novo access token, ou `null` quando não há refresh guardado ou o
+   * backend recusou o que havia — e aí o interceptor segue para o login, como
+   * fazia antes deste efeito existir.
+   *
+   * O backend rotaciona o refresh a cada renovação, então o par novo é guardado
+   * antes de a promessa resolver.
+   */
+  useEffect(() => {
+    setSessionRefresher(async () => {
+      const atual = refreshTokenRef.current;
+      if (!atual) return null;
+
+      try {
+        const renovada = await authServiceRefresh(atual);
+        guardarRefreshToken(renovada.refresh_token);
+
+        try {
+          window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, renovada.access_token);
+        } catch {
+          // Sem storage: a sessão renovada vive nesta aba, em memória.
+        }
+
+        setToken(renovada.access_token);
+        return renovada.access_token;
+      } catch {
+        // Refresh recusado: a sessão acabou de verdade. Limpar aqui evita que a
+        // próxima requisição tente renovar com um token já morto.
+        guardarRefreshToken(null);
+        return null;
+      }
+    });
+
+    return () => setSessionRefresher(null);
+  }, [guardarRefreshToken]);
 
   /**
    * Remove o provider de token quando o AuthProvider desmonta.
