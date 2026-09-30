@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
+import BrandSignature from '@/components/common/BrandSignature';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import { SearchBar } from '@/components/catalog/SearchBar';
+import { CATEGORIES } from '@/components/catalog/categories';
+import { FilterChip } from '@/components/catalog/FilterChip';
+import FilterToggle from '@/components/catalog/FilterToggle';
 import { useAuth } from '@/context/useAuth';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { paths, productDetail } from '@/routes/paths';
-import { getFeed } from '@/services/catalogService';
+import { getFeedWithDetails } from '@/services/catalogService';
+import { getPreferences, getStyles } from '@/services/preferenceService';
 import { formatPieceCount } from '@/utils/format';
-import type { Paginated, Product } from '@/types/product';
+import type { Preference, StyleOption } from '@/types/preference';
+import type { Paginated, ProductDetail } from '@/types/product';
 
 /**
  * Termos que existem no catálogo — cada um devolve resultado tanto no mock
@@ -34,15 +42,20 @@ const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
  * - **Erro e vazio têm saída.** O erro era um `<p>` vermelho sem ação; agora
  *   oferece tentar de novo. Falha ao carregar mais não derruba o que já está
  *   na tela: vira aviso ao lado do botão.
- * - **Convite para vender (FE-US006-1, #212).** Logado e ainda sem loja, a
- *   Home oferece "Quero vender" (`/sell`), a mesma entrada do menu da conta.
+ * - **Convite para vender (FE-US006-1, #212).** A Home logada usa o banner do
+ *   Figma e oferece "Anunciar Peça" (`/sell`) a quem ainda não tem loja.
  *   Como no `Header`, a fonte é `user.is_seller`, sem requisição extra.
  */
 function Home() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
   const showSellInvite = isAuthenticated && !user?.is_seller;
-  const [feed, setFeed] = useState<Paginated<Product> | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
+  const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
+  // ponytail: Home favorites are page-local toggles until a shared favorites service exists.
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [feed, setFeed] = useState<Paginated<ProductDetail> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
@@ -50,20 +63,50 @@ function Home() {
   const load = useCallback(() => {
     setLoading(true);
     setError(false);
-    getFeed()
+    (selectedCategory ? getFeedWithDetails({ category: selectedCategory }) : getFeedWithDetails())
       .then(setFeed)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedCategory]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPreferenceLabels([]);
+      setFavorites([]);
+      return;
+    }
+
+    let current = true;
+    Promise.all([getStyles(), getPreferences()])
+      .then(([styles, preferences]: [StyleOption[], Preference[]]) => {
+        if (!current) return;
+        setPreferenceLabels(
+          preferences
+            .filter((preference) => preference.type === 'estilo')
+            .map((preference) => styles.find((style) => style.value === preference.value)?.label)
+            .filter((label): label is string => Boolean(label)),
+        );
+      })
+      .catch(() => {
+        if (current) setPreferenceLabels([]);
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [isAuthenticated]);
 
   async function loadMore() {
     if (!feed || loading || loadingMore) return;
     setLoadingMore(true);
     setError(false);
     try {
-      const next = await getFeed({ page: feed.page + 1 });
+      const next = await getFeedWithDetails({
+        page: feed.page + 1,
+        ...(selectedCategory ? { category: selectedCategory } : {}),
+      });
       setFeed({ ...next, items: [...feed.items, ...next.items] });
     } catch {
       setError(true);
@@ -75,20 +118,60 @@ function Home() {
   const hasItems = Boolean(feed && feed.items.length > 0);
   const hasMore = Boolean(feed && feed.items.length < feed.total);
 
-  return (
-    <main>
-      <Container className="pt-6 tablet:pt-8">
-        {/*
-          A partir de #207: o spotlight é o caminho em destaque a partir do
-          `tablet` (RN-94) — no mobile o FAB (Layout) já cobre esse papel, e
-          um bloco vermelho ocupando a dobra inteira não cabe bem numa tela
-          estreita. Sem ele, a página perderia o `h1`, por isso o heading
-          equivalente fica visível só no mobile.
-        */}
-        <h1 className="font-display text-h2 text-tinta tablet:hidden">
-          Garimpe a peça certa nos brechós do Rio Grande do Sul.
-        </h1>
+  function toggleFavorite(id: string) {
+    setFavorites((current) =>
+      current.includes(id) ? current.filter((favorite) => favorite !== id) : [...current, id],
+    );
+  }
 
+  function searchCatalog(term: string) {
+    const query = term.trim();
+    navigate(query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog);
+  }
+
+  function askVintex(message: string) {
+    navigate(paths.vintex, { state: { message } });
+  }
+
+  return (
+    <main className={isAuthenticated ? 'bg-white' : undefined}>
+      <Container
+        className={
+          isAuthenticated
+            ? 'pt-5 tablet:pt-8'
+            : 'flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8'
+        }
+      >
+        {!isAuthenticated && (
+          <div className="-mx-4 -mt-6 tablet:hidden">
+            <BrandSignature headingAs="p" />
+          </div>
+        )}
+
+        {!isAuthenticated && (
+          <div className="tablet:hidden">
+            <SearchBar value={searchTerm} onChange={setSearchTerm} onSubmit={searchCatalog} />
+          </div>
+        )}
+
+        {!isAuthenticated && (
+          <nav
+            aria-label="Categorias de peças"
+            className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:hidden"
+          >
+            {CATEGORIES.map(({ label, value }) => (
+              <FilterChip
+                key={label}
+                label={label}
+                active={selectedCategory === value}
+                onToggle={() => setSelectedCategory(value)}
+              />
+            ))}
+            <FilterToggle onClick={() => navigate(paths.catalog)} />
+          </nav>
+        )}
+
+        {/* O spotlight segue como caminho de busca com IA na abertura desktop. */}
         <div className="hidden tablet:block">
           <VintexSearchSpotlight
             headingAs="h1"
@@ -108,23 +191,81 @@ function Home() {
         </div>
       </Container>
 
+      {isAuthenticated && (
+        <Container className="flex flex-col gap-4 pt-4 tablet:hidden">
+          <div className="flex flex-col gap-1">
+            <p className="font-ui text-[12px] font-bold uppercase tracking-[1.1px] text-vermelho-escuro">
+              Curadoria Personalizada
+            </p>
+            <p className="font-ui text-body-sm text-texto-auxiliar">
+              {preferenceLabels.length > 0 ? (
+                <>
+                  Seu perfil está afinado para{' '}
+                  <strong className="font-bold text-texto-auxiliar">
+                    {preferenceLabels.join(' e ')}
+                  </strong>
+                  . Explore as novidades da Vintex.
+                </>
+              ) : (
+                <>
+                  Escolha seus estilos para personalizar sua experiência.{' '}
+                  <Link
+                    to={paths.profilePreferences}
+                    className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                  >
+                    Defina suas preferências
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          </div>
+
+          <SearchBar
+            value={searchTerm}
+            onChange={setSearchTerm}
+            onSubmit={searchCatalog}
+            placeholder="Busque por peça, marca ou brechó..."
+          />
+
+          <div aria-label="Sugestões da Vintex" className="flex flex-wrap gap-2">
+            {[
+              ['Sugerir Look', 'Sugira um look para mim.'],
+              ['Últimas Tendências', 'Quais são as últimas tendências?'],
+              ['Achados (Raros)', 'Mostre achados raros.'],
+            ].map(([label, message]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => askVintex(message)}
+                className="min-h-touch rounded-full border border-linha bg-verde-rs px-3 py-2 font-ui text-[11px] font-semibold text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Container>
+      )}
+
       {showSellInvite ? (
         <Container as="section" aria-labelledby="vender-titulo" className="pt-6 tablet:pt-8">
-          <div className="flex flex-col gap-4 border border-linha bg-papel-profundo p-6 tablet:flex-row tablet:items-center tablet:justify-between">
-            <div>
-              <h2 id="vender-titulo" className="font-display text-h4 text-tinta">
-                Tem peças paradas no armário?
-              </h2>
-              <p className="mt-1 font-ui text-body text-texto-auxiliar">
-                Abra sua loja na Vintex e comece a vender.
+          <div className="relative border border-linha bg-papel-profundo p-5 shadow-[4px_4px_0_0_#eee5d7,0_8px_16px_rgba(29,27,26,0.06)]">
+            <div aria-hidden className="absolute inset-2 border border-tinta/15" />
+            <div className="relative flex flex-col items-start gap-1">
+              <p className="font-ui text-[10px] font-bold uppercase leading-[15.6px] text-vermelho-escuro">
+                Taxa de apenas <span className="text-[12px]">9%</span> quando vender
               </p>
+              <h2 id="vender-titulo" className="font-display text-h4 text-tinta">
+                Venda roupas do seu armário
+              </h2>
+              <p className="font-ui text-body-sm text-texto-auxiliar">Anuncie em 2 minutos.</p>
+              <Link
+                to={paths.sell}
+                className="mt-2 inline-flex min-h-touch w-full items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-3 py-2 font-ui text-label font-semibold uppercase tracking-[0.48px] text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente tablet:w-auto"
+              >
+                Anunciar Peça
+              </Link>
             </div>
-            <Link
-              to={paths.sell}
-              className="inline-flex min-h-11 shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-6 font-ui text-body font-semibold text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente"
-            >
-              Quero vender
-            </Link>
           </div>
         </Container>
       ) : null}
@@ -133,18 +274,80 @@ function Home() {
         as="section"
         aria-labelledby="feed-titulo"
         aria-busy={loading || loadingMore}
-        className="pt-10 tablet:pt-14"
+        className={isAuthenticated ? 'pt-10 tablet:pt-14' : 'pt-4 tablet:pt-14'}
       >
-        <div className="mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="feed-titulo" className="font-display text-h2 text-tinta">
-            Feed de achados
+        <div
+          className={clsx(
+            'mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
+            !isAuthenticated &&
+              'mb-[17.6px] flex-col items-start gap-[7.9px] border-b-[0.8px] border-tinta pb-4 tablet:mb-6 tablet:flex-row tablet:items-baseline tablet:gap-y-1 tablet:border-b-0 tablet:pb-0',
+          )}
+        >
+          <h2
+            id="feed-titulo"
+            className={clsx(
+              'font-display text-h2 text-tinta',
+              !isAuthenticated &&
+                'text-[30.8px] font-semibold leading-[30.8px] tracking-[-1.232px] tablet:text-h2 tablet:leading-[1.05] tablet:tracking-normal',
+            )}
+          >
+            {isAuthenticated ? 'Garimpados para Você' : 'Feed de achados'}
           </h2>
-          {feed && feed.total > 0 && (
-            <p className="font-ui text-body text-texto-auxiliar">
+          {isAuthenticated ? (
+            <Link
+              to={paths.profilePreferences}
+              className="font-ui text-label font-semibold text-vermelho-escuro underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+            >
+              Editar minhas preferências
+            </Link>
+          ) : feed && feed.total > 0 ? (
+            <p className="hidden font-ui text-body-sm text-texto-auxiliar tablet:block">
               {formatPieceCount(feed.total)} à venda agora
             </p>
-          )}
+          ) : null}
+          {!isAuthenticated && feed && feed.total > 0 ? (
+            <p className="font-ui text-[12px] leading-normal text-texto-auxiliar tablet:hidden">
+              {formatPieceCount(feed.total)} encontradas
+            </p>
+          ) : null}
         </div>
+
+        {isAuthenticated && (
+          <nav
+            aria-label="Categorias de peças"
+            className="-mx-4 mb-5 flex gap-2 overflow-x-auto px-4 pb-1"
+          >
+            {[
+              ['Tudo', ''],
+              ['Roupas', 'Roupas'],
+              ['Acessórios', 'Acessórios'],
+              ['Calçados', 'Sapatos'],
+            ].map(([label, query], index) => (
+              <Link
+                key={label}
+                to={query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog}
+                className={clsx(
+                  'inline-flex min-h-touch shrink-0 items-center justify-center rounded-full border px-4 py-2 font-ui text-label font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+                  index === 0
+                    ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110 focus-visible:outline-verde-rs'
+                    : 'border-linha bg-branco-quente text-tinta hover:bg-papel-profundo focus-visible:outline-vermelho-escuro',
+                )}
+              >
+                {label}
+              </Link>
+            ))}
+            <Link
+              to={paths.catalog}
+              aria-label="Abrir filtros do catálogo"
+              className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-full border border-linha bg-branco-quente text-texto-auxiliar transition-colors hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+                <path d="M4 7h16M7 12h10m-7 5h4" stroke="currentColor" strokeWidth="1.8" />
+                <path d="m17 5 2 2-2 2" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </Link>
+          </nav>
+        )}
 
         {error && !hasItems ? (
           <ErrorState message="Não foi possível carregar as peças agora." onRetry={load} />
@@ -165,6 +368,9 @@ function Home() {
               products={feed?.items ?? []}
               loading={loading}
               productPath={productDetail}
+              compactCards={isAuthenticated}
+              onToggleFavorite={isAuthenticated ? toggleFavorite : undefined}
+              isFavorite={isAuthenticated ? (id) => favorites.includes(id) : undefined}
               // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
               // aqui também empilharia duas entradas no histórico e o "voltar" não
               // sairia da peça; `onOpen` fica como ponto de telemetria.

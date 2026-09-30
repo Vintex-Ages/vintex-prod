@@ -177,19 +177,20 @@ describe('<Header />', () => {
     expect(screen.getByRole('link', { name: 'Catálogo' })).toHaveAttribute('href', '/catalog');
   });
 
-  it('mantém os links no desktop e oferece um acionador de navegação no mobile', () => {
-    renderHeader();
+  it('usa a barra compacta do produto com voltar, compartilhar e sacola', async () => {
+    renderHeader({ initialEntry: '/product/1', count: 3 });
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).toHaveClass('hidden', 'tablet:flex');
-    expect(screen.getByRole('button', { name: 'Abrir menu principal' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sacola (3)' })).toHaveAttribute('href', '/cart');
+    expect(screen.queryByRole('button', { name: 'Abrir menu principal' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/'));
   });
 
   it('abre o menu mobile com Home e Catálogo e fecha ao selecionar uma opção', async () => {
-    renderHeader();
+    renderHeader({ initialEntry: '/sell' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
 
@@ -206,7 +207,7 @@ describe('<Header />', () => {
   });
 
   it('fecha o menu mobile com Escape', () => {
-    renderHeader();
+    renderHeader({ initialEntry: '/sell' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
     expect(screen.getByRole('navigation', { name: 'Principal mobile' })).toBeInTheDocument();
@@ -218,7 +219,7 @@ describe('<Header />', () => {
 
   it('permite abrir e percorrer a navegação mobile pelo teclado', async () => {
     const user = userEvent.setup();
-    renderHeader();
+    renderHeader({ initialEntry: '/sell' });
 
     const toggle = screen.getByRole('button', { name: 'Abrir menu principal' });
     toggle.focus();
@@ -233,7 +234,7 @@ describe('<Header />', () => {
 
   describe('busca mobile expansível', () => {
     it('inicia recolhida e associa a lupa à região controlada', () => {
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
 
@@ -244,7 +245,7 @@ describe('<Header />', () => {
 
     it('abre o SearchBar existente ao clicar na lupa e fecha ao clicar novamente', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -262,7 +263,7 @@ describe('<Header />', () => {
 
     it('move o foco para o campo de pesquisa ao expandir', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -273,7 +274,7 @@ describe('<Header />', () => {
 
     it('digita e envia pelo Enter, navegando para o catálogo com o termo', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -290,7 +291,7 @@ describe('<Header />', () => {
 
     it('remove espaços externos e codifica caracteres especiais', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -309,7 +310,7 @@ describe('<Header />', () => {
 
     it('pesquisa vazia navega para o catálogo sem o parâmetro q', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -322,28 +323,9 @@ describe('<Header />', () => {
       await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(/^\/catalog$/));
     });
 
-    it('fecha a região após enviar mesmo quando o pathname já é o catálogo', async () => {
-      const user = userEvent.setup();
-      renderHeader({ initialEntry: paths.catalog });
-
-      const toggle = getMobileSearchToggle();
-      await user.click(toggle);
-      const mobileSearch = getControlledMobileSearch(toggle);
-      await user.type(
-        within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' }),
-        'jaqueta{Enter}',
-      );
-
-      await waitFor(() =>
-        expect(screen.getByTestId('path')).toHaveTextContent('/catalog?q=jaqueta'),
-      );
-      expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
-    });
-
     it('Escape fecha a busca e devolve o foco à lupa', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -360,7 +342,7 @@ describe('<Header />', () => {
       ['Space', ' '],
     ])('permite abrir a busca com %s', async (_keyName, key) => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       toggle.focus();
@@ -372,7 +354,7 @@ describe('<Header />', () => {
 
     it('abrir a busca fecha a navegação mobile e o AccountMenu', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       await user.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
       expect(screen.getByRole('navigation', { name: 'Principal mobile' })).toBeInTheDocument();
@@ -394,7 +376,7 @@ describe('<Header />', () => {
 
     it('abrir a navegação mobile ou o AccountMenu fecha a busca', async () => {
       const user = userEvent.setup();
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const toggle = getMobileSearchToggle();
       await user.click(toggle);
@@ -408,7 +390,7 @@ describe('<Header />', () => {
     });
 
     it('preserva a busca desktop existente nas rotas sem busca própria', () => {
-      renderHeader({ initialEntry: '/product/1' });
+      renderHeader({ initialEntry: '/sell' });
 
       const desktopSearch = screen.getByPlaceholderText('Busque por peça, marca ou brechó…');
       const responsiveWrapper = desktopSearch.closest('form')?.parentElement?.parentElement;
@@ -418,12 +400,15 @@ describe('<Header />', () => {
     });
 
     it.each([paths.home, paths.catalog])(
-      'mantém a busca desktop recolhida em %s e oferece a lupa mobile',
+      'mantém os controles mobile ocultos em %s, onde a página oferece busca própria',
       (initialEntry) => {
         renderHeader({ initialEntry });
 
         expect(screen.queryByRole('searchbox', { name: 'Buscar' })).not.toBeInTheDocument();
-        expect(getMobileSearchToggle()).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('button', { name: 'Buscar' })).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'Abrir menu principal' }),
+        ).not.toBeInTheDocument();
       },
     );
   });

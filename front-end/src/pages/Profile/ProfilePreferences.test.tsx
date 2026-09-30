@@ -139,6 +139,26 @@ describe('<ProfilePreferences />', () => {
     expect(savePreferences).toHaveBeenCalledTimes(1);
   });
 
+  it('preserva preferências de tamanho ao salvar os estilos do perfil', async () => {
+    mockLoadedPage([
+      { type: 'estilo', value: 'vintage-80-90' },
+      { type: 'tamanho_roupa', value: 'P' },
+      { type: 'tamanho_calcado', value: '37' },
+    ]);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /salvar/i }));
+
+    await waitFor(() => {
+      expect(savePreferences).toHaveBeenCalledWith([
+        { type: 'tamanho_roupa', value: 'P' },
+        { type: 'tamanho_calcado', value: '37' },
+        { type: 'estilo', value: 'vintage-80-90' },
+      ]);
+    });
+  });
+
   it('mantém o botão de salvar funcional quando nenhum estilo está selecionado', async () => {
     const user = userEvent.setup();
 

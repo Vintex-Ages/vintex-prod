@@ -28,14 +28,6 @@ function PlaceholderIcon() {
   );
 }
 
-function PlayIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
-      <path d="M8 5v14l11-7Z" />
-    </svg>
-  );
-}
-
 function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
   return (
     <svg
@@ -57,22 +49,21 @@ function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
 
 /**
  * Galeria de mídia da página de detalhe do produto (FE-US012-2). Ordena
- * `media` por `position` (o back não garante ordem de chegada) e navega por
- * miniaturas ou setas. Sem fotos, cai no mesmo placeholder usado no
- * catálogo (`ProductCard`), sem quebrar o layout.
+ * `media` por `position` (o back não garante ordem de chegada) e navega pelas
+ * miniaturas e setas de foco/hover. Sem fotos, cai no mesmo placeholder usado
+ * no catálogo (`ProductCard`), sem quebrar o layout.
  *
  * Vídeo (`type: 'video'`) entra na mesma trilha das fotos: vira mídia
  * principal via `VideoPlayer` (FE-US012-3) quando selecionado, e a miniatura
- * mostra um ícone de play sobre fundo neutro — `ProductMedia` não tem campo
- * de poster no contrato atual.
+ * identifica a duração; `ProductMedia` não tem campo de poster no contrato
+ * atual.
  *
- * A proporção é 3:4, a mesma do cartão do catálogo: era `aspect-square` no
- * celular e `4/5` no web, então a mesma foto chegava cortada de três jeitos
- * diferentes entre a grade e o detalhe.
+ * A proporção quase quadrada segue o frame de detalhe do Figma; as miniaturas
+ * continuam recortando para quadrado.
  *
- * Setas e miniaturas só aparecem quando há mais de um item (não faz sentido
- * navegar com uma peça só). O contador "FOTO X DE Y" acompanha a mídia
- * principal e é `aria-live` para leitor de tela acompanhar a troca.
+ * As miniaturas e setas só aparecem quando há mais de um item. O contador
+ * acompanha a mídia principal e é `aria-live` para leitor de tela acompanhar
+ * a troca.
  *
  * Usage:
  *   import Gallery from '@/components/product/Gallery';
@@ -84,7 +75,7 @@ function Gallery({ media, productName }: GalleryProps) {
 
   if (items.length === 0) {
     return (
-      <div className="aspect-[3/4] w-full bg-linha">
+      <div className="aspect-[19/20] w-full border border-linha bg-papel-profundo">
         <div
           role="img"
           aria-label={productName}
@@ -105,7 +96,7 @@ function Gallery({ media, productName }: GalleryProps) {
 
   return (
     <div role="group" aria-label={`Galeria de fotos — ${productName}`}>
-      <div className="relative aspect-[3/4] w-full bg-linha">
+      <div className="relative aspect-[19/20] w-full border border-linha bg-papel-profundo">
         {active.type === 'image' ? (
           <img
             src={active.url}
@@ -119,29 +110,40 @@ function Gallery({ media, productName }: GalleryProps) {
           />
         )}
 
+        <span
+          aria-hidden="true"
+          className="absolute left-4 top-4 text-body-sm leading-none text-tinta"
+        >
+          +
+        </span>
         {hasMultiple ? (
           <>
-            <div className="absolute left-2 top-1/2 -translate-y-1/2">
+            <div className="group absolute left-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
               <IconButton
                 icon={<ChevronIcon direction="left" />}
                 ariaLabel="Foto anterior"
                 onClick={() => goTo(activeIndex - 1)}
               />
             </div>
-            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <div className="group absolute right-2 top-1/2 -translate-y-1/2 opacity-0 transition-opacity hover:opacity-100 focus-within:opacity-100">
               <IconButton
                 icon={<ChevronIcon direction="right" />}
                 ariaLabel="Próxima foto"
                 onClick={() => goTo(activeIndex + 1)}
               />
             </div>
-            <p
-              aria-live="polite"
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-tinta/70 px-3 py-1 text-label uppercase tracking-wide text-branco-quente"
-            >
-              Foto {activeIndex + 1} de {items.length}
-            </p>
           </>
+        ) : null}
+        {active.type === 'image' ? (
+          <p
+            aria-live="polite"
+            className="absolute bottom-2 right-2 bg-tinta/75 px-2 py-1 text-[10px] uppercase tracking-wider text-branco-quente"
+          >
+            <span>
+              Foto {activeIndex + 1} de {items.length}
+            </span>
+            <span aria-hidden="true"> · Vintex Archive</span>
+          </p>
         ) : null}
       </div>
 
@@ -159,8 +161,8 @@ function Gallery({ media, productName }: GalleryProps) {
                   : `Ver foto ${index + 1} de ${items.length}`
               }
               className={clsx(
-                'aspect-square w-16 shrink-0 border-2 bg-linha focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta',
-                index === activeIndex ? 'border-vermelho-escuro' : 'border-transparent',
+                'aspect-square w-28 shrink-0 overflow-hidden bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta',
+                index === activeIndex ? 'border-2 border-vermelho-escuro' : 'border border-linha',
               )}
             >
               {item.type === 'image' ? (
@@ -171,8 +173,8 @@ function Gallery({ media, productName }: GalleryProps) {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <span className="flex h-full w-full items-center justify-center text-texto-auxiliar">
-                  <PlayIcon />
+                <span className="flex h-full w-full items-center justify-center border border-dashed border-linha text-label text-texto-auxiliar">
+                  <span aria-hidden="true">🎥 </span>Vídeo 3s
                 </span>
               )}
             </button>

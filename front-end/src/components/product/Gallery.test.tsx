@@ -31,7 +31,7 @@ describe('<Gallery />', () => {
     expect(screen.queryByRole('group')).toBeNull();
   });
 
-  it('não mostra setas nem miniaturas quando há só uma foto', () => {
+  it('mantém o contador e esconde navegação quando há só uma foto', () => {
     render(
       <Gallery
         media={[{ type: 'image', url: 'https://example.com/0.jpg', position: 0 }]}
@@ -40,7 +40,7 @@ describe('<Gallery />', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Próxima foto' })).toBeNull();
-    expect(screen.queryByText(/Foto 1 de/)).toBeNull();
+    expect(screen.getByText('Foto 1 de 1')).toBeInTheDocument();
   });
 
   it('clicar numa miniatura troca a foto principal e atualiza o indicador', async () => {
@@ -81,7 +81,7 @@ describe('<Gallery />', () => {
   });
 
   // Objetivo declarado do ticket (FE-US012-3): com mídia de vídeo, exibe o player.
-  it('mídia de vídeo entra na trilha sem quebrar: vira principal com controles e a miniatura mostra o ícone de play', async () => {
+  it('mídia de vídeo entra na trilha sem quebrar e exibe uma miniatura identificável', async () => {
     const user = userEvent.setup();
     const media: ProductMedia[] = [
       { type: 'image', url: 'https://example.com/0.jpg', position: 0 },
@@ -94,6 +94,7 @@ describe('<Gallery />', () => {
     const video = screen.getByLabelText('Camiseta — vídeo 2 de 2');
     expect(video.tagName).toBe('VIDEO');
     expect(video).toHaveAttribute('src', 'https://example.com/0.mp4');
+    expect(screen.getByText('Vídeo 3s')).toBeInTheDocument();
   });
 
   // Objetivo declarado do ticket (FE-US012-3): sem vídeo, galeria só com fotos, sem espaço quebrado.

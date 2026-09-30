@@ -28,6 +28,7 @@ interface FeedParams {
   page?: number;
   pageSize?: number;
   sort?: 'recent';
+  category?: string;
 }
 
 /**
@@ -97,8 +98,14 @@ function productNotFound(id: string): CatalogError {
 
 // ---- mock ----
 
-function mockGetFeed({ page = 1, pageSize = DEFAULT_PAGE_SIZE }: FeedParams): Paginated<Product> {
-  const active = mockProducts.filter((product) => product.status === 'ativo');
+function mockGetFeed({
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  category,
+}: FeedParams): Paginated<Product> {
+  const active = mockProducts.filter(
+    (product) => product.status === 'ativo' && (!category || product.category === category),
+  );
   const recent = [...active].reverse();
   return paginate(recent.map(toProduct), page, pageSize);
 }
@@ -106,8 +113,11 @@ function mockGetFeed({ page = 1, pageSize = DEFAULT_PAGE_SIZE }: FeedParams): Pa
 function mockGetFeedWithDetails({
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
+  category,
 }: FeedParams): Paginated<ProductDetail> {
-  const active = mockProducts.filter((product) => product.status === 'ativo');
+  const active = mockProducts.filter(
+    (product) => product.status === 'ativo' && (!category || product.category === category),
+  );
   const recent = [...active].reverse();
   return paginate(recent, page, pageSize);
 }
@@ -306,9 +316,10 @@ async function apiGetFeed({
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   sort = 'recent',
+  category,
 }: FeedParams): Promise<Paginated<Product>> {
   const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
-    params: { page, page_size: pageSize, sort },
+    params: { page, page_size: pageSize, sort, ...(category ? { category } : {}) },
   });
   return mapPage(data, mapFeedItem);
 }
