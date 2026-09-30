@@ -139,7 +139,7 @@ function withoutErrors(
   return next;
 }
 
-function toStoreInput(values: CreateStoreValues): StoreInput {
+function toStoreInput(values: CreateStoreValues, acceptedContractVersion?: string): StoreInput {
   return {
     name: values.name.trim(),
     description: values.description.trim(),
@@ -156,9 +156,9 @@ function toStoreInput(values: CreateStoreValues): StoreInput {
       state: values.state ?? '',
     },
     pixKey: values.pixKey.trim(),
-    // FE-US003b-1 (#215, Should) — aceite do contrato de venda. Quando existir,
-    // a tela mostra o contrato antes do formulário e a versão aceita entra aqui
-    // como `acceptedContractVersion`. O service já aceita o campo como opcional.
+    // FE-US003b-1 (#215): versão do contrato de venda aceita antes do formulário
+    // (`useSellerContract`). Registro separado do aceite dos termos (RN-93).
+    acceptedContractVersion,
   };
 }
 
@@ -171,7 +171,12 @@ function toSubmitMessage(error: unknown): string {
   return GENERIC_SUBMIT_ERROR;
 }
 
-export function useCreateStore() {
+export interface UseCreateStoreOptions {
+  /** Versão do contrato de venda aceita no passo anterior (`useSellerContract`). */
+  acceptedContractVersion?: string;
+}
+
+export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOptions = {}) {
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
   const { toast } = useToast();
@@ -270,7 +275,7 @@ export function useCreateStore() {
     setSubmitting(true);
     let storeName: string;
     try {
-      const store = await createStore(toStoreInput(values));
+      const store = await createStore(toStoreInput(values, acceptedContractVersion));
       storeName = store.name;
     } catch (error) {
       setSubmitError(toSubmitMessage(error));
@@ -286,7 +291,7 @@ export function useCreateStore() {
 
     toast(`Boas-vindas! Sua loja ${storeName} está aberta.`, { kind: 'success' });
     navigate(paths.seller, { replace: true });
-  }, [submitting, values, cepStatus, refreshUser, toast, navigate]);
+  }, [submitting, values, cepStatus, acceptedContractVersion, refreshUser, toast, navigate]);
 
   return {
     access,
