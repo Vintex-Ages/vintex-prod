@@ -11,7 +11,12 @@ import {
   SellerProductError,
 } from '@/services/sellerProductService';
 import { suggestListing } from '@/services/vintexAiService';
-import type { ListingCorrection, ProductInput, SellerProductDetail } from '@/types/product';
+import type {
+  ListingCorrection,
+  ProductInput,
+  ProductStatus,
+  SellerProductDetail,
+} from '@/types/product';
 import type { ListingSuggestionField } from '@/types/vintex-ai';
 
 /**
@@ -150,6 +155,8 @@ export const SECAO_POR_ETAPA: Record<number, SecaoCadastro> = { 0: 'fotos', 1: '
 
 export type PublishResult =
   | { status: 'published'; id: string }
+  /** Edição de peça já anunciada ou pausada: grava sem mudar a situação dela. */
+  | { status: 'saved'; id: string }
   /** RN-47 ou dado obrigatório faltando: a revisão mostra `publishBlocked`. */
   | { status: 'blocked' }
   | { status: 'error'; message: string };
@@ -252,11 +259,19 @@ export interface UseProductFormResult {
   canContinue: boolean;
   /** Por que a revisão não pode publicar agora, ou `null` se pode. */
   publishBlocked: string | null;
+  /**
+   * Situação da peça no back, ou `undefined` antes do primeiro save. Fora de
+   * `rascunho`, a revisão só salva as alterações (FE-US019-2).
+   */
+  productStatus: ProductStatus | undefined;
   setField: <K extends keyof ProductFormValues>(campo: K, valor: ProductFormValues[K]) => void;
   setMedia: (items: MediaItem[]) => void;
   /** Grava o rascunho sem publicar. Devolve o id, ou `null` se não passou. */
   saveDraft: () => Promise<string | null>;
-  /** Último `update` com as correções e `publish`. Só a revisão chama. */
+  /**
+   * Último `update` com as correções e, se a peça é rascunho, `publish`. Peça
+   * anunciada ou pausada só é atualizada (`saved`). Só a revisão chama.
+   */
   publishDraft: () => Promise<PublishResult>;
 }
 
@@ -275,6 +290,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
   // achando que tinha. Só sai quando as fotos mudam.
   const [semFotoNoBack, setSemFotoNoBack] = useState(false);
   const [draftId, setDraftId] = useState<string | undefined>(productId);
+  const [productStatus, setProductStatus] = useState<ProductStatus | undefined>(undefined);
 
   // Id da peça que já está em memória, do `getById` ou da resposta do último
   // save. Quando um rascunho novo é salvo, a URL passa a ter o id dele; é isto
@@ -305,6 +321,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
       setFormError(null);
       setSemFotoNoBack(false);
       setDraftId(undefined);
+      setProductStatus(undefined);
       return;
     }
     if (productId === carregadoRef.current) return;
@@ -317,6 +334,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
         if (!ativo) return;
         carregadoRef.current = peca.id;
         setDraftId(peca.id);
+        setProductStatus(peca.status);
         setValues(paraValores(peca));
         // Outra peça: marcas e correções da anterior não valem para ela.
         setSuggested(new Set());
@@ -479,6 +497,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
 
       carregadoRef.current = peca.id;
       setDraftId(peca.id);
+      setProductStatus(peca.status);
       // A revisão mostra o que o back gravou, não o que a tela achava que mandou.
       setValues(paraValores(peca));
       setSemFotoNoBack(false);
@@ -505,6 +524,12 @@ export function useProductForm(productId?: string): UseProductFormResult {
       await update(draftId, paraInput(values), corrections);
       // Já foram: o back acumula, e mandar de novo duplicaria a medida.
       setCorrections([]);
+      // Editar não muda a situação da peça: `publish` é só para rascunho. Numa
+      // anunciada o back recusaria; numa pausada, republicaria sem o vendedor
+      // pedir — republicar é ação própria do painel.
+      if (productStatus !== undefined && productStatus !== 'rascunho') {
+        return { status: 'saved', id: draftId };
+      }
       await publish(draftId);
       return { status: 'published', id: draftId };
     } catch (error) {
@@ -522,7 +547,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     } finally {
       setSaving(false);
     }
-  }, [draftId, publishBlocked, values, corrections]);
+  }, [draftId, publishBlocked, values, corrections, productStatus]);
 
   return {
     values,
@@ -538,6 +563,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     formStep: values.media.length === 0 ? 0 : 1,
     canContinue: values.media.length > 0 && !saving && !analyzing,
     publishBlocked,
+    productStatus,
     setField,
     setMedia,
     saveDraft,

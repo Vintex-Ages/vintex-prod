@@ -280,6 +280,46 @@ describe('storeService (API real) — loja pública', () => {
     expect(loja.metrics?.soldProducts).toBe(4);
   });
 
+  // FE-US007-1: a rota privada não traz `verified`; o selo vem do retrato público.
+  it('getMyVerification lê a loja privada e o selo do retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(config.url ?? '');
+      const data =
+        config.url === '/users/me/store'
+          ? {
+              id: 3,
+              seller_id: 9,
+              name: 'Segunda Chance Modas',
+              description: null,
+              logo_url: null,
+              pix_key: null,
+              document_type: 'CPF',
+              document_value: '529.982.247-25',
+              terms_version: 'v1',
+              terms_accepted_at: '2026-09-27T23:00:00',
+              address: null,
+            }
+          : LOJA;
+      return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await expect(getMyVerification()).resolves.toBe('confiavel');
+    expect(urls).toEqual(['/users/me/store', '/stores/3']);
+  });
+
+  it('getMyVerification devolve null sem loja, sem consultar o retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 404, data: {} } });
+
+    await expect(getMyVerification()).resolves.toBeNull();
+  });
+
   it('loja sem selo vira pendente, e sem endereço não quebra', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { getStore: apiGetStore } = await import('./storeService');

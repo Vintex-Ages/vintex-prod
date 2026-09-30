@@ -243,7 +243,7 @@ describe('<AppRoutes />', () => {
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
-    [paths.cart, 'Carrinho', BUYER],
+    [paths.cart, 'Seu carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
     renderAtWithAuth(
@@ -308,13 +308,14 @@ describe('<AppRoutes />', () => {
 
   // --- FE-US006-1 (#212): /sell é a tela real ---
 
-  it('/sell logado sem loja mostra o formulário de criar loja dentro do Layout', async () => {
+  // FE-US003b-1 (#215): o contrato de venda vem antes do formulário.
+  it('/sell logado sem loja mostra o contrato de venda dentro do Layout', async () => {
     vi.mocked(getMyStore).mockResolvedValue(null);
 
     renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: BUYER }));
 
     expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Abrir minha loja' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Contrato de venda' })).toBeInTheDocument();
     expect(screen.getByRole('banner')).toBeInTheDocument();
   });
 
