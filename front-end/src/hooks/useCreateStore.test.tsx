@@ -168,6 +168,38 @@ describe('useCreateStore — documento (RN-30)', () => {
 
     expect(result.current.errors.documentNumber).toBeUndefined();
   });
+
+  // #283: a troca CNPJ → CPF cortava os dígitos e limpava o erro, calada.
+  it('trocar CNPJ → CPF corta para 11 dígitos e acusa o erro na hora', async () => {
+    const { result } = await renderReady();
+    act(() => result.current.setDocumentType('cnpj'));
+    act(() => result.current.setField('documentNumber', '11222333000181'));
+
+    act(() => result.current.setDocumentType('cpf'));
+
+    expect(result.current.values.documentNumber).toBe('112.223.330-00');
+    expect(result.current.errors.documentNumber).toBe('CPF inválido. Confira os 11 dígitos.');
+  });
+
+  it('o corte acusa mesmo quando os 11 dígitos que sobram formam um CPF válido', async () => {
+    const { result } = await renderReady();
+    act(() => result.current.setDocumentType('cnpj'));
+    act(() => result.current.setField('documentNumber', '52998224725000'));
+
+    act(() => result.current.setDocumentType('cpf'));
+
+    expect(result.current.values.documentNumber).toBe('529.982.247-25');
+    expect(result.current.errors.documentNumber).toBe('CPF inválido. Confira os 11 dígitos.');
+  });
+
+  it('trocar CPF → CNPJ com número que não fecha 14 dígitos acusa na hora', async () => {
+    const { result } = await renderReady();
+    act(() => result.current.setField('documentNumber', '52998224725'));
+
+    act(() => result.current.setDocumentType('cnpj'));
+
+    expect(result.current.errors.documentNumber).toBe('CNPJ inválido. Confira os 14 dígitos.');
+  });
 });
 
 describe('useCreateStore — CEP → endereço', () => {
@@ -235,6 +267,28 @@ describe('useCreateStore — CEP → endereço', () => {
 
     expect(result.current.errors).toEqual({});
     expect(createStore).toHaveBeenCalled();
+  });
+
+  // #283: o endereço do CEP anterior seguia com o CEP novo (SP com cidade de POA).
+  it('CEP que falha depois de um que resolveu limpa bairro, cidade e UF', async () => {
+    const hook = await renderReady();
+    await fillValid(hook);
+    const { result } = hook;
+    expect(result.current.values.city).toBe('Porto Alegre');
+
+    vi.mocked(lookupAddress).mockRejectedValueOnce(new CepError('fora do ar'));
+    act(() => result.current.setField('cep', '01001000'));
+    await waitFor(() => expect(result.current.cepStatus).toBe('error'));
+
+    expect(result.current.values).toMatchObject({ district: '', city: '', state: null });
+
+    await act(() => result.current.submit());
+    expect(result.current.errors).toMatchObject({
+      district: 'Informe o bairro.',
+      city: 'Informe a cidade.',
+      state: 'Selecione a UF.',
+    });
+    expect(createStore).not.toHaveBeenCalled();
   });
 });
 
@@ -394,5 +448,18 @@ describe('useCreateStore — envio (RN-29, RN-31)', () => {
       resolve(STORE);
       await pending;
     });
+  });
+
+  // #283: o `if (submitting)` lia o estado do render e deixava passar os dois.
+  it('dois `submit()` no mesmo tick criam a loja uma vez só', async () => {
+    const hook = await renderReady();
+    await fillValid(hook);
+    const { result } = hook;
+
+    await act(async () => {
+      await Promise.all([result.current.submit(), result.current.submit()]);
+    });
+
+    expect(createStore).toHaveBeenCalledTimes(1);
   });
 });

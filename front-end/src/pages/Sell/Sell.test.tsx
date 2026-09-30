@@ -183,6 +183,23 @@ describe('<Sell />', () => {
     expect(createStore).not.toHaveBeenCalled();
   });
 
+  // #283: eram nove `role="alert"` no mesmo render e o foco ficava no botão.
+  it('envio vazio anuncia um resumo só e leva o foco ao primeiro campo inválido', async () => {
+    const user = userEvent.setup({ delay: null });
+    await renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Abrir minha loja' }));
+
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Confira 9 campos antes de continuar:');
+    expect(screen.getByLabelText('Nome da loja')).toHaveFocus();
+
+    // O link do resumo leva ao campo.
+    await user.click(screen.getByRole('link', { name: 'Informe a chave Pix.' }));
+    expect(screen.getByLabelText('Chave Pix')).toHaveFocus();
+  });
+
   it('CEP inexistente aparece no próprio campo', async () => {
     const user = userEvent.setup({ delay: null });
     vi.mocked(lookupAddress).mockResolvedValue(null);

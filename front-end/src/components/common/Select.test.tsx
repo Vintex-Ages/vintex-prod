@@ -102,17 +102,18 @@ describe('<Select />', () => {
     expect(screen.getByRole('combobox')).toHaveValue('');
   });
 
-  it('substitui a ajuda por erro com role alert e associa a mensagem ao select', () => {
+  it('substitui a ajuda por erro e associa a mensagem ao select', () => {
     renderSelect({ helperText: 'Escolha um tamanho', error: 'Tamanho obrigatório' });
 
     const select = screen.getByRole('combobox');
-    const alert = screen.getByRole('alert');
+    const message = screen.getByText('Tamanho obrigatório');
 
-    expect(alert).toHaveTextContent('Tamanho obrigatório');
-    expect(alert).toHaveAttribute('id', 'tamanho-message');
-    expect(alert).toHaveClass('text-vermelho-escuro');
+    expect(message).toHaveAttribute('id', 'tamanho-message');
+    expect(message).toHaveClass('text-vermelho-escuro');
+    // O erro não é região `alert`: quem anuncia é o `FormErrorSummary` do formulário (#283).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Escolha um tamanho')).not.toBeInTheDocument();
-    expect(select).toHaveAttribute('aria-describedby', alert.id);
+    expect(select).toHaveAttribute('aria-describedby', message.id);
     expect(select).toHaveAttribute('aria-invalid', 'true');
     expect(select).toHaveClass(
       'border-vermelho-escuro',

@@ -115,7 +115,9 @@ describe('<Register />', () => {
     await aceitarTermos(user);
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
-    expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
+    // Um resumo só, não um alerta por campo, e o foco vai ao primeiro inválido (#283).
+    expect(await screen.findByRole('alert')).toHaveTextContent('Confira 4 campos');
+    expect(screen.getByLabelText('Nome completo')).toHaveFocus();
     expect(mockedRegister).not.toHaveBeenCalled();
   });
 
@@ -229,12 +231,14 @@ describe('<Register />', () => {
 
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
-    expect(await screen.findByText('Informe um e-mail válido.')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
+    await waitFor(() =>
+      expect(screen.getByLabelText('E-mail')).toHaveAccessibleDescription(
+        'Informe um e-mail válido.',
       ),
-    ).toBeTruthy();
+    );
+    expect(screen.getByLabelText('Senha')).toHaveAccessibleDescription(
+      'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
+    );
     expect(mockedRegister).not.toHaveBeenCalled();
   });
 
@@ -252,11 +256,11 @@ describe('<Register />', () => {
 
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
-    expect(
-      await screen.findByText(
+    await waitFor(() =>
+      expect(screen.getByLabelText('Senha')).toHaveAccessibleDescription(
         'A senha precisa ter ao menos 8 caracteres, incluindo uma letra e um número.',
       ),
-    ).toBeTruthy();
+    );
     expect(mockedRegister).not.toHaveBeenCalled();
   });
 
