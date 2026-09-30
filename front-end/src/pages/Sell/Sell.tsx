@@ -1,6 +1,7 @@
 import type { FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
+import DocumentModal from '@/components/common/DocumentModal';
 import ErrorState from '@/components/common/ErrorState';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
@@ -8,6 +9,7 @@ import Select, { type SelectOption } from '@/components/common/Select';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
 import { DESCRIPTION_MAX_LENGTH, useCreateStore, type CepStatus } from '@/hooks/useCreateStore';
+import { useSellerContract } from '@/hooks/useSellerContract';
 import { paths } from '@/routes/paths';
 import type { DocumentType } from '@/utils/document';
 
@@ -66,16 +68,17 @@ const legendClass = 'mb-4 font-display text-h4 text-tinta';
  * A rota é protegida por `RequireAuth` em `AppRoutes`; chega-se aqui pelo
  * "Quero vender" do menu da conta (`Header`) e pelo convite da Home logada.
  *
- * FE-US003b-1 (#215, Should) — aceite do contrato de venda: quando existir,
- * entra como um passo ANTES deste formulário (renderizado aqui quando
- * `access === 'ready'` e o contrato ainda não foi aceito), e a versão aceita
- * segue para `createStore` pelo `useCreateStore`. Hoje não bloqueia nada.
+ * Contrato de venda (FE-US003b-1, #215): quando `access === 'ready'`, o
+ * formulário só aparece depois do aceite no `DocumentModal` (com rolagem até o
+ * fim). O passo vive em `useSellerContract`; a versão aceita segue para
+ * `createStore` pelo `useCreateStore`. Não aceitar volta à Home, sem loja.
  *
  * Usage:
  *   import Sell from '@/pages/Sell/Sell';
  *   <Route path={paths.sell} element={<RequireAuth><Sell /></RequireAuth>} />
  */
 function Sell() {
+  const contract = useSellerContract();
   const {
     access,
     retryAccess,
@@ -87,7 +90,7 @@ function Sell() {
     setField,
     setDocumentType,
     submit,
-  } = useCreateStore();
+  } = useCreateStore({ acceptedContractVersion: contract.acceptedVersion });
 
   if (access === 'checking') {
     return (
@@ -109,6 +112,48 @@ function Sell() {
     return <Navigate to={paths.seller} replace />;
   }
 
+  const intro = (
+    <>
+      <h1 className="font-display text-h2 text-tinta">Quero vender</h1>
+      <p className="mt-2 font-ui text-body text-texto-auxiliar">
+        Abra sua loja na Vintex e comece a anunciar suas peças.
+      </p>
+    </>
+  );
+
+  if (contract.state.status !== 'accepted') {
+    return (
+      <Container as="main" width="narrow" className="py-8 tablet:py-12">
+        {intro}
+        <div className="mt-8">
+          {contract.state.status === 'loading' ? (
+            <p role="status" className="font-ui text-body text-texto-auxiliar">
+              Carregando o contrato de venda…
+            </p>
+          ) : contract.state.status === 'error' ? (
+            <ErrorState
+              message="Não foi possível carregar o contrato de venda."
+              onRetry={contract.retry}
+            />
+          ) : (
+            <p className="font-ui text-body text-texto-auxiliar">
+              Antes de abrir a loja, leia e aceite o contrato de venda.
+            </p>
+          )}
+        </div>
+        {contract.state.status === 'pending' ? (
+          <DocumentModal
+            open
+            document={contract.state.document}
+            requireScrollToEnd
+            onAccept={contract.accept}
+            onDecline={contract.decline}
+          />
+        ) : null}
+      </Container>
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submit();
@@ -118,10 +163,7 @@ function Sell() {
 
   return (
     <Container as="main" width="narrow" className="py-8 tablet:py-12">
-      <h1 className="font-display text-h2 text-tinta">Quero vender</h1>
-      <p className="mt-2 font-ui text-body text-texto-auxiliar">
-        Abra sua loja na Vintex e comece a anunciar suas peças.
-      </p>
+      {intro}
 
       <form className="mt-8 flex flex-col gap-10" onSubmit={handleSubmit} noValidate>
         <fieldset className="flex flex-col gap-5" disabled={submitting}>

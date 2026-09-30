@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { paths } from '@/routes/paths';
 import { logout as authServiceLogout, me } from '@/services/authService';
 import {
   REDIRECT_STORAGE_KEY,
@@ -52,14 +53,6 @@ import {
  *       : null;
  *   }
  */
-
-/**
- * TODO(#106): trocar por `paths.login` de `@/routes/paths` quando a branch de
- * rotas (#106) for mergeada.
- *
- * O valor continua sendo o mesmo (`/login`).
- */
-const LOGIN_PATH = '/login';
 
 /**
  * Rota padrão usada quando o login é concluído sem existir
@@ -249,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       logout();
 
-      navigate(LOGIN_PATH, {
+      navigate(paths.login, {
         replace: true,
         state: {
           from: redirectTo,

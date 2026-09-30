@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
 import type { MediaItem } from '@/components/common/MediaUploader';
 import {
@@ -7,13 +8,21 @@ import {
   update,
   publish,
   uploadMedia,
+  NOT_AVAILABLE_YET,
+  SellerProductError,
 } from '@/services/sellerProductService';
 import { suggestListing } from '@/services/vintexAiService';
-import type { ListingCorrection, ProductInput } from '@/types/product';
+import type {
+  ListingCorrection,
+  ProductInput,
+  ProductStatus,
+  SellerProductDetail,
+} from '@/types/product';
 import type { ListingSuggestionField } from '@/types/vintex-ai';
 
 /**
- * Estado e regras do cadastro de peça (FE-US014-1/2, #216 e #217).
+ * Estado e regras do cadastro de peça (FE-US014-1/2, #216 e #217) e da
+ * revisão antes de publicar (FE-US016-1, #218).
  *
  * Três coisas moram aqui porque nenhuma é de apresentação:
  *
@@ -29,6 +38,34 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  *
  * A IA nunca bloqueia o cadastro (RN-57): falha dela vira aviso, os campos
  * seguem editáveis e o vendedor preenche à mão.
+ *
+ * **Salvar e publicar são dois passos (#218).** Antes, um `submit()` só
+ * gravava e publicava de uma vez. A revisão explícita (RN-50) pede que o
+ * formulário apenas grave o rascunho e que só a revisão publique, então
+ * `submit()` virou duas funções:
+ *
+ * - `saveDraft()`, do "Continuar para revisão": valida, faz `createDraft` na
+ *   primeira vez e `update` depois, e NÃO publica. Vai sem `corrections`: o
+ *   back acumula `ai_corrections` a cada gravação, e o vendedor pode ir e
+ *   voltar entre formulário e revisão quantas vezes quiser.
+ * - `publishDraft()`, do "Publicar" da revisão: `update(id, input,
+ *   corrections)` com as correções juntadas até ali, uma vez só, e depois
+ *   `publish(id)`, que não tem corpo (back-end#159).
+ *
+ * **Um hook para as duas telas, não um por tela.** `suggested` e
+ * `corrections` só existem aqui no cliente: o back não guarda quais campos
+ * vieram da IA. Com uma instância por página, a revisão abriria sem as marcas
+ * e sem as correções. Por isso formulário e revisão ficam sob uma rota-pai
+ * (`SellerProductFlow`) que chama este hook uma vez e entrega o resultado pelo
+ * `<Outlet context>`; as páginas leem com `useProductFlow()`. O estado vive
+ * enquanto o vendedor anda entre as duas e some ao sair do fluxo. Limite
+ * conhecido: um F5 na revisão recarrega a peça pelo `getById`, mas as marcas
+ * de sugerido e as correções ainda não enviadas se perdem.
+ *
+ * "Recarregar" o rascunho depois de salvar usa a resposta do próprio
+ * `createDraft`/`update`, e não um `getById`: ele ainda não tem rota no back
+ * (#202) e quebraria o fluxo fora do mock. `getById` só roda quando se entra
+ * direto numa URL com um id que este hook ainda não tem em memória.
  */
 
 export interface ProductFormValues {
@@ -93,6 +130,38 @@ const ROTULO_POR_CAMPO: Record<ListingSuggestionField, string> = {
   brand: 'a marca',
 };
 
+export const MENSAGEM_SEM_FOTO = 'Adicione ao menos uma foto antes de publicar.';
+const MENSAGEM_INCOMPLETA =
+  'Faltam dados obrigatórios. Use "Editar" para completar antes de publicar.';
+const MENSAGEM_ERRO_PUBLICAR = 'Não foi possível publicar a peça. Tente de novo.';
+
+/**
+ * Etapas do cadastro no `Stepper`. Fotos e Dados dividem a mesma página, mas
+ * são etapas separadas no indicador: é a ordem real do fluxo (a foto alimenta
+ * a IA, que preenche os dados) e é o exemplo do próprio `Stepper` (#198). O
+ * frame da revisão no Figma ainda está "a confirmar" na #218.
+ */
+export const ETAPAS_CADASTRO = [
+  { id: 'fotos', label: 'Fotos' },
+  { id: 'dados', label: 'Dados' },
+  { id: 'revisao', label: 'Revisão' },
+];
+export const ETAPA_REVISAO = 2;
+
+/** Blocos do formulário que a revisão sabe abrir (vão no hash da URL). */
+export type SecaoCadastro = 'fotos' | 'dados' | 'descricao' | 'preco';
+
+/** Seção do formulário de cada etapa concluída do `Stepper`. */
+export const SECAO_POR_ETAPA: Record<number, SecaoCadastro> = { 0: 'fotos', 1: 'dados' };
+
+export type PublishResult =
+  | { status: 'published'; id: string }
+  /** Edição de peça já anunciada ou pausada: grava sem mudar a situação dela. */
+  | { status: 'saved'; id: string }
+  /** RN-47 ou dado obrigatório faltando: a revisão mostra `publishBlocked`. */
+  | { status: 'blocked' }
+  | { status: 'error'; message: string };
+
 function semAcento(valor: string): string {
   return valor.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 }
@@ -116,6 +185,41 @@ function paraReais(cents: number | null): number | undefined {
 
 function paraCentavos(reais: number | undefined): number | null {
   return reais === undefined ? null : Math.round(reais * 100);
+}
+
+/** Peça do service no formato da tela (preço em centavos, fotos como `MediaItem`). */
+function paraValores(peca: SellerProductDetail): ProductFormValues {
+  return {
+    name: peca.name,
+    category: peca.category ?? null,
+    size: peca.size ?? null,
+    color: peca.color ?? null,
+    condition: peca.condition ?? null,
+    brand: peca.brand ?? '',
+    description: peca.description ?? '',
+    priceCents: paraCentavos(peca.price),
+    media: (peca.images ?? []).map((url, indice) => ({
+      id: `${indice}`,
+      url,
+      type: 'image' as const,
+      position: indice,
+    })),
+  };
+}
+
+function paraInput(values: ProductFormValues): Partial<ProductInput> {
+  return {
+    name: values.name.trim(),
+    category: values.category ?? undefined,
+    size: values.size ?? undefined,
+    color: values.color ?? undefined,
+    condition: values.condition ?? undefined,
+    brand: values.brand.trim() || undefined,
+    description: values.description.trim() || undefined,
+    price: paraReais(values.priceCents),
+    images: values.media.map((item) => item.url),
+    quantity: 1,
+  };
 }
 
 export function validar(values: ProductFormValues): FieldErrors {
@@ -145,10 +249,31 @@ export interface UseProductFormResult {
   analyzing: boolean;
   saving: boolean;
   loading: boolean;
+  /** A peça da URL não carregou: a revisão não tem o que mostrar. */
+  loadFailed: boolean;
   formError: string | null;
+  /** Preço em reais para quem exibe (`PriceBreakdown`), ou `null` sem preço. */
+  priceReais: number | null;
+  /** Etapa do formulário no `Stepper`: Fotos enquanto não há foto, depois Dados. */
+  formStep: number;
+  /** RN-47 no formulário: só segue para a revisão com ao menos uma foto. */
+  canContinue: boolean;
+  /** Por que a revisão não pode publicar agora, ou `null` se pode. */
+  publishBlocked: string | null;
+  /**
+   * Situação da peça no back, ou `undefined` antes do primeiro save. Fora de
+   * `rascunho`, a revisão só salva as alterações (FE-US019-2).
+   */
+  productStatus: ProductStatus | undefined;
   setField: <K extends keyof ProductFormValues>(campo: K, valor: ProductFormValues[K]) => void;
   setMedia: (items: MediaItem[]) => void;
-  submit: () => Promise<string | null>;
+  /** Grava o rascunho sem publicar. Devolve o id, ou `null` se não passou. */
+  saveDraft: () => Promise<string | null>;
+  /**
+   * Último `update` com as correções e, se a peça é rascunho, `publish`. Peça
+   * anunciada ou pausada só é atualizada (`saved`). Só a revisão chama.
+   */
+  publishDraft: () => Promise<PublishResult>;
 }
 
 export function useProductForm(productId?: string): UseProductFormResult {
@@ -160,8 +285,18 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(productId));
+  const [loadFailed, setLoadFailed] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // O back recusou publicar por falta de foto (NO_IMAGE), mesmo com a tela
+  // achando que tinha. Só sai quando as fotos mudam.
+  const [semFotoNoBack, setSemFotoNoBack] = useState(false);
   const [draftId, setDraftId] = useState<string | undefined>(productId);
+  const [productStatus, setProductStatus] = useState<ProductStatus | undefined>(undefined);
+
+  // Id da peça que já está em memória, do `getById` ou da resposta do último
+  // save. Quando um rascunho novo é salvo, a URL passa a ter o id dele; é isto
+  // que evita um `getById` desnecessário (e sem rota no back) nessa hora.
+  const carregadoRef = useRef<string | undefined>(undefined);
 
   // Último estado renderizado. `setMedia` roda depois de duas idas à rede e
   // precisa saber o que o vendedor já digitou nesse meio tempo; ler do
@@ -170,35 +305,52 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const valuesRef = useRef(values);
   valuesRef.current = values;
 
-  // Modo edição (FE-US019-2): carrega pelo `getById`, e não pelo detalhe
-  // público, que responde 404 para peça despublicada e não traz rascunho.
+  // Modo edição (FE-US019-2) e entrada direta na revisão: carrega pelo
+  // `getById`. Sem a rota do vendedor no back, ele cai no detalhe público,
+  // que não serve para peça pausada (`docs/adr/0002`).
   useEffect(() => {
-    if (!productId) return;
+    // O mesmo hook atravessa as rotas do fluxo: voltar a `/new` com um
+    // rascunho em memória é começar outra peça do zero.
+    if (!productId) {
+      if (carregadoRef.current === undefined) return;
+      carregadoRef.current = undefined;
+      setValues(VALORES_INICIAIS);
+      setErrors({});
+      setSuggested(new Set());
+      setCorrections([]);
+      setAiNotes([]);
+      setFormError(null);
+      setSemFotoNoBack(false);
+      setDraftId(undefined);
+      setProductStatus(undefined);
+      return;
+    }
+    if (productId === carregadoRef.current) return;
 
     let ativo = true;
     setLoading(true);
+    setLoadFailed(false);
     getById(productId)
       .then((peca) => {
         if (!ativo) return;
-        setValues({
-          name: peca.name,
-          category: peca.category ?? null,
-          size: peca.size ?? null,
-          color: peca.color ?? null,
-          condition: peca.condition ?? null,
-          brand: peca.brand ?? '',
-          description: peca.description ?? '',
-          priceCents: paraCentavos(peca.price),
-          media: (peca.images ?? []).map((url, indice) => ({
-            id: `${indice}`,
-            url,
-            type: 'image' as const,
-            position: indice,
-          })),
-        });
+        carregadoRef.current = peca.id;
+        setDraftId(peca.id);
+        setProductStatus(peca.status);
+        setValues(paraValores(peca));
+        // Outra peça: marcas e correções da anterior não valem para ela.
+        setSuggested(new Set());
+        setCorrections([]);
+        setAiNotes([]);
+        setSemFotoNoBack(false);
       })
-      .catch(() => {
-        if (ativo) setFormError('Não foi possível carregar esta peça.');
+      .catch((error: unknown) => {
+        if (!ativo) return;
+        setFormError(
+          error instanceof SellerProductError && error.code === NOT_AVAILABLE_YET
+            ? error.message
+            : 'Não foi possível carregar esta peça.',
+        );
+        setLoadFailed(true);
       })
       .finally(() => {
         if (ativo) setLoading(false);
@@ -251,6 +403,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const setMedia = useCallback(async (items: MediaItem[]) => {
     setValues((atual) => ({ ...atual, media: items }));
     setErrors((atual) => ({ ...atual, media: undefined }));
+    setSemFotoNoBack(false);
 
     // Sem foto nenhuma, o que a IA disse deixa de fazer sentido: os avisos
     // falariam de fotos que não estão mais ali. Os campos ficam, porque o
@@ -335,8 +488,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     }
   }, []);
 
-  /** Salva e publica. Devolve o id da peça, ou `null` se não passou. */
-  const submit = useCallback(async (): Promise<string | null> => {
+  const saveDraft = useCallback(async (): Promise<string | null> => {
     const encontrados = validar(values);
     setErrors(encontrados);
     if (Object.keys(encontrados).length > 0) return null;
@@ -344,34 +496,63 @@ export function useProductForm(productId?: string): UseProductFormResult {
     setSaving(true);
     setFormError(null);
     try {
-      const input: Partial<ProductInput> = {
-        name: values.name.trim(),
-        category: values.category ?? undefined,
-        size: values.size ?? undefined,
-        color: values.color ?? undefined,
-        condition: values.condition ?? undefined,
-        brand: values.brand.trim() || undefined,
-        description: values.description.trim() || undefined,
-        price: paraReais(values.priceCents),
-        images: values.media.map((item) => item.url),
-        quantity: 1,
-      };
+      const input = paraInput(values);
+      // Sem correções de propósito: elas vão uma vez só, no `publishDraft`.
+      const peca = draftId ? await update(draftId, input, []) : await createDraft(input, []);
 
-      const peca = draftId
-        ? await update(draftId, input, corrections)
-        : await createDraft(input, corrections);
+      carregadoRef.current = peca.id;
       setDraftId(peca.id);
-
-      await publish(peca.id);
+      setProductStatus(peca.status);
+      // A revisão mostra o que o back gravou, não o que a tela achava que mandou.
+      setValues(paraValores(peca));
+      setSemFotoNoBack(false);
       return peca.id;
     } catch (error) {
-      const mensagem = error instanceof Error ? error.message : 'Não foi possível publicar a peça.';
+      const mensagem =
+        error instanceof Error ? error.message : 'Não foi possível salvar o rascunho.';
       setFormError(mensagem);
       return null;
     } finally {
       setSaving(false);
     }
-  }, [values, corrections, draftId]);
+  }, [values, draftId]);
+
+  const faltaFoto = values.media.length === 0 || semFotoNoBack;
+  const faltaDado = Object.keys(validar(values)).some((campo) => campo !== 'media');
+  const publishBlocked = faltaFoto ? MENSAGEM_SEM_FOTO : faltaDado ? MENSAGEM_INCOMPLETA : null;
+
+  const publishDraft = useCallback(async (): Promise<PublishResult> => {
+    if (!draftId || publishBlocked) return { status: 'blocked' };
+
+    setSaving(true);
+    try {
+      await update(draftId, paraInput(values), corrections);
+      // Já foram: o back acumula, e mandar de novo duplicaria a medida.
+      setCorrections([]);
+      // Editar não muda a situação da peça: `publish` é só para rascunho. Numa
+      // anunciada o back recusaria; numa pausada, republicaria sem o vendedor
+      // pedir — republicar é ação própria do painel.
+      if (productStatus !== undefined && productStatus !== 'rascunho') {
+        return { status: 'saved', id: draftId };
+      }
+      await publish(draftId);
+      return { status: 'published', id: draftId };
+    } catch (error) {
+      if (error instanceof SellerProductError && error.code === 'NO_IMAGE') {
+        setSemFotoNoBack(true);
+        return { status: 'blocked' };
+      }
+      // `INTERNAL_ERROR` é o que o service usa quando o back não mandou
+      // envelope, e a mensagem dele é técnica.
+      const mensagem =
+        error instanceof SellerProductError && error.code !== 'INTERNAL_ERROR'
+          ? error.message
+          : MENSAGEM_ERRO_PUBLICAR;
+      return { status: 'error', message: mensagem };
+    } finally {
+      setSaving(false);
+    }
+  }, [draftId, publishBlocked, values, corrections, productStatus]);
 
   return {
     values,
@@ -381,9 +562,27 @@ export function useProductForm(productId?: string): UseProductFormResult {
     analyzing,
     saving,
     loading,
+    loadFailed,
     formError,
+    priceReais: paraReais(values.priceCents) ?? null,
+    formStep: values.media.length === 0 ? 0 : 1,
+    canContinue: values.media.length > 0 && !saving && !analyzing,
+    publishBlocked,
+    productStatus,
     setField,
     setMedia,
-    submit,
+    saveDraft,
+    publishDraft,
   };
+}
+
+/**
+ * O `useProductForm` compartilhado pelas páginas do cadastro. Só funciona
+ * dentro de `SellerProductFlow` (ver o comentário do topo).
+ *
+ * Usage:
+ *   const { values, saveDraft } = useProductFlow();
+ */
+export function useProductFlow(): UseProductFormResult {
+  return useOutletContext<UseProductFormResult>();
 }

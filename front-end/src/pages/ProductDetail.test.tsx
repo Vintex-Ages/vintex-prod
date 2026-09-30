@@ -221,13 +221,15 @@ describe('<ProductDetail />', () => {
     expect(screen.getByRole('img', { name: 'Confiável' })).toBeTruthy();
   });
 
-  it('não mostra o selo de verificado quando a loja não é verificada', async () => {
+  // FE-US007-1: loja ainda não validada mostra o selo Pendente, não o Confiável.
+  it('mostra o selo Pendente quando a loja não é verificada', async () => {
     renderAt('/product/3');
 
     await screen.findByRole('heading', { name: 'Jaqueta biker preta' });
 
     expect(screen.getAllByText('Roupa Rodada').length).toBeGreaterThan(0);
     expect(screen.queryByRole('img', { name: 'Confiável' })).toBeNull();
+    expect(screen.getByRole('img', { name: 'Pendente' })).toBeTruthy();
   });
 
   // Objetivo declarado do ticket: card da loja linka o perfil do brechó.

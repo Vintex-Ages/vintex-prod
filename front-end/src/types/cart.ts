@@ -13,13 +13,22 @@ import type { Product, Store } from '@/types/product';
  * cruzando lojas neste tipo.
  */
 
+/** Por que a peça do carrinho não pode ser comprada agora. */
+export type UnavailableReason = 'vendido' | 'pausado';
+
 /** Item do carrinho: a peça e quando foi adicionada. */
 export interface CartItem {
   product: Product;
-  /** Data/hora em que o item foi adicionado ao carrinho, em ISO 8601. */
-  addedAt: string;
-  /** `true` quando a peça não está mais disponível para compra (ex.: vendida). */
-  unavailable?: boolean;
+  /**
+   * Data/hora em que o item foi adicionado ao carrinho, em ISO 8601. Só o mock
+   * tem: a API real (`CartItemResponse`) não manda `added_at`.
+   */
+  addedAt?: string;
+  /**
+   * Presente quando a peça está **Indisponível** (ver `CONTEXT.md`), com o
+   * motivo: `vendido` não volta, `pausado` o vendedor pode republicar (#297).
+   */
+  unavailable?: UnavailableReason;
 }
 
 /** Itens do carrinho agrupados por loja, com subtotal próprio do grupo. */
@@ -30,8 +39,9 @@ export interface CartGroup {
   subtotalCents: number;
   /**
    * Chave Pix do vendedor, exibida na tela de pagamento (RN-18/RN-19).
-   * Opcional até o endpoint do carrinho confirmar o campo; no modo mock é
-   * sempre `undefined`, porque o mock de produtos não guarda chave Pix.
+   * Opcional: o grupo do carrinho no back ainda não manda `pix_key` (pedido
+   * na #226); no modo mock é sempre `undefined`, porque o mock de produtos
+   * não guarda chave Pix.
    */
   pixKey?: string;
 }

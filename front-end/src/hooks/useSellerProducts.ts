@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMine } from '@/services/sellerProductService';
+import { getMine, publish, unpublish } from '@/services/sellerProductService';
 import type { ProductStatus, SellerProduct } from '@/types/product';
 
-/** Chips do painel (RN-51). `rascunho` não vira status visível — ver #220. */
+/** Chips do painel (RN-51). `rascunho` não entra no painel — ver `docs/adr/0001`. */
 export type StatusFilter = 'todas' | 'ativo' | 'vendido' | 'despublicado';
 
 export type SellerProductsCounts = {
@@ -24,13 +24,19 @@ const PAGE_SIZE = 100;
  * Busca todas as páginas do `getMine`. As contagens dos cards e o filtro em
  * memória precisam da lista inteira: com só a primeira página, um vendedor
  * com mais peças que o tamanho da página veria números e lista incompletos.
+ *
+ * Rascunho sai aqui, antes de lista, cards e total (`docs/adr/0001`, #297):
+ * o back o devolve na listagem sem filtro, e o `?status=` não tem "tudo menos
+ * rascunho".
  */
 async function buscarTodas(): Promise<SellerProduct[]> {
   const todas: SellerProduct[] = [];
   for (let page = 1; ; page += 1) {
     const resposta = await getMine({ page, pageSize: PAGE_SIZE });
     todas.push(...resposta.items);
-    if (resposta.items.length === 0 || todas.length >= resposta.total) return todas;
+    if (resposta.items.length === 0 || todas.length >= resposta.total) {
+      return todas.filter((product) => product.status !== 'rascunho');
+    }
   }
 }
 
@@ -55,10 +61,17 @@ function contar(products: SellerProduct[]): SellerProductsCounts {
  * peças por vendedor justificar paginar no servidor.
  *
  * Peça vendida continua na lista (RN-52, histórico) — quem esconde ação é a
- * FE-US019-2, não este hook.
+ * página, não este hook.
+ *
+ * Ações da FE-US019-2 (#221): `unpublishProduct` (ativo → despublicado) e
+ * `republishProduct` (despublicado → ativo, pela mesma rota `publish` —
+ * `republish` não existe). A linha muda de status sem recarregar a lista, e
+ * as contagens acompanham. Erros do service sobem para a página decidir o
+ * aviso (ex.: `PRODUCT_SOLD`).
  *
  * Usage:
- *   const { state, filter, setFilter, visible, retry } = useSellerProducts();
+ *   const { state, filter, setFilter, visible, retry, unpublishProduct } = useSellerProducts();
+ *   await unpublishProduct(id); // lança SellerProductError se o back recusar
  */
 export function useSellerProducts() {
   const [state, setState] = useState<SellerProductsState>({ status: 'loading' });
@@ -90,11 +103,38 @@ export function useSellerProducts() {
     setAttempt((current) => current + 1);
   }, []);
 
+  /** Troca o status de uma peça na lista em memória e refaz as contagens. */
+  const applyStatus = useCallback((id: string, status: SellerProduct['status']) => {
+    setState((current) => {
+      if (current.status !== 'ready') return current;
+      const products = current.products.map((product) =>
+        product.id === id ? { ...product, status } : product,
+      );
+      return { status: 'ready', products, counts: contar(products) };
+    });
+  }, []);
+
+  const unpublishProduct = useCallback(
+    async (id: string) => {
+      await unpublish(id);
+      applyStatus(id, 'despublicado');
+    },
+    [applyStatus],
+  );
+
+  const republishProduct = useCallback(
+    async (id: string) => {
+      await publish(id);
+      applyStatus(id, 'ativo');
+    },
+    [applyStatus],
+  );
+
   const visible = useMemo(() => {
     if (state.status !== 'ready') return [];
     if (filter === 'todas') return state.products;
     return state.products.filter((product) => product.status === (filter as ProductStatus));
   }, [state, filter]);
 
-  return { state, filter, setFilter, visible, retry };
+  return { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct };
 }

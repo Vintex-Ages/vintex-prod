@@ -14,6 +14,7 @@ import { paths, productDetail } from '@/routes/paths';
 import { search } from '@/services/catalogService';
 import type { CatalogFilters } from '@/types/catalog';
 import type { FilterParams, Product, SearchResult } from '@/types/product';
+import { fromCatalogSearch } from '@/utils/catalogQuery';
 
 /**
  * Converte os filtros do painel (múltipla escolha) para o formato aceito
@@ -53,6 +54,9 @@ function toFilterParams(filters: CatalogFilters): FilterParams {
  *   opções de tamanho, conservação e cor, mas nenhuma tela passava nada — os
  *   grupos apareciam como legendas soltas sem nada embaixo.
  * - **Vazio e erro têm saída** — limpar os filtros e tentar de novo.
+ * - **Filtros também chegam pela URL** (`?category=…&color=…&priceMax=…`, ver
+ *   `utils/catalogQuery.ts`): é assim que "Ver no catálogo" da interpretação
+ *   da Vintex (FE-US027-3) abre a busca já filtrada.
  */
 function Catalog() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -65,7 +69,21 @@ function Catalog() {
   const category = categoryParam ?? legacyCategory;
 
   const [inputValue, setInputValue] = useState(term);
-  const [filters, setFilters] = useState<CatalogFilters>({ category });
+  const [filters, setFilters] = useState<CatalogFilters>(() => ({
+    ...fromCatalogSearch(searchParams),
+    ...(category ? { category } : {}),
+  }));
+  // Chegar de novo por um link com outros filtros (ex.: outra resposta da
+  // Vintex) substitui o painel. A categoria escolhida no painel também vai
+  // para a URL; `handleFiltersChange` atualiza a chave antes de escrever, para
+  // esta troca não apagar os outros filtros do painel.
+  const urlFiltersKey = JSON.stringify(fromCatalogSearch(searchParams));
+  const lastUrlFiltersKey = useRef(urlFiltersKey);
+  useEffect(() => {
+    if (urlFiltersKey === lastUrlFiltersKey.current) return;
+    lastUrlFiltersKey.current = urlFiltersKey;
+    setFilters(JSON.parse(urlFiltersKey) as CatalogFilters);
+  }, [urlFiltersKey]);
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   /** Motivo das sugestões quando a busca não acha nada (RN-61). */
@@ -134,6 +152,7 @@ function Catalog() {
 
   function handleSubmit(value: string) {
     const trimmed = value.trim();
+    // Troca só o `q`: filtros que vieram pela URL continuam valendo.
     setSearchParams(
       (current) => {
         const next = new URLSearchParams(current);
@@ -161,15 +180,11 @@ function Catalog() {
 
   function handleFiltersChange(nextFilters: CatalogFilters) {
     setFilters(nextFilters);
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        if (nextFilters.category) next.set('category', nextFilters.category);
-        else next.delete('category');
-        return next;
-      },
-      { replace: true },
-    );
+    const next = new URLSearchParams(searchParams);
+    if (nextFilters.category) next.set('category', nextFilters.category);
+    else next.delete('category');
+    lastUrlFiltersKey.current = JSON.stringify(fromCatalogSearch(next));
+    setSearchParams(next, { replace: true });
   }
 
   const hasFilters = Object.values(filters).some(

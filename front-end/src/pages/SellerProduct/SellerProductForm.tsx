@@ -1,15 +1,23 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AISuggestedTag from '@/components/common/AISuggestedTag';
 import Button from '@/components/common/Button';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
 import PriceInput from '@/components/common/PriceInput';
 import Select from '@/components/common/Select';
+import Stepper from '@/components/common/Stepper';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
+import PriceBreakdown from '@/components/seller/PriceBreakdown';
 import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
-import { useProductForm } from '@/hooks/useProductForm';
-import { productDetail } from '@/routes/paths';
+import {
+  ETAPAS_CADASTRO,
+  SECAO_POR_ETAPA,
+  useProductFlow,
+  type SecaoCadastro,
+} from '@/hooks/useProductForm';
+import { sellerProductReviewPath } from '@/routes/paths';
 import type { ListingSuggestionField } from '@/types/vintex-ai';
 
 /**
@@ -24,18 +32,45 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * Digitar em cima apaga a etiqueta. Nada da IA bloqueia o cadastro: se ela
  * falhar, o aviso aparece e os campos seguem editáveis (RN-57).
  *
- * Fora desta entrega: a etapa separada de revisão antes de publicar
- * (FE-US016-1, #218), cortada para a Sprint 3. Aqui publicar é um botão só, com
- * confirmação explícita no próprio rótulo.
+ * Esta página só grava o rascunho: "Continuar para revisão" salva e leva à
+ * revisão (FE-US016-1, #218), que é quem publica (RN-50). O estado vem do
+ * `SellerProductFlow`, a rota-pai que compartilha o mesmo `useProductForm`
+ * com a revisão. Quando a revisão manda "Editar", a URL chega com o hash da
+ * seção (`#preco`, `#descricao`...) e o campo correspondente recebe o foco.
  *
  * Usage:
- *   <Route path="/seller/products/new" element={<SellerProductForm />} />
+ *   <Route element={<SellerProductFlow />}>
+ *     <Route path="/seller/products/new" element={<SellerProductForm />} />
+ *   </Route>
  */
+/** Elemento que recebe o foco em cada seção, pelo `id` que o formulário usa. */
+const ALVO_POR_SECAO: Record<SecaoCadastro, string> = {
+  fotos: 'secao-fotos',
+  dados: 'titulo',
+  descricao: 'descricao',
+  preco: 'preco',
+};
+
+function focarSecao(secao: string) {
+  const alvo = document.getElementById(ALVO_POR_SECAO[secao as SecaoCadastro] ?? '');
+  if (!alvo) return;
+
+  // Na área de fotos o controle visível é a zona de soltar, não o `input`
+  // escondido: focar o `input` deixaria o anel de foco invisível.
+  const focavel = alvo.matches('input, select, textarea')
+    ? alvo
+    : (alvo.querySelector<HTMLElement>('[tabindex="0"]') ?? alvo);
+  focavel.focus();
+  focavel.scrollIntoView?.({ block: 'center' });
+}
+
 export default function SellerProductForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     values,
+    priceReais,
     errors,
     suggested,
     aiNotes,
@@ -43,12 +78,21 @@ export default function SellerProductForm() {
     saving,
     loading,
     formError,
+    formStep,
+    canContinue,
     setField,
     setMedia,
-    submit,
-  } = useProductForm(id);
+    saveDraft,
+  } = useProductFlow();
 
   const editando = Boolean(id);
+
+  // "Editar" da revisão: foca a seção do hash. `location.key` entra para
+  // funcionar também na segunda ida ao mesmo bloco, com o mesmo hash.
+  useEffect(() => {
+    if (loading || !location.hash) return;
+    focarSecao(location.hash.slice(1));
+  }, [loading, location.hash, location.key]);
 
   /** Etiqueta de sugestão no rótulo do campo, quando o valor veio da IA. */
   function marca(campo: ListingSuggestionField) {
@@ -57,13 +101,13 @@ export default function SellerProductForm() {
 
   async function handleSubmit(evento: React.FormEvent) {
     evento.preventDefault();
-    const publicado = await submit();
-    if (publicado) navigate(productDetail(publicado));
+    const salvo = await saveDraft();
+    if (salvo) navigate(sellerProductReviewPath(salvo));
   }
 
   if (loading) {
     return (
-      <Container>
+      <Container as="main">
         <p className="py-10 text-body text-texto-auxiliar" role="status">
           Carregando a peça...
         </p>
@@ -72,8 +116,14 @@ export default function SellerProductForm() {
   }
 
   return (
-    <Container>
+    <Container as="main">
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 py-6 tablet:py-10" noValidate>
+        <Stepper
+          steps={ETAPAS_CADASTRO}
+          current={formStep}
+          onStepSelect={(etapa) => focarSecao(SECAO_POR_ETAPA[etapa])}
+        />
+
         {/* `div` e não `header`: um `header` fora de elemento de seção vira
             landmark `banner`, e a página já tem o do layout. Duas banners numa
             página é erro de navegação por landmark. */}
@@ -86,17 +136,19 @@ export default function SellerProductForm() {
           </p>
         </div>
 
-        <MediaUploader
-          id="fotos"
-          label="Fotos da peça"
-          value={values.media}
-          onChange={setMedia}
-          max={8}
-          accept="image/jpeg,image/png,image/webp,image/heic"
-          helperText="Até 8 fotos. A primeira é a capa do anúncio."
-          error={errors.media}
-          disabled={saving}
-        />
+        <div id="secao-fotos">
+          <MediaUploader
+            id="fotos"
+            label="Fotos da peça"
+            value={values.media}
+            onChange={setMedia}
+            max={8}
+            accept="image/jpeg,image/png,image/webp,image/heic"
+            helperText="Até 8 fotos. A primeira é a capa do anúncio."
+            error={errors.media}
+            disabled={saving}
+          />
+        </div>
 
         {suggested.size > 0 ? (
           /* Em `compact` a etiqueta e so o icone, com o texto no `aria-label`.
@@ -198,14 +250,18 @@ export default function SellerProductForm() {
             labelAdornment={marca('brand')}
           />
 
-          <PriceInput
-            id="preco"
-            label="Preço"
-            value={values.priceCents}
-            onChange={(cents) => setField('priceCents', cents)}
-            error={errors.priceCents}
-            disabled={saving}
-          />
+          <div className="flex flex-col gap-2">
+            <PriceInput
+              id="preco"
+              label="Preço"
+              value={values.priceCents}
+              onChange={(cents) => setField('priceCents', cents)}
+              error={errors.priceCents}
+              disabled={saving}
+            />
+            {/* RN-15: quanto o vendedor recebe, recalculado a cada tecla (FE-US017-1). */}
+            <PriceBreakdown price={priceReais} />
+          </div>
         </div>
 
         <TextArea
@@ -240,8 +296,10 @@ export default function SellerProductForm() {
           <Button type="button" variant="secondary" onClick={() => navigate(-1)} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={saving || analyzing}>
-            {saving ? 'Publicando...' : 'Publicar peça'}
+          {/* RN-47: sem foto não há o que revisar. A validação dos outros
+              campos acontece no clique, com o erro em cada campo. */}
+          <Button type="submit" disabled={!canContinue}>
+            {saving ? 'Salvando...' : 'Continuar para revisão'}
           </Button>
         </div>
       </form>
