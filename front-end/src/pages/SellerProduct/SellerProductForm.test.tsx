@@ -253,8 +253,15 @@ describe('SellerProductForm', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Continuar para revisão' }));
 
-    await waitFor(() => expect(screen.getByText('Dê um título para a peça.')).toBeInTheDocument());
-    expect(screen.getByText('Informe o preço.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Título')).toHaveAccessibleDescription(
+        'Dê um título para a peça.',
+      ),
+    );
+    expect(screen.getByLabelText('Preço')).toHaveAccessibleDescription('Informe o preço.');
+    // Um resumo só, não um alerta por campo, e o foco vai ao primeiro inválido (#283).
+    expect(screen.getByRole('alert')).toHaveTextContent('Confira 2 campos');
+    expect(screen.getByLabelText('Título')).toHaveFocus();
     expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
   });
 

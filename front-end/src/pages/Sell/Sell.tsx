@@ -1,8 +1,9 @@
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import DocumentModal from '@/components/common/DocumentModal';
 import ErrorState from '@/components/common/ErrorState';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
 import Select, { type SelectOption } from '@/components/common/Select';
@@ -91,6 +92,8 @@ function Sell() {
     setDocumentType,
     submit,
   } = useCreateStore({ acceptedContractVersion: contract.acceptedVersion });
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [submitCount, setSubmitCount] = useState(0);
 
   if (access === 'checking') {
     return (
@@ -156,6 +159,7 @@ function Sell() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitCount((count) => count + 1);
     void submit();
   }
 
@@ -316,6 +320,22 @@ function Sell() {
         </fieldset>
 
         <div className="flex flex-col gap-4">
+          {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+          <FormErrorSummary
+            submitCount={submitCount}
+            items={[
+              { id: 'store-name', message: errors.name },
+              { id: 'store-document', message: errors.documentNumber },
+              { id: 'store-cep', message: errors.cep },
+              { id: 'store-street', message: errors.street },
+              { id: 'store-number', message: errors.number },
+              { id: 'store-district', message: errors.district },
+              { id: 'store-city', message: errors.city },
+              { id: 'store-state', message: errors.state },
+              { id: 'store-pix', message: errors.pixKey },
+            ]}
+          />
+
           {submitError ? (
             <p
               role="alert"

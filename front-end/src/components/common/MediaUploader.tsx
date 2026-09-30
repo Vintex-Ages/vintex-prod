@@ -302,7 +302,7 @@ function MediaUploader({
       )}
 
       {error && (
-        <p id={`${id}-error`} role="alert" className="mt-2 text-body-sm text-vermelho-escuro">
+        <p id={`${id}-error`} className="mt-2 text-body-sm text-vermelho-escuro">
           {error}
         </p>
       )}

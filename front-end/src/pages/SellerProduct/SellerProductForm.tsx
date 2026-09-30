@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AISuggestedTag from '@/components/common/AISuggestedTag';
 import Button from '@/components/common/Button';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
 import PriceInput from '@/components/common/PriceInput';
@@ -86,6 +87,8 @@ export default function SellerProductForm() {
   } = useProductFlow();
 
   const editando = Boolean(id);
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [tentativas, setTentativas] = useState(0);
 
   // "Editar" da revisão: foca a seção do hash. `location.key` entra para
   // funcionar também na segunda ida ao mesmo bloco, com o mesmo hash.
@@ -101,6 +104,7 @@ export default function SellerProductForm() {
 
   async function handleSubmit(evento: React.FormEvent) {
     evento.preventDefault();
+    setTentativas((total) => total + 1);
     const salvo = await saveDraft();
     if (salvo) navigate(sellerProductReviewPath(salvo));
   }
@@ -282,6 +286,22 @@ export default function SellerProductForm() {
         <p className="text-body text-texto-auxiliar">
           Quantidade: <strong className="text-tinta">1 (peça única)</strong>
         </p>
+
+        {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+        <FormErrorSummary
+          submitCount={tentativas}
+          items={[
+            { id: 'secao-fotos', message: errors.media },
+            { id: 'titulo', message: errors.name },
+            { id: 'categoria', message: errors.category },
+            { id: 'tamanho', message: errors.size },
+            { id: 'cor', message: errors.color },
+            { id: 'conservacao', message: errors.condition },
+            { id: 'marca', message: errors.brand },
+            { id: 'preco', message: errors.priceCents },
+            { id: 'descricao', message: errors.description },
+          ]}
+        />
 
         {formError ? (
           <p

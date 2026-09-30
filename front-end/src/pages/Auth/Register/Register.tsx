@@ -5,6 +5,7 @@ import AuthTabs from '@/components/auth/AuthTabs';
 import Button from '@/components/common/Button';
 import Checkbox from '@/components/common/Checkbox';
 import DocumentModal from '@/components/common/DocumentModal';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import Container from '@/components/layout/Container';
 import { useAuth } from '@/context/useAuth';
@@ -117,6 +118,8 @@ function Register() {
   const [cepAddress, setCepAddress] = useState<CepAddress | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [submitCount, setSubmitCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -206,6 +209,7 @@ function Register() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitCount((count) => count + 1);
     const errors = validate();
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0 || acceptedTermsVersion === null) return;
@@ -391,6 +395,17 @@ function Register() {
               </p>
             ) : null}
           </div>
+
+          {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+          <FormErrorSummary
+            submitCount={submitCount}
+            items={[
+              { id: 'name', message: fieldErrors.name },
+              { id: 'email', message: fieldErrors.email },
+              { id: 'cep', message: fieldErrors.cep },
+              { id: 'password', message: fieldErrors.password },
+            ]}
+          />
 
           {submitError ? (
             <p

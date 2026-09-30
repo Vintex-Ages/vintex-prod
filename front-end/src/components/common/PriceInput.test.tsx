@@ -59,7 +59,9 @@ describe('PriceInput', () => {
     const input = screen.getByLabelText('Preço');
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input.className).toContain('border-vermelho-escuro');
-    expect(screen.getByRole('alert')).toHaveTextContent('Informe um preço válido');
+    expect(input).toHaveAccessibleDescription('Informe um preço válido');
+    // O erro não é região `alert`: quem anuncia é o `FormErrorSummary` do formulário (#283).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('usa inputMode decimal e associa o rótulo pelo id', () => {
