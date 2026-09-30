@@ -56,7 +56,13 @@ async function preencherCamposObrigatorios(user: ReturnType<typeof userEvent.set
   await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
   await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
   await user.type(screen.getByLabelText('Senha'), 'senha1234');
+  await aceitarTermos(user);
+}
+
+/** Marca o checkbox, que abre os termos, e aceita no modal (FE-US003-1). */
+async function aceitarTermos(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('checkbox'));
+  await user.click(await screen.findByRole('button', { name: 'Aceitar' }));
 }
 
 describe('<Register />', () => {
@@ -106,6 +112,7 @@ describe('<Register />', () => {
     const user = userEvent.setup();
     renderRegister();
 
+    await aceitarTermos(user);
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
     expect(await screen.findAllByRole('alert')).not.toHaveLength(0);
@@ -136,6 +143,7 @@ describe('<Register />', () => {
       email: 'ana@exemplo.com',
       password: 'senha1234',
       phone: undefined,
+      acceptedTermsVersion: 'termos-0.1-placeholder',
     });
     expect(window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe('tok-abc');
   });
@@ -217,7 +225,7 @@ describe('<Register />', () => {
     await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
     // Senha curta: tem letra e número, mas só 4 caracteres — não cumpre o mínimo de 8.
     await user.type(screen.getByLabelText('Senha'), 'ab12');
-    await user.click(screen.getByRole('checkbox'));
+    await aceitarTermos(user);
 
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
@@ -240,7 +248,7 @@ describe('<Register />', () => {
     await user.type(screen.getByLabelText('CEP (auto-preenchimento)'), '90035072');
     await waitFor(() => expect(screen.getByText('Bom Fim, Porto Alegre — RS')).toBeTruthy());
     await user.type(screen.getByLabelText('Senha'), '12345678');
-    await user.click(screen.getByRole('checkbox'));
+    await aceitarTermos(user);
 
     await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
 
@@ -268,5 +276,64 @@ describe('<Register />', () => {
     await user.click(screen.getByRole('link', { name: 'Termos de Uso' }));
 
     expect(screen.getByRole('checkbox')).not.toBeChecked();
+  });
+
+  // Objetivo declarado (FE-US003-1): garantir aceite obrigatório e registro (RN-93).
+  it('sem aceite o botão fica desabilitado; com aceite register recebe a versão dos termos', async () => {
+    mockedRegister.mockResolvedValueOnce({
+      user: { id: 'u_1', name: 'Ana', email: 'ana@exemplo.com', is_seller: false, is_admin: false },
+      access_token: 'tok',
+    });
+    const user = userEvent.setup();
+    renderRegister();
+
+    expect(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME })).toBeDisabled();
+
+    await preencherCamposObrigatorios(user);
+
+    expect(screen.getByRole('checkbox')).toBeChecked();
+    await user.click(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME }));
+
+    await waitFor(() => expect(mockedRegister).toHaveBeenCalledTimes(1));
+    expect(mockedRegister.mock.calls[0][0]).toMatchObject({
+      acceptedTermsVersion: 'termos-0.1-placeholder',
+    });
+  });
+
+  // Objetivo declarado (FE-US003-1): garantir "sem aceite, sem cadastro".
+  it('"Não aceitar" fecha o modal e mantém o checkbox desmarcado', async () => {
+    const user = userEvent.setup();
+    renderRegister();
+
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(await screen.findByRole('button', { name: 'Não aceitar' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: SUBMIT_BUTTON_NAME })).toBeDisabled();
+  });
+
+  it('o link "Termos de Uso" abre os termos versionados e provisórios', async () => {
+    const user = userEvent.setup();
+    renderRegister();
+
+    await user.click(screen.getByRole('link', { name: 'Termos de Uso' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Termos de uso' })).toBeTruthy();
+    expect(screen.getByText('Versão termos-0.1-placeholder')).toBeTruthy();
+    expect(screen.getByText(/TEXTO PROVISÓRIO/)).toBeTruthy();
+  });
+
+  it('desmarcar depois de aceitar retira o aceite', async () => {
+    const user = userEvent.setup();
+    renderRegister();
+
+    await aceitarTermos(user);
+    expect(screen.getByRole('checkbox')).toBeChecked();
+
+    await user.click(screen.getByRole('checkbox'));
+
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
