@@ -10,7 +10,9 @@ import {
   SellerProductError,
   unpublish,
 } from '@/services/sellerProductService';
+import { getMyVerification, requestVerification } from '@/services/storeService';
 import type { Paginated, SellerProduct } from '@/types/product';
+import type { StoreProfile } from '@/types/store';
 import SellerAdmin from './SellerAdmin';
 
 vi.mock('@/services/sellerProductService', async (importOriginal) => ({
@@ -19,6 +21,12 @@ vi.mock('@/services/sellerProductService', async (importOriginal) => ({
   getSalesSummary: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
+}));
+
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  getMyVerification: vi.fn(),
+  requestVerification: vi.fn(),
 }));
 
 function peca(overrides: Partial<SellerProduct> = {}): SellerProduct {
@@ -52,6 +60,7 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getMyVerification).mockResolvedValue('pendente');
   vi.mocked(getSalesSummary).mockImplementation(async (period) => ({
     period,
     soldCount: 0,
@@ -382,6 +391,63 @@ describe('<SellerAdmin />', () => {
 
       expect(await screen.findByTestId('financeiro-liquido')).toBeInTheDocument();
       expect(getSalesSummary).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('selo Confiável (FE-US007-1)', () => {
+    const LOJA: StoreProfile = {
+      id: 'store-1',
+      name: 'Brechó da Ana',
+      description: '',
+      logoUrl: null,
+      city: 'Porto Alegre',
+      state: 'RS',
+      verification: 'confiavel',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina([]));
+    });
+
+    // Objetivo declarado: garantir a verificação simulada (RN-72).
+    it('pendente mostra o selo Pendente e validar vira Confiável com aviso', async () => {
+      vi.mocked(requestVerification).mockResolvedValue(LOJA);
+      const user = userEvent.setup();
+      renderPage();
+
+      const card = within(await screen.findByRole('region', { name: 'Selo Confiável' }));
+      expect(await card.findByRole('img', { name: 'Pendente' })).toBeInTheDocument();
+      expect(card.getByText(/a validação é simulada/)).toBeInTheDocument();
+
+      await user.click(card.getByRole('button', { name: 'Validar meus dados' }));
+
+      expect(await card.findByRole('img', { name: 'Confiável' })).toBeInTheDocument();
+      expect(card.queryByRole('button', { name: 'Validar meus dados' })).toBeNull();
+      expect(screen.getByText('Pronto! Sua loja agora tem o selo Confiável.')).toBeInTheDocument();
+    });
+
+    it('já confiável não oferece validar de novo', async () => {
+      vi.mocked(getMyVerification).mockResolvedValue('confiavel');
+      renderPage();
+
+      const card = within(await screen.findByRole('region', { name: 'Selo Confiável' }));
+      expect(await card.findByRole('img', { name: 'Confiável' })).toBeInTheDocument();
+      expect(card.queryByRole('button', { name: 'Validar meus dados' })).toBeNull();
+    });
+
+    it('falha ao validar avisa e mantém Pendente', async () => {
+      vi.mocked(requestVerification).mockRejectedValue(new Error('fora do ar'));
+      const user = userEvent.setup();
+      renderPage();
+
+      const card = within(await screen.findByRole('region', { name: 'Selo Confiável' }));
+      await user.click(await card.findByRole('button', { name: 'Validar meus dados' }));
+
+      expect(
+        await screen.findByText('Não foi possível validar seus dados agora. Tente de novo.'),
+      ).toBeInTheDocument();
+      expect(card.getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
     });
   });
 });

@@ -202,4 +202,17 @@ describe('SellerProfile', () => {
     expect(await screen.findByText('Vestido Floral')).toBeInTheDocument();
     expect(getStoreProducts).toHaveBeenCalledWith('1', { page: 2, pageSize: 20 });
   });
+
+  // FE-US007-1 — objetivo declarado: a página da loja reflete o estado do selo (RN-73).
+  it.each([
+    { verification: 'confiavel', selo: 'Confiável' },
+    { verification: 'pendente', selo: 'Pendente' },
+  ] as const)('loja $verification mostra o selo $selo', async ({ verification, selo }) => {
+    vi.mocked(getStore).mockResolvedValue({ ...mockStore, verification });
+    vi.mocked(getStoreProducts).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+
+    renderPage();
+
+    expect(await screen.findByRole('img', { name: selo })).toBeInTheDocument();
+  });
 });

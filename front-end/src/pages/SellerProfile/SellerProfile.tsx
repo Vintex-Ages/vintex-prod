@@ -136,7 +136,7 @@ function SellerProfile() {
         <div className="flex flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-h2 text-tinta">{store.name}</h1>
-            <VerifiedBadge verified={store.verification === 'confiavel'} label="Confiável" />
+            <VerifiedBadge state={store.verification} label="Confiável" />
           </div>
           {store.city ? <p className="text-body-sm text-texto-auxiliar">{store.city}</p> : null}
           <p className="mt-2 max-w-prose text-body text-tinta">{store.description}</p>
