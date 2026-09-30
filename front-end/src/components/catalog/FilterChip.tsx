@@ -12,6 +12,10 @@ import clsx from 'clsx';
  * `onRemove` recebiam a mesma ação de quem usava. Um alvo só, com o verbo no
  * `aria-label`, resolve as duas coisas.
  *
+ * - **O alvo de toque respeita 44px.** As categorias agora usam o token
+ *   `min-h-touch`; a faixa pode quebrar em telas estreitas para evitar scroll
+ *   horizontal escondido.
+ *
  * Uso:
  *   <FilterChip label="Roupas" active={selecionado} onToggle={() => alternar()} />
  *   <FilterChip label="Tamanho M" removable onRemove={() => remover('M')} />
@@ -25,7 +29,7 @@ type FilterChipProps = {
 };
 
 const baseClass =
-  'inline-flex min-h-touch shrink-0 items-center gap-1.5 rounded-full border px-4 py-1 font-ui text-body-sm transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
+  'inline-flex min-h-touch shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
 
 function RemoveIcon() {
   return (
@@ -51,8 +55,8 @@ export function FilterChip({
   onRemove,
 }: FilterChipProps) {
   const toneClass = active
-    ? 'border-tinta bg-tinta text-branco-quente hover:brightness-110'
-    : 'border-linha bg-branco-quente text-tinta hover:bg-papel-profundo';
+    ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
+    : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
 
   if (removable) {
     return (

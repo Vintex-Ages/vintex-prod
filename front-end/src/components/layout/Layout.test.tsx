@@ -23,12 +23,12 @@ function LocationProbe() {
 
 afterEach(cleanup);
 
-function renderLayout(children: React.ReactNode, bottomSpacer = false) {
+function renderLayout(children: React.ReactNode, productDetailLayout = false, initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthProvider>
         <CartContext.Provider value={CART_VALUE}>
-          <Layout bottomSpacer={bottomSpacer}>{children}</Layout>
+          <Layout productDetailLayout={productDetailLayout}>{children}</Layout>
         </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
@@ -44,31 +44,22 @@ describe('<Layout />', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
   });
 
-  /**
-   * Sem a faixa, a barra `fixed` do detalhe da peça cobre as últimas linhas do
-   * rodapé abaixo de `web`: compensar dentro do `<main>` não resolve, porque o
-   * rodapé é irmão posterior do conteúdo.
-   */
-  it('reserva a faixa abaixo do rodapé só quando pedida', () => {
-    const semFaixa = renderLayout(null);
-    expect(semFaixa.container.querySelector('.h-28')).not.toBeInTheDocument();
-    cleanup();
+  it('usa a composição própria do produto sem rodapé ou FAB global', () => {
+    renderLayout(null, true, '/product/1');
 
-    const comFaixa = renderLayout(null, true);
-    const faixa = comFaixa.container.querySelector('.h-28');
-    expect(faixa).toBeInTheDocument();
-    expect(faixa).toHaveClass('web:hidden');
-    expect(screen.getByRole('contentinfo').compareDocumentPosition(faixa!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Abrir assistente Vintex' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('mantém a navegação principal acessível no mobile e visível no desktop', () => {
-    renderLayout(null);
+  it('usa a barra compacta na rota do produto', () => {
+    renderLayout(null, false, '/product/1');
 
-    const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).toHaveClass('hidden', 'tablet:flex');
-    expect(screen.getByRole('button', { name: 'Abrir menu principal' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
   });
 
   // --- #207: FAB da Vintex só no mobile/tablet, spotlight assume no web ---
@@ -80,15 +71,7 @@ describe('<Layout />', () => {
     expect(fab.parentElement).toHaveClass('tablet:hidden');
   });
 
-  it('sobe o FAB (raised) quando bottomSpacer é true, sem sobrepor a barra fixa', () => {
-    renderLayout(null, true);
-
-    const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
-    expect(fab.parentElement).toHaveClass('bottom-24');
-    expect(fab.parentElement).toHaveClass('web:bottom-5');
-  });
-
-  it('mantém o FAB na posição padrão quando bottomSpacer é false', () => {
+  it('mantém o FAB na posição padrão em páginas fora do detalhe de produto', () => {
     renderLayout(null);
 
     const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });

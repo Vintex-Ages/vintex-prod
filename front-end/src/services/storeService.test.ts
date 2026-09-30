@@ -9,6 +9,7 @@ import {
 } from './storeService';
 import { logout, me, register } from './authService';
 import type { StoreInput, StoreProfile } from '@/types/store';
+import { products as mockProducts } from '@/mocks/products';
 
 const input: StoreInput = {
   name: 'Brechó da Ceci',
@@ -138,9 +139,11 @@ describe('storeService', () => {
   });
 
   it('getStoreProducts devolve só peças ativas da loja', async () => {
-    // Loja '1' tem 2 peças 'ativo' no mock de catálogo (ids 1 e 8).
+    const activeCount = mockProducts.filter(
+      (product) => product.store.id === '1' && product.status === 'ativo',
+    ).length;
     const activeStore = await getStoreProducts('1', {});
-    expect(activeStore.items.length).toBe(2);
+    expect(activeStore.items.length).toBe(Math.min(activeCount, activeStore.pageSize));
     expect(activeStore.items.every((product) => product.store.id === '1')).toBe(true);
 
     // Loja '4' só tem uma peça, com status 'vendido' — não deve aparecer.
