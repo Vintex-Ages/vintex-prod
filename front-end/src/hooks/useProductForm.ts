@@ -8,6 +8,7 @@ import {
   update,
   publish,
   uploadMedia,
+  NOT_AVAILABLE_YET,
   SellerProductError,
 } from '@/services/sellerProductService';
 import { suggestListing } from '@/services/vintexAiService';
@@ -305,8 +306,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
   valuesRef.current = values;
 
   // Modo edição (FE-US019-2) e entrada direta na revisão: carrega pelo
-  // `getById`, e não pelo detalhe público, que responde 404 para peça
-  // despublicada e não traz rascunho.
+  // `getById`. Sem a rota do vendedor no back, ele cai no detalhe público,
+  // que não serve para peça pausada (`docs/adr/0002`).
   useEffect(() => {
     // O mesmo hook atravessa as rotas do fluxo: voltar a `/new` com um
     // rascunho em memória é começar outra peça do zero.
@@ -342,9 +343,13 @@ export function useProductForm(productId?: string): UseProductFormResult {
         setAiNotes([]);
         setSemFotoNoBack(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!ativo) return;
-        setFormError('Não foi possível carregar esta peça.');
+        setFormError(
+          error instanceof SellerProductError && error.code === NOT_AVAILABLE_YET
+            ? error.message
+            : 'Não foi possível carregar esta peça.',
+        );
         setLoadFailed(true);
       })
       .finally(() => {

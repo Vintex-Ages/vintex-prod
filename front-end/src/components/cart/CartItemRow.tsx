@@ -1,9 +1,10 @@
 // src/components/cart/CartItemRow.tsx
 import clsx from 'clsx';
 import IconButton from '@/components/common/IconButton';
+import type { UnavailableReason } from '@/types/cart';
 import type { Product } from '@/types/product';
 
-export type CartItem = Product & { unavailable?: boolean };
+export type CartItem = Product & { unavailable?: UnavailableReason };
 
 export type CartItemRowProps = {
   item: CartItem;
@@ -41,7 +42,7 @@ function TrashIcon() {
  *   <CartItemRow item={item} onRemove={removerDoCarrinho} onOpen={abrirProduto} />
  */
 function CartItemRow({ item, onRemove, onOpen }: CartItemRowProps) {
-  const { id, name, price, coverImageUrl, store, unavailable = false } = item;
+  const { id, name, price, coverImageUrl, store, unavailable } = item;
 
   return (
     <article className="flex items-center gap-3 border border-linha bg-branco-quente p-3">
@@ -73,7 +74,7 @@ function CartItemRow({ item, onRemove, onOpen }: CartItemRowProps) {
             </p>
             {unavailable && (
               <span className="bg-tinta px-2 py-1 font-ui text-label text-branco-quente">
-                Vendido
+                {unavailable === 'vendido' ? 'Vendido' : 'Indisponível'}
               </span>
             )}
           </div>

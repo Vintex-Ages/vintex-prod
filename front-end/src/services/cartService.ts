@@ -108,7 +108,7 @@ async function buildCartFromSaved(saved: StoredCartItem[]): Promise<Cart> {
       return {
         product,
         addedAt: entry.addedAt,
-        unavailable: product.status === 'vendido',
+        unavailable: product.status === 'vendido' ? 'vendido' : undefined,
       };
     }),
   );
@@ -210,8 +210,10 @@ function mapApiCartItem(item: ApiCartItem, store: Store): CartItem {
     store,
   };
 
-  // `available` do back → `unavailable` da tela: peça vendida chega marcada.
-  return { product, unavailable: !item.available };
+  // `available` é `status == 'ativo'` no back: fora isso, só `vendido` é
+  // definitivo; o resto (`despublicado`) é pausa, que o vendedor desfaz (#297).
+  if (item.available) return { product };
+  return { product, unavailable: item.status === 'vendido' ? 'vendido' : 'pausado' };
 }
 
 /** Converte reais (`decimal(10,2)` do back) para centavos, unidade interna de `CartGroup.subtotalCents`. */

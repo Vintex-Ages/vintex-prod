@@ -67,7 +67,26 @@ function getSnapshot(): VintexChatState {
   return state;
 }
 
-function runStream(history: ChatMessage[], vintexMessageId: string): void {
+/**
+ * Frase de reserva para quando a resposta termina sem nenhum `text`. A API
+ * real da S2 só manda `products`, `done` e `error` (back-end#149), e a bolha
+ * ficava vazia — sem peças, também sem saída (VS-024, #297). Só descreve o
+ * que chegou (RN-65); o `text` do back, quando existir, sempre prevalece.
+ */
+function fallbackFor(message: ChatMessage, question: string): Partial<ChatMessage> {
+  const count = message.products?.length ?? 0;
+  if (count === 0) {
+    return { text: 'Não achei peças para isso agora.', catalogQuery: question };
+  }
+  return {
+    text:
+      count === 1
+        ? 'Encontrei 1 peça no catálogo que combina com o que você pediu.'
+        : `Encontrei ${count} peças no catálogo que combinam com o que você pediu.`,
+  };
+}
+
+function runStream(history: ChatMessage[], vintexMessageId: string, question: string): void {
   abortController?.abort();
   const controller = new AbortController();
   abortController = controller;
@@ -75,6 +94,7 @@ function runStream(history: ChatMessage[], vintexMessageId: string): void {
   setState({ streamingMessageId: vintexMessageId });
 
   (async () => {
+    let failed = false;
     try {
       for await (const chunk of chat({
         messages: history.map(({ role, text }) => ({ role, text })),
@@ -103,8 +123,19 @@ function runStream(history: ChatMessage[], vintexMessageId: string): void {
             ),
           }));
         } else if (chunk.type === 'error') {
+          failed = true;
           setState({ errorMessageId: vintexMessageId, errorText: chunk.message });
         }
+      }
+
+      if (!controller.signal.aborted && !failed) {
+        setState((current) => ({
+          messages: current.messages.map((message) =>
+            message.id === vintexMessageId && message.text === ''
+              ? { ...message, ...fallbackFor(message, question) }
+              : message,
+          ),
+        }));
       }
     } finally {
       setState((current) => ({
@@ -125,7 +156,7 @@ function sendMessage(text: string): void {
   const history = [...state.messages, userMessage];
 
   setState((current) => ({ messages: [...current.messages, userMessage, vintexMessage] }));
-  runStream(history, vintexMessage.id);
+  runStream(history, vintexMessage.id, trimmed);
 }
 
 function retry(): void {
@@ -140,14 +171,20 @@ function retry(): void {
       // texto: se a nova tentativa não devolver peça nenhuma, a lista antiga
       // continuaria na tela como se fosse resposta desta.
       message.id === failedId
-        ? { ...message, text: '', products: undefined, interpreted: undefined }
+        ? {
+            ...message,
+            text: '',
+            products: undefined,
+            interpreted: undefined,
+            catalogQuery: undefined,
+          }
         : message,
     ),
     errorMessageId: null,
     errorText: null,
   }));
 
-  runStream(history, failedId);
+  runStream(history, failedId, lastUserText);
 }
 
 /**

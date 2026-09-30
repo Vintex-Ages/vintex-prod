@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMine, publish, unpublish } from '@/services/sellerProductService';
 import type { ProductStatus, SellerProduct } from '@/types/product';
 
-/** Chips do painel (RN-51). `rascunho` não vira status visível — ver #220. */
+/** Chips do painel (RN-51). `rascunho` não entra no painel — ver `docs/adr/0001`. */
 export type StatusFilter = 'todas' | 'ativo' | 'vendido' | 'despublicado';
 
 export type SellerProductsCounts = {
@@ -24,13 +24,19 @@ const PAGE_SIZE = 100;
  * Busca todas as páginas do `getMine`. As contagens dos cards e o filtro em
  * memória precisam da lista inteira: com só a primeira página, um vendedor
  * com mais peças que o tamanho da página veria números e lista incompletos.
+ *
+ * Rascunho sai aqui, antes de lista, cards e total (`docs/adr/0001`, #297):
+ * o back o devolve na listagem sem filtro, e o `?status=` não tem "tudo menos
+ * rascunho".
  */
 async function buscarTodas(): Promise<SellerProduct[]> {
   const todas: SellerProduct[] = [];
   for (let page = 1; ; page += 1) {
     const resposta = await getMine({ page, pageSize: PAGE_SIZE });
     todas.push(...resposta.items);
-    if (resposta.items.length === 0 || todas.length >= resposta.total) return todas;
+    if (resposta.items.length === 0 || todas.length >= resposta.total) {
+      return todas.filter((product) => product.status !== 'rascunho');
+    }
   }
 }
 

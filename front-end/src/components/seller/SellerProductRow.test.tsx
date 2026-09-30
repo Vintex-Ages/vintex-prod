@@ -66,7 +66,7 @@ describe('<SellerProductRow />', () => {
 
     for (const [status, label] of statuses) {
       rerender(<SellerProductRow product={{ ...baseProduct, status }} actions={[]} />);
-      expect(screen.getByRole('status')).toHaveTextContent(label);
+      expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
 
@@ -177,7 +177,7 @@ describe('<SellerProductRow />', () => {
     renderRow({ actions: [] });
 
     expect(screen.getByText(baseProduct.name)).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Anunciada');
+    expect(screen.getByText('Anunciada')).toBeInTheDocument();
   });
 
   it('mantém associações independentes para múltiplas ações desabilitadas', () => {

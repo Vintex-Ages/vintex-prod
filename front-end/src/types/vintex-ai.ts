@@ -58,6 +58,11 @@ export interface ChatMessage {
   products?: Product[];
   /** O que a Vintex entendeu do pedido (RN-60). Vem do chunk `interpreted`. */
   interpreted?: InterpretedQuery;
+  /**
+   * A pergunta, quando a Vintex não achou peça nenhuma: a tela oferece
+   * buscá-la no catálogo em vez de deixar a conversa sem saída (VS-024).
+   */
+  catalogQuery?: string;
 }
 
 /**

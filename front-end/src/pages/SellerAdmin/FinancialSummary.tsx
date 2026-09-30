@@ -83,6 +83,10 @@ function FinancialSummary() {
         </>
       )}
 
+      {state.status === 'unavailable' && (
+        <p className="font-ui text-body text-texto-auxiliar">{state.message}</p>
+      )}
+
       {state.status === 'error' && (
         <ErrorState message="Não foi possível carregar o resumo financeiro." onRetry={retry} />
       )}

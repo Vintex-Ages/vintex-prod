@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
 import { resetVintexChat } from '@/hooks/useVintexChat';
+import { products as mockProducts } from '@/mocks/products';
 import type { ChatChunk } from '@/types/vintex-ai';
 
 beforeEach(() => {
@@ -377,5 +378,76 @@ describe('VintexAI page', () => {
 
     await screen.findByText('Oi!');
     expect(screen.queryByRole('region', { name: 'Como a Vintex entendeu seu pedido' })).toBeNull();
+  });
+
+  // #297: a API real da S2 não manda `text` (back-end#149) — a bolha nunca fica vazia.
+  describe('resposta sem texto', () => {
+    function perguntar(pergunta: string) {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: pergunta },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+    }
+
+    it('com peças, a frase de reserva diz quantas foram encontradas', async () => {
+      fakeChat([{ type: 'products', products: mockProducts.slice(0, 2) }, { type: 'done' }]);
+      renderPage();
+      perguntar('vestido floral');
+
+      expect(
+        await screen.findByText('Encontrei 2 peças no catálogo que combinam com o que você pediu.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Buscar no catálogo' })).toBeNull();
+    });
+
+    it('sem peças, avisa e oferece buscar a pergunta no catálogo', async () => {
+      fakeChat([{ type: 'products', products: [] }, { type: 'done' }]);
+
+      function CatalogProbe() {
+        const { search } = useLocation();
+        return <h1>Catálogo {search}</h1>;
+      }
+
+      render(
+        <MemoryRouter initialEntries={['/vintex']}>
+          <Routes>
+            <Route path="/vintex" element={<VintexAI />} />
+            <Route path="/catalog" element={<CatalogProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      perguntar('jaqueta de couro');
+
+      expect(await screen.findByText('Não achei peças para isso agora.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar no catálogo' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Catálogo ?q=jaqueta+de+couro' }),
+      ).toBeInTheDocument();
+    });
+
+    it('o texto do back prevalece sobre a frase de reserva', async () => {
+      fakeChat([
+        { type: 'text', delta: 'Olha estas.' },
+        { type: 'products', products: [] },
+        { type: 'done' },
+      ]);
+      renderPage();
+      perguntar('saia');
+
+      await screen.findByText('Olha estas.');
+      await waitFor(() => expect(screen.queryByTestId('chat-bubble-streaming-cursor')).toBeNull());
+      expect(screen.queryByText('Não achei peças para isso agora.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Buscar no catálogo' })).toBeNull();
+    });
+
+    it('com erro, mostra o erro e não a frase de reserva', async () => {
+      fakeChat([{ type: 'error', message: 'Falhou.' }]);
+      renderPage();
+      perguntar('saia');
+
+      expect(await screen.findByText('Falhou.')).toBeInTheDocument();
+      expect(screen.queryByText('Não achei peças para isso agora.')).toBeNull();
+    });
   });
 });

@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSalesSummary, type SalesPeriod } from '@/services/sellerProductService';
+import {
+  getSalesSummary,
+  NOT_AVAILABLE_YET,
+  SellerProductError,
+  type SalesPeriod,
+} from '@/services/sellerProductService';
 import type { SalesSummary } from '@/types/product';
 
 export type SalesSummaryState =
-  { status: 'loading' } | { status: 'error' } | { status: 'ready'; summary: SalesSummary };
+  | { status: 'loading' }
+  | { status: 'error' }
+  /** A rota ainda não existe no back (`docs/adr/0002`): tentar de novo não resolve. */
+  | { status: 'unavailable'; message: string }
+  | { status: 'ready'; summary: SalesSummary };
 
 /**
  * Visão financeira do painel (FE-US019-3, #222, RN-51.1): resumo de vendas do
@@ -30,8 +39,13 @@ export function useSalesSummary(initialPeriod: SalesPeriod = 'month') {
       .then((summary) => {
         if (!cancelled) setState({ status: 'ready', summary });
       })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'error' });
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof SellerProductError && error.code === NOT_AVAILABLE_YET) {
+          setState({ status: 'unavailable', message: error.message });
+        } else {
+          setState({ status: 'error' });
+        }
       });
 
     return () => {

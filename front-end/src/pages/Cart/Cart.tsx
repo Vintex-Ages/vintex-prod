@@ -27,9 +27,11 @@ function toRowItem(item: CartItem) {
  * porque o pagamento é Pix direto para a chave de cada vendedor.
  *
  * **O carrinho reflete disponibilidade:** ao abrir, recarrega do back. Peça
- * que chegou `unavailable` (vendida a outra pessoa) gera um aviso, sai do
- * carrinho e continua visível na linha marcada como vendida até sair da
- * tela; o subtotal já não conta com ela.
+ * que chegou **vendida** (a outra pessoa) gera um aviso, sai do carrinho e
+ * continua visível na linha marcada como vendida até sair da tela; o subtotal
+ * já não conta com ela. Peça **pausada** pelo vendedor fica no carrinho,
+ * marcada como indisponível e fora do subtotal, sem aviso nem remoção: a
+ * pausa é temporária (#297, `CONTEXT.md` → Indisponível).
  *
  * "Finalizar compra" é placeholder desabilitado: o checkout é da S3.
  *
@@ -53,7 +55,9 @@ function Cart() {
     if (!cart) return;
     const sold: SoldNotice[] = cart.groups.flatMap((group) =>
       group.items
-        .filter((item) => item.unavailable && !noticedRef.current.has(item.product.id))
+        .filter(
+          (item) => item.unavailable === 'vendido' && !noticedRef.current.has(item.product.id),
+        )
         .map((item) => ({ groupId: group.store.id, item })),
     );
     if (sold.length === 0) return;
@@ -155,7 +159,10 @@ function Cart() {
       groupId === null ? orphanNotices : soldNotices.filter((notice) => notice.groupId === groupId);
     return notices.map(({ item }) => (
       <li key={`vendida-${item.product.id}`}>
-        <CartItemRow item={{ ...toRowItem(item), unavailable: true }} onRemove={dismissNotice} />
+        <CartItemRow
+          item={{ ...toRowItem(item), unavailable: 'vendido' }}
+          onRemove={dismissNotice}
+        />
       </li>
     ));
   }
