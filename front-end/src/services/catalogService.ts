@@ -246,6 +246,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
+/** Exportada para `recommendationService` (#313) reaproveitar "mesma forma da vitrine". */
 export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
