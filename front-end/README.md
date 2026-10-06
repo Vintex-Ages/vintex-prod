@@ -51,9 +51,12 @@ assistente de IA Vintex.
 
 ## Como rodar
 
+Use Node.js 22 ou mais recente e pnpm 11.28.4. A versão do gerenciador está
+fixada em `package.json`; mantenha somente o `pnpm-lock.yaml` versionado.
+
 ```bash
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 ### Rodar contra a API real
@@ -94,7 +97,7 @@ A API sobe em `http://localhost:8000`. Em outro terminal, de volta a este
 repositório:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Reinicie o Vite sempre que alterar qualquer variável de ambiente — o Vite lê o
@@ -114,10 +117,10 @@ indisponibilidade.
 Outros scripts:
 
 ```bash
-npm run build     # build de produção
-npm run lint       # lint (ESLint)
-npm run format     # formatação (Prettier)
-npm run test       # testes (Vitest)
+pnpm build     # build de produção
+pnpm lint       # lint (ESLint)
+pnpm format     # formatação (Prettier)
+pnpm test       # testes (Vitest)
 ```
 
 ## CI
@@ -125,18 +128,23 @@ npm run test       # testes (Vitest)
 O workflow em `.github/workflows/ci.yml` roda no GitHub Actions a cada push
 ou Pull Request nas branches `main` e `develop`:
 
-1. Instala dependências (`npm ci`)
-2. Lint (`npm run lint`)
-3. Auditoria de dependências (`npm audit --audit-level=high`) — bloqueia o CI
+1. Instala dependências (`pnpm install --frozen-lockfile`)
+2. Lint (`pnpm lint`)
+3. Auditoria de dependências (`pnpm audit --audit-level high`) — bloqueia o CI
    se alguma dependência tiver vulnerabilidade conhecida de severidade alta
    ou crítica
-4. Checagem de tipos (`tsc --noEmit`)
-5. Testes (`npm run test`)
-6. Build (`npm run build`), com o resultado publicado como artefato
+4. Checagem de tipos (`pnpm exec tsc --noEmit`)
+5. Testes (`pnpm test`)
+6. Build (`pnpm build`), com o resultado publicado como artefato
 
 Recomendado configurar esse workflow como _required status check_ na proteção
 das branches `main` e/ou `develop`, bloqueando merge de PRs que quebrem lint,
 tipos, testes ou build.
+
+O `braces` transitivo vem do override local em `pnpm-workspace.yaml`, com limite
+de aninhamento aplicado ao parser e às entradas AST. A auditoria inclui as
+dependências de desenvolvimento sem ignorar a advisory; remova o override
+somente quando uma versão corrigida e compatível estiver publicada.
 
 Ainda não configurados (a adicionar depois, cada um como job/workflow
 separado, sem alterar este):

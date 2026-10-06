@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createRequire } = require('node:module');
 const vendoredBraces = require('../vendor/braces');
-const micromatchRequire = createRequire(require.resolve('micromatch'));
+const tailwindRequire = createRequire(require.resolve('tailwindcss/package.json'));
+const micromatchRequire = createRequire(tailwindRequire.resolve('micromatch'));
 const installedBraces = micromatchRequire('braces');
 const implementations = [
   ['vendored', vendoredBraces],

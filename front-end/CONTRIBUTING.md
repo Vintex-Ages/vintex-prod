@@ -45,10 +45,11 @@ Use o alias `@/` para imports a partir de `src` e evite imports relativos profun
 Antes do push, execute:
 
 ```bash
-npm run lint
-npm run test
-npm run build
-npm run format
+pnpm lint
+pnpm test
+pnpm build
+pnpm format:check
+pnpm audit --audit-level high
 ```
 
 Nunca versionar credenciais, `.env` ou material interno de auditoria.
