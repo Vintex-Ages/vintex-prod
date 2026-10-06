@@ -133,8 +133,10 @@ roda diariamente para detectar advisories publicados após o último PR:
 3. O check `CI quality` executa lint, formatação, tipos, testes da aplicação e
    scripts de automação, cobertura e build, publicando os artefatos
 
-`CI audit`, `CI quality` e `PR Governance trusted` são checks obrigatórios nas branches
-protegidas. A sincronização com GitHub Projects não bloqueia merge: ela depende
+Após a troca dos contextos exigidos na proteção das branches, `CI audit`,
+`CI quality` e `PR Governance trusted` serão os checks obrigatórios. Até lá, o
+check legado `Lint, type-check, test & build` só passa quando audit e quality
+passam. A sincronização com GitHub Projects não bloqueia merge: ela depende
 do orçamento compartilhado da API GraphQL, registra falhas e reconcilia diariamente.
 
 Ainda não configurados (a adicionar depois, cada um como job/workflow

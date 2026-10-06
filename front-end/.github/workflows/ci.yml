@@ -69,3 +69,20 @@ jobs:
           name: dist
           path: dist
           retention-days: 7
+
+  # Keep the existing required context until branch protection requires both jobs above.
+  # A skipped dependent job counts as successful for branch protection, so run it after failures.
+  legacy-required-check:
+    name: Lint, type-check, test & build
+    if: ${{ always() && github.event_name != 'schedule' }}
+    needs: [audit, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require audit and quality
+        env:
+          AUDIT_RESULT: ${{ needs.audit.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: |
+          test "$AUDIT_RESULT" = success
+          test "$QUALITY_RESULT" = success

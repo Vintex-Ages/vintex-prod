@@ -33,7 +33,7 @@ Use palavras minúsculas separadas por hífen. Todo trabalho deve possuir uma is
 - Declare como IA foi utilizada ou informe explicitamente que não houve uso.
 - Assignees e labels são unidos a partir das issues; a milestone e os campos dos Projects vêm da issue primária.
 - O PR entra no Project do frontend e no Project geral. Draft fica em `In progress`, PR pronto em `In review` e merge em `Done`.
-- O merge exige a aprovação vigente da equipe designada na ruleset, além dos checks `CI audit`, `CI quality` e `PR Governance trusted`.
+- O merge exige a aprovação vigente da equipe designada na ruleset e os checks de CI e governança. Durante a troca das proteções, `Lint, type-check, test & build` depende de `CI audit` e `CI quality`; depois, os três checks exigidos serão `CI audit`, `CI quality` e `PR Governance trusted`.
 - Não há bypass para equipes ou administradores. Aguarde os checks terminarem; uma falha em `PR Metadata` ou `Project Sync` deve ser investigada, mas essas sincronizações não são portões de merge.
 - Faça commits pequenos; novo commit invalida aprovações anteriores.
 
