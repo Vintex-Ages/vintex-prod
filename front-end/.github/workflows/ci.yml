@@ -24,7 +24,7 @@ jobs:
           node-version: 22
 
       - name: Instalar dependências
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
