@@ -3,6 +3,7 @@
 const fill = require('fill-range');
 const stringify = require('./stringify');
 const utils = require('./utils');
+const { assertSafeDepth } = require('./depth');
 
 const append = (queue = '', stash = '', enclose = false) => {
   const result = [];
@@ -31,6 +32,7 @@ const append = (queue = '', stash = '', enclose = false) => {
 };
 
 const expand = (ast, options = {}) => {
+  assertSafeDepth(ast);
   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
 
   const walk = (node, parent = {}) => {

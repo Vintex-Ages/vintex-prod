@@ -1,6 +1,7 @@
 'use strict';
 
 const stringify = require('./stringify');
+const { MAX_NESTING_DEPTH } = require('./depth');
 
 /**
  * Constants
@@ -23,8 +24,6 @@ const {
   CHAR_NO_BREAK_SPACE,
   CHAR_ZERO_WIDTH_NOBREAK_SPACE
 } = require('./constants');
-
-const MAX_NESTING_DEPTH = 100;
 
 /**
  * parse
