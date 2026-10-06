@@ -11,7 +11,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
-    "test": "vitest run --passWithNoTests",
+    "test": "npm run test:braces-security && vitest run --passWithNoTests",
+    "test:braces-security": "node --test tests/braces-security.test.cjs",
     "test:coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
@@ -28,14 +29,16 @@
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@typescript-eslint/eslint-plugin": "^7.16.0",
-    "@typescript-eslint/parser": "^7.16.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.1",
+    "@typescript-eslint/parser": "^8.71.1",
     "@vitejs/plugin-react": "^4.4.0",
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.19",
+    "esbuild": "^0.25.12",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
+    "fill-range": "^7.1.1",
     "jsdom": "^29.1.1",
     "postcss": "^8.4.39",
     "prettier": "^3.3.3",
@@ -43,5 +46,8 @@
     "typescript": "^5.5.4",
     "vite": "^6.3.5",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "braces": "file:vendor/braces"
   }
 }
