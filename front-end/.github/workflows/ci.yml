@@ -5,57 +5,66 @@ on:
     branches: [main, develop, deploy]
   pull_request:
     branches: [main, develop, deploy]
+  workflow_dispatch:
+  schedule:
+    - cron: "11 6 * * *"
 
 permissions:
   contents: read
 
 jobs:
-  ci:
-    name: Lint, type-check, test & build
+  audit:
+    name: CI audit
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-
-      - name: Instalar dependências
-        run: npm install
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Verificar formatação
-        run: npm run format:check
-
-      - name: Auditoria de dependências
+      - name: Install locked dependencies
+        run: npx --yes npm@11.18.0 ci
+      - name: Audit all dependencies
         run: npm audit --audit-level=high
 
-      - name: Checagem de tipos
+  quality:
+    name: CI quality
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install locked dependencies
+        run: npx --yes npm@11.18.0 ci
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Check types
         run: npx tsc --noEmit
-
-      - name: Testes
+      - name: Test application
         run: npm run test
-
-      - name: Cobertura de testes
+      - name: Test automation scripts
+        run: node --test .github/scripts/lib/*.tests.mjs
+      - name: Test coverage
         run: npm run test:coverage
-
-      - name: Upload do relatório de cobertura
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: coverage-report
           path: coverage
+          if-no-files-found: ignore
           retention-days: 30
-
       - name: Build
         run: npm run build
-
-      - name: Upload do artefato de build
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist

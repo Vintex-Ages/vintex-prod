@@ -123,20 +123,19 @@ npm run test       # testes (Vitest)
 ## CI
 
 O workflow em `.github/workflows/ci.yml` roda no GitHub Actions a cada push
-ou Pull Request nas branches `main` e `develop`:
+ou Pull Request nas branches `develop`, `main` e `deploy`. A auditoria também
+roda diariamente para detectar advisories publicados após o último PR:
 
-1. Instala dependências (`npm ci`)
-2. Lint (`npm run lint`)
-3. Auditoria de dependências (`npm audit --audit-level=high`) — bloqueia o CI
+1. Instala dependências com lockfile imutável (`npm@11.18.0 ci`)
+2. O check `CI audit` executa `npm audit --audit-level=high` — bloqueia o CI
    se alguma dependência tiver vulnerabilidade conhecida de severidade alta
    ou crítica
-4. Checagem de tipos (`tsc --noEmit`)
-5. Testes (`npm run test`)
-6. Build (`npm run build`), com o resultado publicado como artefato
+3. O check `CI quality` executa lint, formatação, tipos, testes da aplicação e
+   scripts de automação, cobertura e build, publicando os artefatos
 
-Recomendado configurar esse workflow como _required status check_ na proteção
-das branches `main` e/ou `develop`, bloqueando merge de PRs que quebrem lint,
-tipos, testes ou build.
+`CI audit`, `CI quality` e `PR Governance` são checks obrigatórios nas branches
+protegidas. A sincronização com GitHub Projects não bloqueia merge: ela depende
+do orçamento compartilhado da API GraphQL, registra falhas e reconcilia diariamente.
 
 Ainda não configurados (a adicionar depois, cada um como job/workflow
 separado, sem alterar este):
