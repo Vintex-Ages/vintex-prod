@@ -12,4 +12,4 @@
 - Não adicione dependências sem justificar a necessidade e verificar compatibilidade com a stack.
 - Não exponha segredos no bundle; somente variáveis públicas apropriadas ao Vite podem chegar ao cliente.
 - Cubra comportamento relevante com Vitest quando a mudança introduzir lógica ou corrigir defeito.
-- Antes de concluir, execute as verificações adequadas: `npm run lint`, `npm audit --audit-level=high`, `npm run test` e `npm run build` (o audit também é bloqueante no CI).
+- Antes de concluir, execute as verificações adequadas: `pnpm lint`, `pnpm audit --audit-level high`, `pnpm test` e `pnpm build` (o audit também é bloqueante no CI).
