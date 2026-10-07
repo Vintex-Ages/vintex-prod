@@ -3,7 +3,7 @@ name: PR Metadata
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "17 3 * * *"
   pull_request_target:
     types:
       [opened, edited, reopened, ready_for_review, converted_to_draft, synchronize, closed]
@@ -15,24 +15,28 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-metadata-${{ github.repository }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || 'all' }}
-  cancel-in-progress: true
+  group: vintex-project-automation-${{ github.repository }}
+  queue: max
+  cancel-in-progress: false
 
 jobs:
   sync:
     name: PR Metadata
     if: vars.GPA_APP_CLIENT_ID != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.repository.default_branch }}
-      - uses: actions/create-github-app-token@v3
+          persist-credentials: false
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         id: app-token
         with:
           client-id: ${{ vars.GPA_APP_CLIENT_ID }}
           private-key: ${{ secrets.GPA_APP_PRIVATE_KEY }}
           owner: Vintex-Ages
+          repositories: front-end
       - run: node .github/scripts/sync-pr-metadata.mjs
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}

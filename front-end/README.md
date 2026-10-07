@@ -126,20 +126,23 @@ pnpm test       # testes (Vitest)
 ## CI
 
 O workflow em `.github/workflows/ci.yml` roda no GitHub Actions a cada push
-ou Pull Request nas branches `main` e `develop`:
+ou Pull Request nas branches `develop`, `main` e `deploy`. A auditoria também
+roda diariamente para detectar advisories publicados após o último PR:
 
-1. Instala dependências (`pnpm install --frozen-lockfile`)
-2. Lint (`pnpm lint`)
-3. Auditoria de dependências (`pnpm audit --audit-level high`) — bloqueia o CI
+1. Instala dependências com lockfile imutável (`pnpm install --frozen-lockfile`)
+2. O check `CI audit` executa `pnpm audit --audit-level high` — bloqueia o CI
    se alguma dependência tiver vulnerabilidade conhecida de severidade alta
    ou crítica
-4. Checagem de tipos (`pnpm exec tsc --noEmit`)
-5. Testes (`pnpm test`)
-6. Build (`pnpm build`), com o resultado publicado como artefato
+3. O check `CI quality` executa lint, formatação, tipos, testes da aplicação e
+   scripts de automação, cobertura e build, publicando os artefatos
 
-Recomendado configurar esse workflow como _required status check_ na proteção
-das branches `main` e/ou `develop`, bloqueando merge de PRs que quebrem lint,
-tipos, testes ou build.
+Após a troca dos contextos exigidos na proteção das branches, `CI audit`,
+`CI quality` e `PR Governance trusted` serão os checks obrigatórios. Até lá, o
+check legado `Lint, type-check, test & build` só passa quando audit e quality
+passam. A sincronização com GitHub Projects não bloqueia merge: ela depende
+do orçamento compartilhado da API GraphQL, enfileira eventos sem substituir os
+pendentes e reconcilia diariamente. Os campos configurados no Project geral
+espelham a origem, inclusive quando um valor é apagado.
 
 O `braces` transitivo vem do override local em `pnpm-workspace.yaml`, com limite
 de aninhamento aplicado ao parser e às entradas AST. A auditoria inclui as
