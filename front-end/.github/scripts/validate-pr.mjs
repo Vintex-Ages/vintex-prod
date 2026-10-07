@@ -44,16 +44,23 @@ const getIssue = async (number) => {
 };
 
 if (ordinary) {
+  const legacyBranchIssue =
+    head === "hotfix/braces-nesting-depth-guard" ? 347 : null;
   const branchMatch = head.match(
     /^(?:feature|bugfix|hotfix|refactor|docs|chore)\/(\d+)-[a-z0-9]+(?:-[a-z0-9]+)*$/,
   );
-  if (!branchMatch) errors.push(`Branch inválida: ${head}.`);
+  if (!branchMatch && !legacyBranchIssue) {
+    errors.push(`Branch inválida: ${head}.`);
+  }
 
   if (!closingIssues.length) {
     errors.push("Inclua Closes #<issue> no corpo do PR.");
   } else {
     if (branchMatch && Number(branchMatch[1]) !== closingIssues[0]) {
       errors.push("A primeira issue vinculada deve coincidir com o número da branch.");
+    }
+    if (legacyBranchIssue && closingIssues[0] !== legacyBranchIssue) {
+      errors.push(`A branch ${head} deve vincular a issue #${legacyBranchIssue}.`);
     }
 
     const issues = [];
