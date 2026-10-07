@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { createGraphqlClient } from "./lib/github-graphql.mjs";
+import { findProjectItem } from "./lib/project-items.mjs";
 
 const event = JSON.parse(
   fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
@@ -105,11 +106,11 @@ async function loadItemsForContent(contentId) {
         node(id: $id) {
           ... on Issue { projectItems(first: 100, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { id project { number } ${fieldValueQuery} }
+            nodes { id project { id } ${fieldValueQuery} }
           } }
           ... on PullRequest { projectItems(first: 100, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { id project { number } ${fieldValueQuery} }
+            nodes { id project { id } ${fieldValueQuery} }
           } }
         }
       }
@@ -159,7 +160,7 @@ async function loadProject(number, contentIds = null) {
   if (contentIds) {
     for (const contentId of contentIds) {
       const linked = await loadItemsForContent(contentId);
-      const item = linked.find((candidate) => candidate.project.number === number);
+      const item = findProjectItem(linked, project.id);
       if (item) items.push({ ...item, content: { id: contentId } });
     }
   } else {

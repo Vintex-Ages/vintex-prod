@@ -1,4 +1,5 @@
 import { createGraphqlClient } from './github-graphql.mjs';
+import { findProjectItem } from './project-items.mjs';
 
 export function createProjectStatusClient({ token, org }) {
   const graphql = createGraphqlClient(token);
@@ -26,13 +27,14 @@ export function createProjectStatusClient({ token, org }) {
   async function loadItem(projectNumber, contentId) {
     const key = `${projectNumber}:${contentId}`;
     if (itemCache.has(key)) return itemCache.get(key);
+    const project = await loadProject(projectNumber);
     let cursor = null;
     do {
       const data = await graphql(`query($id: ID!, $cursor: String) {
         node(id: $id) {
           ... on Issue { projectItems(first: 100, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { id project { number } fieldValues(first: 100) { nodes {
+            nodes { id project { id } fieldValues(first: 100) { nodes {
               ... on ProjectV2ItemFieldSingleSelectValue {
                 name optionId field { ... on ProjectV2SingleSelectField { id name } }
               }
@@ -40,7 +42,7 @@ export function createProjectStatusClient({ token, org }) {
           } }
           ... on PullRequest { projectItems(first: 100, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { id project { number } fieldValues(first: 100) { nodes {
+            nodes { id project { id } fieldValues(first: 100) { nodes {
               ... on ProjectV2ItemFieldSingleSelectValue {
                 name optionId field { ... on ProjectV2SingleSelectField { id name } }
               }
@@ -50,7 +52,7 @@ export function createProjectStatusClient({ token, org }) {
       }`, { id: contentId, cursor });
       const connection = data.node?.projectItems;
       if (!connection) break;
-      const item = connection.nodes.find((candidate) => candidate?.project.number === projectNumber);
+      const item = findProjectItem(connection.nodes, project.id);
       if (item) {
         itemCache.set(key, item);
         return item;

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { createGraphqlClient } from "./lib/github-graphql.mjs";
+import { findProjectItem } from "./lib/project-items.mjs";
 
 const config = JSON.parse(fs.readFileSync("config/project/project.json", "utf8"));
 const event = process.env.GITHUB_EVENT_PATH
@@ -78,7 +79,7 @@ async function itemsForContent(contentId) {
 }
 
 const currentValue = (item, name) =>
-  item?.fieldValues?.nodes.find((value) => value.field?.name === name);
+  item?.fieldValues?.nodes.find((value) => value?.field?.name === name);
 
 function desiredValue(value, targetField) {
   if (value.name !== undefined) {
@@ -102,21 +103,22 @@ function equalValue(current, desired) {
   return current.date === desired.date;
 }
 
-const target = await loadProject(targetNumber, !event.issue && !event.pull_request);
+const eventContent = Boolean(event.issue || event.pull_request);
+const source = await loadProject(sourceNumber, !eventContent);
+const target = await loadProject(targetNumber, !eventContent);
 const targetFields = new Map(target.fields.map((field) => [field.name, field]));
 const targetItems = new Map(target.items.filter((item) => item.content)
   .map((item) => [item.content.id, item]));
 let sourceItems;
 
-if (event.issue || event.pull_request) {
+if (eventContent) {
   const contentId = (event.issue || event.pull_request).node_id;
   const linked = await itemsForContent(contentId);
-  const sourceItem = linked.find((item) => item.project.number === sourceNumber);
-  const targetItem = linked.find((item) => item.project.number === targetNumber);
+  const sourceItem = findProjectItem(linked, source.id);
+  const targetItem = findProjectItem(linked, target.id);
   sourceItems = sourceItem ? [{ ...sourceItem, content: { id: contentId } }] : [];
   if (targetItem) targetItems.set(contentId, targetItem);
 } else {
-  const source = await loadProject(sourceNumber, true);
   sourceItems = source.items.filter(
     (item) => item.content?.repository?.nameWithOwner === repository,
   );
@@ -124,24 +126,41 @@ if (event.issue || event.pull_request) {
 
 let added = 0;
 let updated = 0;
+let cleared = 0;
 for (const sourceItem of sourceItems) {
   let targetItem = targetItems.get(sourceItem.content.id);
   if (!targetItem) {
     const result = await graphql(`mutation($project: ID!, $content: ID!) {
-      addProjectV2ItemById(input: { projectId: $project, contentId: $content }) { item { id } }
+      addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+        item { id ${fieldValues} }
+      }
     }`, { project: target.id, content: sourceItem.content.id });
-    targetItem = { id: result.addProjectV2ItemById.item.id, fieldValues: { nodes: [] } };
+    targetItem = result.addProjectV2ItemById.item;
     targetItems.set(sourceItem.content.id, targetItem);
     added += 1;
   }
 
-  for (const value of sourceItem.fieldValues.nodes) {
-    const name = value.field?.name;
-    if (!name || !syncedFields.has(name)) continue;
+  const sourceValues = new Map(sourceItem.fieldValues.nodes
+    .filter((value) => syncedFields.has(value?.field?.name))
+    .map((value) => [value.field.name, value]));
+  for (const name of syncedFields) {
+    const value = sourceValues.get(name);
+    const current = currentValue(targetItem, name);
+    if (!value && !current) continue;
     const targetField = targetFields.get(name);
     if (!targetField) throw new Error(`Campo ${name} ausente no Project ${targetNumber}`);
-    const desired = desiredValue(value, targetField);
-    if (!desired || equalValue(currentValue(targetItem, name), desired)) continue;
+    const desired = value ? desiredValue(value, targetField) : null;
+    if (!desired) {
+      if (!current) continue;
+      await graphql(`mutation($project: ID!, $item: ID!, $field: ID!) {
+        clearProjectV2ItemFieldValue(input: {
+          projectId: $project, itemId: $item, fieldId: $field
+        }) { projectV2Item { id } }
+      }`, { project: target.id, item: targetItem.id, field: targetField.id });
+      cleared += 1;
+      continue;
+    }
+    if (equalValue(current, desired)) continue;
     await graphql(`mutation($project: ID!, $item: ID!, $field: ID!, $value: ProjectV2FieldValue!) {
       updateProjectV2ItemFieldValue(input: {
         projectId: $project, itemId: $item, fieldId: $field, value: $value
@@ -150,4 +169,4 @@ for (const sourceItem of sourceItems) {
     updated += 1;
   }
 }
-console.log(`Project ${sourceNumber} → ${targetNumber}: ${sourceItems.length} itens, ${added} adicionados, ${updated} campos atualizados.`);
+console.log(`Project ${sourceNumber} → ${targetNumber}: ${sourceItems.length} itens, ${added} adicionados, ${updated} campos atualizados, ${cleared} campos limpos.`);
