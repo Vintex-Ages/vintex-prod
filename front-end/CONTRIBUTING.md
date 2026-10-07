@@ -2,7 +2,7 @@
 
 ## Fluxo de branches
 
-`main` é a branch padrão e representa a versão principal. O desenvolvimento diário parte de `develop`.
+`develop` é a branch padrão e base do desenvolvimento diário. `main` representa a versão principal.
 
 ```text
 branch de trabalho -> develop -> main -> deploy
@@ -28,12 +28,13 @@ Use palavras minúsculas separadas por hífen. Todo trabalho deve possuir uma is
 - Somente `main` promove para `deploy`.
 - Preencha o template inteiro e use `Closes #<issue>` como referência primária lida pela automação.
 - A primeira issue vinculada deve ser a issue indicada na branch. Outras issues podem ser incluídas, desde que não tenham milestones conflitantes.
-- Como os PRs de trabalho apontam para `develop` e `main` é a branch padrão, o GitHub não cria o vínculo nativo em Development a partir da keyword. Para exibi-lo, vincule o PR manualmente na sidebar Development ou crie a branch pela própria issue antes de começar o trabalho.
+- Como `develop` é a branch padrão, `Closes #<issue>` vincula a issue ao PR de trabalho na sidebar Development.
 - Selecione exatamente um tipo de mudança.
 - Declare como IA foi utilizada ou informe explicitamente que não houve uso.
 - Assignees e labels são unidos a partir das issues; a milestone e os campos dos Projects vêm da issue primária.
 - O PR entra no Project do frontend e no Project geral. Draft fica em `In progress`, PR pronto em `In review` e merge em `Done`.
-- O GitHub solicita review aos quatro integrantes de AGES III. O merge exige duas aprovações vigentes, que podem vir de AGES III ou AGES IV.
+- O merge exige a aprovação vigente da equipe designada na ruleset e os checks de CI e governança. Durante a troca das proteções, `Lint, type-check, test & build` depende de `CI audit` e `CI quality`; depois, os três checks exigidos serão `CI audit`, `CI quality` e `PR Governance trusted`.
+- Não há bypass para equipes ou administradores. Aguarde os checks terminarem; uma falha em `PR Metadata` ou `Project Sync` deve ser investigada, mas essas sincronizações não são portões de merge.
 - Faça commits pequenos; novo commit invalida aprovações anteriores.
 
 ## Frontend
@@ -45,10 +46,11 @@ Use o alias `@/` para imports a partir de `src` e evite imports relativos profun
 Antes do push, execute:
 
 ```bash
-npm run lint
-npm run test
-npm run build
-npm run format
+pnpm lint
+pnpm test
+pnpm build
+pnpm format:check
+pnpm audit --audit-level high
 ```
 
 Nunca versionar credenciais, `.env` ou material interno de auditoria.

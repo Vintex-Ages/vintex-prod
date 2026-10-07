@@ -20,7 +20,7 @@ Estas regras valem para todas as tarefas no repositório. Instruções explícit
 - Faça mudanças pequenas e alinhadas ao pedido; não altere código não relacionado.
 - Não presuma bibliotecas ou padrões ausentes. A stack atual é React, TypeScript/TSX, Vite, Tailwind CSS, React Router e Axios.
 - Não introduza Ionic, JavaScript-only, TanStack Query, Zod ou outra dependência sem decisão explícita da equipe.
-- Ao concluir mudanças de produto, execute as verificações proporcionais ao risco (`npm run lint`, `npm run test` e `npm run build`, conforme aplicável).
+- Ao concluir mudanças de produto, execute as verificações proporcionais ao risco (`pnpm lint`, `pnpm test` e `pnpm build`, conforme aplicável).
 
 ## Skills do projeto
 

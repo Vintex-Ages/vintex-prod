@@ -30,10 +30,10 @@ testes, etc.). Se nenhuma foi usada, escreva "Nenhuma". -->
 
 ## Checklist
 
-- [ ] Rodei `npm run lint` localmente e não há erros
-- [ ] Rodei `npm run format:check` localmente e não há problemas de formatação
-- [ ] Rodei `npm run build` localmente e o projeto builda sem erros
-- [ ] Rodei `npm run test` localmente (quando aplicável)
+- [ ] Rodei `pnpm lint` localmente e não há erros
+- [ ] Rodei `pnpm format:check` localmente e não há problemas de formatação
+- [ ] Rodei `pnpm build` localmente e o projeto builda sem erros
+- [ ] Rodei `pnpm test` localmente (quando aplicável)
 - [ ] Adicionei prints caso envolva mudança visual
 
 ## Prints
