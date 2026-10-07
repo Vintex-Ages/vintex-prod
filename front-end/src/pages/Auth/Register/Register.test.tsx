@@ -67,7 +67,12 @@ async function aceitarTermos(user: ReturnType<typeof userEvent.setup>) {
 
 describe('<Register />', () => {
   beforeEach(() => {
-    mockedLookup.mockResolvedValue({ neighborhood: 'Bom Fim', city: 'Porto Alegre', state: 'RS' });
+    mockedLookup.mockResolvedValue({
+      street: '',
+      neighborhood: 'Bom Fim',
+      city: 'Porto Alegre',
+      state: 'RS',
+    });
   });
 
   afterEach(() => {

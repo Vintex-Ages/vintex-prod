@@ -76,7 +76,12 @@ beforeEach(() => {
   vi.mocked(createStore).mockReset().mockResolvedValue(STORE);
   vi.mocked(lookupAddress)
     .mockReset()
-    .mockResolvedValue({ neighborhood: 'Bom Fim', city: 'Porto Alegre', state: 'RS' });
+    .mockResolvedValue({
+      street: '',
+      neighborhood: 'Bom Fim',
+      city: 'Porto Alegre',
+      state: 'RS',
+    });
 });
 
 afterEach(cleanup);

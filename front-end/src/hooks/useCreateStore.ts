@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import type { MediaItem } from '@/components/common/MediaUploader';
 import { useAuth } from '@/context/useAuth';
 import { useToast } from '@/context/useToast';
+import { useAddressLookup, type CepStatus } from '@/hooks/useAddressLookup';
 import { useMyStore } from '@/hooks/useMyStore';
 import { paths } from '@/routes/paths';
-import { lookupAddress } from '@/services/cepService';
 import { createStore, StoreError } from '@/services/storeService';
-import type { StoreInput } from '@/types/store';
+import type { StoreAddress, StoreInput } from '@/types/store';
 import {
   formatCep,
   formatDocument,
@@ -26,11 +26,8 @@ import {
  *    login não traz o papel, então o flag pode estar atrasado.
  * 2. **Máscara e validação do documento (RN-30).** A regra é de
  *    `utils/document.ts`; o hook só escolhe CPF ou CNPJ e aplica.
- * 3. **CEP → endereço.** Com 8 dígitos, consulta o `cepService` e preenche
- *    bairro, cidade e UF. Se a consulta cair, os três são limpos e ficam
- *    editáveis para o endereço ser digitado à mão — falha do ViaCEP não impede
- *    abrir loja, mas o endereço de um CEP anterior também não pode seguir com o
- *    CEP novo (#283).
+ * 3. **CEP → endereço.** A consulta fica em `useAddressLookup`; este hook
+ *    integra o endereço resolvido aos dados da loja e às mensagens do formulário.
  * 4. **Ordem do envio (RN-29, RN-31).** `createStore` → `refreshUser()` (para
  *    `is_seller` chegar ao menu) → toast de boas-vindas → `/seller`. Se só o
  *    `refreshUser` falhar, a loja já existe: segue para o painel mesmo assim,
@@ -65,7 +62,7 @@ export interface CreateStoreValues {
 
 export type CreateStoreField = keyof CreateStoreValues;
 export type CreateStoreErrors = Partial<Record<CreateStoreField, string>>;
-export type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
+export type { CepStatus };
 /** `checking`/`error` da consulta de loja; `has-store` redireciona; `ready` mostra o formulário. */
 export type SellAccess = 'checking' | 'error' | 'has-store' | 'ready';
 
@@ -191,7 +188,6 @@ export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOption
 
   const [values, setValues] = useState<CreateStoreValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<CreateStoreErrors>({});
-  const [cepStatus, setCepStatus] = useState<CepStatus>('idle');
   const [submitting, setSubmitting] = useState(false);
   // O `submitting` do estado só muda no próximo render: dois `submit()` no
   // mesmo tick liam `false` os dois e criavam a loja duas vezes (#283).
@@ -207,49 +203,33 @@ export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOption
           ? 'has-store'
           : 'ready';
 
-  const cepDigits = onlyDigits(values.cep);
+  const setLookupAddressField = useCallback(
+    (field: keyof StoreAddress, value: string) => {
+      setValues((current) => ({
+        ...current,
+        [field]: field === 'state' && value === '' ? null : value,
+      }));
+    },
+    [],
+  );
 
-  // Mesmo padrão do cadastro (FE-US002-1): consulta assim que o CEP completa e
-  // descarta a resposta de um CEP que já foi trocado.
+  const { cepStatus } = useAddressLookup(values.cep, setLookupAddressField);
+
   useEffect(() => {
-    if (cepDigits.length !== 8) {
-      setCepStatus('idle');
+    if (cepStatus === 'not_found') {
+      setErrors((current) => ({
+        ...current,
+        cep: CEP_NOT_FOUND_MESSAGE,
+      }));
       return;
     }
 
-    let active = true;
-    setCepStatus('loading');
-
-    lookupAddress(cepDigits)
-      .then((address) => {
-        if (!active) return;
-        if (!address) {
-          setCepStatus('not_found');
-          setErrors((current) => ({ ...current, cep: CEP_NOT_FOUND_MESSAGE }));
-          return;
-        }
-        setCepStatus('resolved');
-        setValues((current) => ({
-          ...current,
-          district: address.neighborhood,
-          city: address.city,
-          state: address.state,
-        }));
-        setErrors((current) => withoutErrors(current, 'cep', 'district', 'city', 'state'));
-      })
-      .catch(() => {
-        // Serviço fora do ar ou CEP recusado: a tela avisa e deixa digitar.
-        // Bairro, cidade e UF saem junto: se vieram de um CEP anterior, o
-        // `validate()` os aprovaria e o envio misturaria dois endereços (#283).
-        if (!active) return;
-        setCepStatus('error');
-        setValues((current) => ({ ...current, district: '', city: '', state: null }));
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [cepDigits]);
+    if (cepStatus === 'resolved') {
+      setErrors((current) =>
+        withoutErrors(current, 'cep', 'street', 'district', 'city', 'state'),
+      );
+    }
+  }, [cepStatus]);
 
   const setField = useCallback(
     <K extends CreateStoreField>(field: K, value: CreateStoreValues[K]) => {

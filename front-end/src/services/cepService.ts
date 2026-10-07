@@ -10,7 +10,7 @@ import axios from 'axios';
  *   import { lookupAddress, CepError } from '@/services/cepService';
  *   try {
  *     const address = await lookupAddress('90035-072');
- *     if (address) setEndereco(address); // { neighborhood, city, state }
+ *     if (address) setEndereco(address); // { street, neighborhood, city, state }
  *     else setErro('CEP não encontrado.');
  *   } catch (error) {
  *     if (error instanceof CepError) setErro(error.message);
@@ -18,12 +18,14 @@ import axios from 'axios';
  */
 
 export interface CepAddress {
+  street: string;
   neighborhood: string;
   city: string;
   state: string;
 }
 
 interface ViaCepResponse {
+  logradouro: string;
   bairro: string;
   localidade: string;
   uf: string;
@@ -40,7 +42,7 @@ export class CepError extends Error {
 }
 
 /**
- * Resolve um CEP em bairro/cidade/estado. `null` quando o CEP tem formato
+ * Resolve um CEP em rua/bairro/cidade/estado. `null` quando o CEP tem formato
  * válido mas não existe (ViaCEP devolve `{ erro: true }` com status 200).
  * Lança `CepError` para formato inválido ou falha de rede/serviço.
  */
@@ -62,5 +64,10 @@ export async function lookupAddress(cep: string): Promise<CepAddress | null> {
     return null;
   }
 
-  return { neighborhood: data.bairro, city: data.localidade, state: data.uf };
+  return {
+    street: data.logradouro,
+    neighborhood: data.bairro,
+    city: data.localidade,
+    state: data.uf,
+  };
 }
