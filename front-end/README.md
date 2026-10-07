@@ -137,8 +137,8 @@ Após a troca dos contextos exigidos na proteção das branches, `CI audit`,
 `CI quality` e `PR Governance trusted` serão os checks obrigatórios. Até lá, o
 check legado `Lint, type-check, test & build` só passa quando audit e quality
 passam. A sincronização com GitHub Projects não bloqueia merge: ela depende
-do orçamento compartilhado da API GraphQL, enfileira eventos sem substituir os
-pendentes e reconcilia diariamente. Os campos configurados no Project geral
+do orçamento compartilhado da API GraphQL, enfileira até 100 eventos pendentes
+por grupo de concorrência e reconcilia diariamente. Os campos configurados no Project geral
 espelham a origem, inclusive quando um valor é apagado.
 
 Ainda não configurados (a adicionar depois, cada um como job/workflow
