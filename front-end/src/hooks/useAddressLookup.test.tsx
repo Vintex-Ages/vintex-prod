@@ -22,12 +22,9 @@ describe('useAddressLookup', () => {
 
     const onChange = vi.fn();
 
-    const { result, rerender } = renderHook(
-      ({ cep }) => useAddressLookup(cep, onChange),
-      {
-        initialProps: { cep: '' },
-      },
-    );
+    const { result, rerender } = renderHook(({ cep }) => useAddressLookup(cep, onChange), {
+      initialProps: { cep: '' },
+    });
 
     expect(result.current.cepStatus).toBe('idle');
 
@@ -38,10 +35,7 @@ describe('useAddressLookup', () => {
     });
 
     expect(lookupAddress).toHaveBeenCalledWith('90035072');
-    expect(onChange).toHaveBeenCalledWith(
-      'street',
-      'Rua Ramiro Barcelos',
-    );
+    expect(onChange).toHaveBeenCalledWith('street', 'Rua Ramiro Barcelos');
     expect(onChange).toHaveBeenCalledWith('district', 'Bom Fim');
     expect(onChange).toHaveBeenCalledWith('city', 'Porto Alegre');
     expect(onChange).toHaveBeenCalledWith('state', 'RS');
@@ -52,9 +46,7 @@ describe('useAddressLookup', () => {
 
     const onChange = vi.fn();
 
-    const { result } = renderHook(() =>
-      useAddressLookup('99999-999', onChange),
-    );
+    const { result } = renderHook(() => useAddressLookup('99999-999', onChange));
 
     await waitFor(() => {
       expect(result.current.cepStatus).toBe('not_found');
@@ -64,15 +56,11 @@ describe('useAddressLookup', () => {
   });
 
   it('permite preenchimento manual quando a consulta do CEP falha', async () => {
-    vi.mocked(lookupAddress).mockRejectedValue(
-      new Error('network'),
-    );
+    vi.mocked(lookupAddress).mockRejectedValue(new Error('network'));
 
     const onChange = vi.fn();
 
-    const { result } = renderHook(() =>
-      useAddressLookup('90035-072', onChange),
-    );
+    const { result } = renderHook(() => useAddressLookup('90035-072', onChange));
 
     await waitFor(() => {
       expect(result.current.cepStatus).toBe('error');

@@ -203,15 +203,12 @@ export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOption
           ? 'has-store'
           : 'ready';
 
-  const setLookupAddressField = useCallback(
-    (field: keyof StoreAddress, value: string) => {
-      setValues((current) => ({
-        ...current,
-        [field]: field === 'state' && value === '' ? null : value,
-      }));
-    },
-    [],
-  );
+  const setLookupAddressField = useCallback((field: keyof StoreAddress, value: string) => {
+    setValues((current) => ({
+      ...current,
+      [field]: field === 'state' && value === '' ? null : value,
+    }));
+  }, []);
 
   const { cepStatus } = useAddressLookup(values.cep, setLookupAddressField);
 
@@ -225,9 +222,7 @@ export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOption
     }
 
     if (cepStatus === 'resolved') {
-      setErrors((current) =>
-        withoutErrors(current, 'cep', 'street', 'district', 'city', 'state'),
-      );
+      setErrors((current) => withoutErrors(current, 'cep', 'street', 'district', 'city', 'state'));
     }
   }, [cepStatus]);
 

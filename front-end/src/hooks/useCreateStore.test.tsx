@@ -89,14 +89,12 @@ beforeEach(() => {
   refreshUser.mockReset().mockResolvedValue(undefined);
   vi.mocked(getMyStore).mockReset().mockResolvedValue(null);
   vi.mocked(createStore).mockReset().mockResolvedValue(STORE);
-  vi.mocked(lookupAddress)
-    .mockReset()
-    .mockResolvedValue({
-      street: '',
-      neighborhood: 'Bom Fim',
-      city: 'Porto Alegre',
-      state: 'RS',
-    });
+  vi.mocked(lookupAddress).mockReset().mockResolvedValue({
+    street: '',
+    neighborhood: 'Bom Fim',
+    city: 'Porto Alegre',
+    state: 'RS',
+  });
 });
 
 afterEach(cleanup);

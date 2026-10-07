@@ -2,12 +2,7 @@ import { useEffect, useState } from 'react';
 import { lookupAddress } from '@/services/cepService';
 import type { StoreAddress } from '@/types/store';
 
-export type CepStatus =
-  | 'idle'
-  | 'loading'
-  | 'resolved'
-  | 'not_found'
-  | 'error';
+export type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
 
 type AddressField = keyof StoreAddress;
 
