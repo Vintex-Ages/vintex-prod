@@ -37,3 +37,17 @@
 .vintex-chat-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/**
+ * Rolagem horizontal sem barra de scroll visível (linha de chips de filtro).
+ * Mesmo motivo do `.vintex-chat-scroll`: pseudo-elementos de scrollbar não
+ * são alcançáveis por classes utilitárias do Tailwind. A rolagem continua
+ * funcionando (toque, teclado, trackpad) — só a barra some.
+ */
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

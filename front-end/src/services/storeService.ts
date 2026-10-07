@@ -2,7 +2,7 @@ import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, Store } from '@/types/product';
-import type { StoreInput, StoreMetrics, StoreProfile } from '@/types/store';
+import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
@@ -410,38 +410,80 @@ function toStoreError(error: unknown): StoreError {
   return new StoreError('INTERNAL_ERROR', 'Erro ao consultar loja.');
 }
 
-function toStoreFormData(input: StoreInput): FormData {
+interface ApiMediaItem {
+  key: string;
+  url: string | null;
+}
+
+/**
+ * Sobe a logo e devolve a URL absoluta.
+ *
+ * `POST /api/users/me/store` recebe `logo_url: AnyHttpUrl`, **não** arquivo: a
+ * rota é corpo JSON (`data: StoreCreate`), e mandar `multipart/form-data` nela
+ * devolvia `422 {"body": "Input should be a valid dictionary"}`. O caminho é o
+ * de dois passos, o mesmo do formulário de peça.
+ *
+ * `kind: 'logo'` grava em `stores/logos/` (back-end#220). Antes disso só havia
+ * `photo`, que grava em `products/photos/` — logo de brechó junto de foto de
+ * peça.
+ *
+ * Duplica a forma do `sellerProductService.apiUploadMedia` de propósito: cada
+ * service traduz o erro no próprio tipo (`StoreError` × `SellerProductError`),
+ * que é o padrão do repositório. Se aparecer um terceiro, vale extrair.
+ */
+async function apiUploadLogo(logo: File): Promise<string> {
   const formData = new FormData();
-  formData.append('name', input.name);
-  formData.append('description', input.description);
-  formData.append('document_type', input.document.type);
-  formData.append('document_number', input.document.number);
-  formData.append('pix_key', input.pixKey);
-  formData.append('address', JSON.stringify(input.address));
-  if (input.acceptedContractVersion) {
-    formData.append('accepted_contract_version', input.acceptedContractVersion);
+  formData.append('files', logo);
+  formData.append('kind', 'logo');
+
+  const { data } = await httpClient.post<{ items: ApiMediaItem[] }>('/users/me/media', formData);
+  const url = data.items[0]?.url;
+  if (!url) {
+    throw new StoreError('MEDIA_UPLOAD_FAILED', 'Não foi possível enviar a logo da loja.');
   }
-  if (input.logo) {
-    formData.append('logo', input.logo);
-  }
-  return formData;
+  return url;
+}
+
+/** Só os dígitos: a máscara é da tela, não do dado. */
+function somenteDigitos(valor: string): string {
+  return valor.replace(/\D/g, '');
 }
 
 async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
   try {
-    const { data } = input.logo
-      ? await httpClient.post<ApiMyStore>('/users/me/store', toStoreFormData(input), {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      : await httpClient.post<ApiMyStore>('/users/me/store', {
-          name: input.name,
-          description: input.description,
-          document_type: input.document.type,
-          document_number: input.document.number,
-          pix_key: input.pixKey,
-          address: input.address,
-          accepted_contract_version: input.acceptedContractVersion,
-        });
+    const logoUrl = input.logo ? await apiUploadLogo(input.logo) : null;
+
+    const { data } = await httpClient.post<ApiMyStore>('/users/me/store', {
+      name: input.name,
+      // O back aceita nulo (modelagem §1.4: `description` sem `NN`), e a tela
+      // rotula o campo "Descrição (opcional)". String vazia dava 422 até o
+      // `back-end#216`; mandar `null` é o que corresponde a "não preenchi".
+      description: input.description.trim() || null,
+      logo_url: logoUrl,
+      // Maiúscula porque CPF e CNPJ são siglas, e porque a migration
+      // `4daf37630f35` tem `CheckConstraint("document_type IN ('CPF','CNPJ')")`.
+      document_type: input.document.type.toUpperCase(),
+      // O back chama `document_value`, seguindo o nome da coluna. O front
+      // mandava `document_number`, e o campo obrigatório vinha vazio: 422.
+      document_value: somenteDigitos(input.document.number),
+      pix_key: input.pixKey.trim() || null,
+      // `zip_code` e `neighborhood` são os nomes do back, os mesmos que a
+      // resposta pública devolve. O front chama `cep` e `district` na sua
+      // própria tipagem, e a tradução mora aqui.
+      address: {
+        street: input.address.street,
+        number: input.address.number,
+        complement: input.address.complement ?? null,
+        neighborhood: input.address.district,
+        city: input.address.city,
+        state: input.address.state,
+        zip_code: somenteDigitos(input.address.cep),
+      },
+      // `terms_version` é opcional desde o `back-end#216`. Só vai quando existe
+      // aceite de verdade (FE-US003b-1, #215) — mandar uma versão chumbada
+      // gravaria, num campo jurídico, um aceite que ninguém deu.
+      ...(input.acceptedContractVersion ? { terms_version: input.acceptedContractVersion } : {}),
+    });
     return mapMyStore(data);
   } catch (error) {
     throw toStoreError(error);
@@ -465,10 +507,14 @@ interface ApiMyStore {
   name: string;
   description: string | null;
   logo_url: string | null;
+  /** Desde o `back-end#216`. Dado do vendedor: não sai no retrato público. */
+  pix_key: string | null;
   document_type: string;
   document_value: string;
   terms_version: string | null;
   terms_accepted_at: string | null;
+  /** Desde o `back-end#216`. Antes a rota privada não devolvia endereço. */
+  address: ApiStoreAddress | null;
 }
 
 function mapMyStore(store: ApiMyStore): StoreProfile {
@@ -477,9 +523,12 @@ function mapMyStore(store: ApiMyStore): StoreProfile {
     name: store.name,
     description: store.description ?? '',
     logoUrl: store.logo_url,
-    // Não vêm nesta rota; quem precisa deles busca o retrato público.
-    city: '',
-    state: '',
+    // Desde o `back-end#216` esta rota devolve endereço. Loja criada antes
+    // dele, ou sem endereço informado, continua vindo sem — a tela esconde a
+    // linha em vez de quebrar.
+    city: store.address?.city ?? '',
+    state: store.address?.state ?? '',
+    // `verified` não vem nesta rota: mora no retrato público (`StoreDetailResponse`).
     verification: 'pendente',
     createdAt: store.terms_accepted_at ?? '',
   };
@@ -510,11 +559,34 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
  * `"Erro ao consultar loja."`, mensagem que manda procurar no lugar errado.
  * Quem fizer a `front-end#224` decide o contrato junto com o back.
  */
+/**
+ * `POST /api/users/me/store/verification` devolve `{ verified: boolean }` — só
+ * isso, nem nome nem endereço (`SellerVerificationResponse`, `back-end#195`).
+ *
+ * Duas correções de uma vez. Antes do `#274` isto chamava o mapeador público,
+ * que lê `metrics.created_at`, e produzia "Erro ao consultar loja." — mensagem
+ * que manda procurar no lugar errado. O `#274` trocou por um erro fixo com o
+ * comentário "a rota ainda não existe na develop", que **estava errado**: o
+ * `#195` mergeou depois, e a rota responde 200.
+ *
+ * Como o `{ verified }` não dá para virar `StoreProfile` sozinho, o perfil sai
+ * de `getMyStore` e só o selo vem da resposta. São duas requisições, e é o que
+ * existe: nenhuma rota devolve `verified` junto dos dados da própria loja.
+ */
 async function apiRequestVerification(): Promise<StoreProfile> {
-  throw new StoreError(
-    'CONTRACT_MISMATCH',
-    'A verificação do selo ainda não tem contrato fechado com o back (back-end#195).',
-  );
+  try {
+    const { data } = await httpClient.post<{ verified: boolean }>('/users/me/store/verification');
+    const loja = await apiGetMyStore();
+    if (loja === null) {
+      throw storeNotCreated();
+    }
+    return { ...loja, verification: data.verified ? 'confiavel' : 'pendente' };
+  } catch (error) {
+    if (error instanceof StoreError) {
+      throw error;
+    }
+    throw toStoreError(error);
+  }
 }
 
 async function apiGetStore(id: string): Promise<StoreProfile> {
@@ -572,6 +644,21 @@ export async function createStore(input: StoreInput): Promise<StoreProfile> {
 
 export async function getMyStore(): Promise<StoreProfile | null> {
   return useMocks ? mockGetMyStore() : apiGetMyStore();
+}
+
+/**
+ * Situação do selo Confiável da loja do vendedor logado (FE-US007-1, #224),
+ * ou `null` sem loja. Na API real são duas idas: `GET /users/me/store` não
+ * traz `verified`, então o selo sai do retrato público `GET /stores/{id}`.
+ * PENDENTE NO BACK: incluir `verified` na rota privada tira a segunda ida.
+ */
+export async function getMyVerification(): Promise<StoreVerification | null> {
+  if (useMocks) {
+    return (await mockGetMyStore())?.verification ?? null;
+  }
+  const loja = await apiGetMyStore();
+  if (loja === null) return null;
+  return (await apiGetStore(loja.id)).verification;
 }
 
 export async function requestVerification(): Promise<StoreProfile> {

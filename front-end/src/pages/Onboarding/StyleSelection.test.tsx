@@ -4,10 +4,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import StyleSelection from './StyleSelection';
-import { getStyles, savePreferences } from '@/services/preferenceService';
+import { ToastProvider } from '@/context/ToastContext';
+import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 
 vi.mock('@/services/preferenceService', () => ({
   getStyles: vi.fn(),
+  getPreferences: vi.fn(),
   savePreferences: vi.fn(),
 }));
 
@@ -19,15 +21,19 @@ const mockStyles = [
 function renderScreen() {
   return render(
     <MemoryRouter initialEntries={['/onboarding']}>
-      <Routes>
-        <Route path="/onboarding" element={<StyleSelection />} />
-        <Route path="/" element={<h1>Início</h1>} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/onboarding" element={<StyleSelection />} />
+          <Route path="/" element={<h1>Início</h1>} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
 
 beforeEach(() => {
+  vi.mocked(getPreferences).mockReset().mockResolvedValue([]);
+  vi.mocked(getStyles).mockReset();
   vi.mocked(savePreferences).mockReset().mockResolvedValue(undefined);
 });
 
@@ -63,6 +69,33 @@ describe('StyleSelection', () => {
     expect(await screen.findByText('Peças do dia a dia')).toBeInTheDocument();
   });
 
+  it('seleciona tamanhos de roupa e calçado e os salva junto aos estilos', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    const user = userEvent.setup();
+    renderScreen();
+
+    expect(await screen.findByRole('button', { name: /^P$/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /^37$/ })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: /^PP$/ }));
+    await user.click(screen.getByRole('button', { name: /^36$/ }));
+    await user.click(screen.getByRole('button', { name: 'SALVAR ESTILOS E ABRIR MEU FEED' }));
+
+    await waitFor(() => {
+      expect(savePreferences).toHaveBeenCalledWith([
+        { type: 'tamanho_roupa', value: 'P' },
+        { type: 'tamanho_roupa', value: 'M' },
+        { type: 'tamanho_roupa', value: 'PP' },
+        { type: 'tamanho_calcado', value: '37' },
+        { type: 'tamanho_calcado', value: '38' },
+        { type: 'tamanho_calcado', value: '36' },
+      ]);
+    });
+    expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
+  });
+
   it('salvar grava as preferências selecionadas e vai pra home', async () => {
     vi.mocked(getStyles).mockResolvedValue(mockStyles);
     const user = userEvent.setup();
@@ -74,7 +107,13 @@ describe('StyleSelection', () => {
     await user.click(screen.getByRole('button', { name: /salvar/i }));
 
     await waitFor(() => {
-      expect(savePreferences).toHaveBeenCalledWith([{ type: 'estilo', value: 'vintage' }]);
+      expect(savePreferences).toHaveBeenCalledWith([
+        { type: 'estilo', value: 'vintage' },
+        { type: 'tamanho_roupa', value: 'P' },
+        { type: 'tamanho_roupa', value: 'M' },
+        { type: 'tamanho_calcado', value: '37' },
+        { type: 'tamanho_calcado', value: '38' },
+      ]);
     });
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
   });
@@ -84,7 +123,7 @@ describe('StyleSelection', () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.click(await screen.findByRole('button', { name: 'Pular' }));
+    await user.click(await screen.findByRole('button', { name: 'PULAR' }));
 
     expect(savePreferences).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
@@ -95,7 +134,13 @@ describe('StyleSelection', () => {
     const user = userEvent.setup();
     renderScreen();
 
-    await user.click(await screen.findByRole('button', { name: /abrir meu feed/i }));
+    await user.click(await screen.findByRole('button', { name: /^P$/ }));
+    await user.click(screen.getByRole('button', { name: /^M$/ }));
+    await user.click(screen.getByRole('button', { name: /^37$/ }));
+    await user.click(screen.getByRole('button', { name: /^38$/ }));
+    await user.click(
+      await screen.findByRole('button', { name: 'SALVAR ESTILOS E ABRIR MEU FEED' }),
+    );
 
     expect(savePreferences).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
@@ -114,5 +159,30 @@ describe('StyleSelection', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Início' })).toBeInTheDocument();
     });
+    // #287: a falha não pode sumir — o aviso chega junto na Home.
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível salvar seus estilos.');
+  });
+
+  it('salvar com sucesso não mostra aviso de erro', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    const user = userEvent.setup();
+    renderScreen();
+
+    await user.click(await screen.findByRole('checkbox', { name: /vintage/i }));
+    await user.click(screen.getByRole('button', { name: /salvar/i }));
+
+    await screen.findByRole('heading', { name: 'Início' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  // #287: sem a rota de preferências, o `Promise.all` derrubava o onboarding inteiro.
+  it('se só as preferências falharem, mostra os estilos com os padrões do Figma', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    vi.mocked(getPreferences).mockRejectedValue(new Error('404'));
+    renderScreen();
+
+    expect(await screen.findByRole('checkbox', { name: /casual/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^P$/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

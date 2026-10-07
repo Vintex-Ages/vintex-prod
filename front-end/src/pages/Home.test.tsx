@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
-import { getFeed } from '@/services/catalogService';
+import { getFeedWithDetails } from '@/services/catalogService';
 import type { AuthUser } from '@/types/auth';
-import type { Paginated, Product } from '@/types/product';
+import type { Paginated, ProductDetail } from '@/types/product';
 import Home from './Home';
 
-vi.mock('@/services/catalogService', () => ({ getFeed: vi.fn() }));
+vi.mock('@/services/catalogService', () => ({ getFeedWithDetails: vi.fn() }));
 
-const feed: Paginated<Product> = {
+const feed: Paginated<ProductDetail> = {
   items: [
     {
       id: '1',
@@ -18,6 +18,14 @@ const feed: Paginated<Product> = {
       price: 89.9,
       coverImageUrl: 'https://example.com/vestido.jpg',
       store: { id: 'loja-1', name: 'Brechó Ana' },
+      category: 'Roupas',
+      size: 'M',
+      color: 'Floral',
+      brand: 'Vintage',
+      condition: 'Seminovo',
+      description: 'Vestido floral em ótimo estado.',
+      status: 'ativo',
+      media: [{ type: 'image', url: 'https://example.com/vestido.jpg', position: 0 }],
     },
     {
       id: '2',
@@ -25,6 +33,14 @@ const feed: Paginated<Product> = {
       price: 120,
       coverImageUrl: null,
       store: { id: 'loja-2', name: 'Brechó Bia' },
+      category: 'Roupas',
+      size: 'G',
+      color: 'Azul',
+      brand: 'Vintage',
+      condition: 'Usado',
+      description: 'Jaqueta jeans em bom estado.',
+      status: 'ativo',
+      media: [],
     },
   ],
   page: 1,
@@ -77,29 +93,45 @@ function renderHome(user: AuthUser | null = null) {
 }
 
 beforeEach(() => {
-  vi.mocked(getFeed).mockReset();
+  vi.mocked(getFeedWithDetails).mockReset();
 });
 afterEach(cleanup);
 
 describe('<Home />', () => {
   it('renderiza os dados do feed e preserva o placeholder para peças sem foto', async () => {
-    vi.mocked(getFeed).mockResolvedValue(feed);
+    vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
     renderHome();
 
     expect(await screen.findByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
-    expect(getFeed).toHaveBeenCalledWith();
+    expect(getFeedWithDetails).toHaveBeenCalledWith();
     expect(screen.getByRole('img', { name: 'Vestido floral' })).toHaveAttribute(
       'src',
       feed.items[0].coverImageUrl,
     );
     expect(screen.getByText(/R\$\s?89,90/)).toBeInTheDocument();
+    expect(screen.getAllByText('Roupas')).toHaveLength(3);
+    expect(screen.getByText('M · Seminovo')).toBeInTheDocument();
     expect(screen.getByText('Brechó Ana')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Jaqueta jeans' }).tagName).toBe('DIV');
     expect(screen.queryByRole('button', { name: 'Carregar mais achados' })).not.toBeInTheDocument();
   });
 
+  it('filtra a categoria no próprio feed e mantém seu título', async () => {
+    const user = userEvent.setup();
+    vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
+    renderHome();
+
+    await screen.findByRole('link', { name: 'Vestido floral' });
+    await user.click(screen.getByRole('button', { name: 'Acessórios' }));
+
+    await waitFor(() => {
+      expect(getFeedWithDetails).toHaveBeenLastCalledWith({ category: 'Acessórios' });
+    });
+    expect(screen.getByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
+  });
+
   it('mostra os skeletons existentes durante o carregamento', () => {
-    vi.mocked(getFeed).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getFeedWithDetails).mockReturnValue(new Promise(() => {}));
     renderHome();
 
     // A secao do feed e nomeada pelo proprio titulo (`aria-labelledby`), entao
@@ -116,8 +148,8 @@ describe('<Home />', () => {
 
   it('concatena a próxima página e oculta o botão ao alcançar o total', async () => {
     const user = userEvent.setup();
-    let resolveNext!: (page: Paginated<Product>) => void;
-    vi.mocked(getFeed)
+    let resolveNext!: (page: Paginated<ProductDetail>) => void;
+    vi.mocked(getFeedWithDetails)
       .mockResolvedValueOnce({ ...feed, total: 3 })
       .mockReturnValueOnce(
         new Promise((resolve) => {
@@ -128,7 +160,7 @@ describe('<Home />', () => {
 
     await screen.findByRole('link', { name: 'Vestido floral' });
     await user.click(screen.getByRole('button', { name: 'Carregar mais achados' }));
-    expect(getFeed).toHaveBeenLastCalledWith({ page: 2 });
+    expect(getFeedWithDetails).toHaveBeenLastCalledWith({ page: 2 });
     // Enquanto busca a proxima pagina o botao troca de rotulo, como o "Criando
     // conta..." do cadastro: desabilitado e mudo nao dizia que algo acontecia.
     expect(screen.getByRole('button', { name: 'Carregando…' })).toBeDisabled();
@@ -149,7 +181,7 @@ describe('<Home />', () => {
 
   it('navega para a rota existente do detalhe ao abrir uma peça', async () => {
     const user = userEvent.setup();
-    vi.mocked(getFeed).mockResolvedValue(feed);
+    vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
     renderHome();
 
     await user.click(await screen.findByRole('link', { name: 'Vestido floral' }));
@@ -158,45 +190,41 @@ describe('<Home />', () => {
 
   // --- #207: pontos de entrada da Vintex ---
 
-  it('mostra o spotlight (web) e o heading de fallback (mobile/tablet) com o mesmo h1', async () => {
-    vi.mocked(getFeed).mockResolvedValue(feed);
+  it('mostra o spotlight web com o título semântico da página', async () => {
+    vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
     renderHome();
 
     await screen.findByRole('link', { name: 'Vestido floral' });
 
-    // Dois h1 no DOM ao mesmo tempo é esperado: um fica escondido por classe
-    // (`web:hidden` / `hidden web:block`) conforme o breakpoint — jsdom não
-    // avalia media query, então o teste garante que cada um existe, não
-    // qual está visualmente visível numa largura específica.
     const headings = screen.getAllByRole('heading', {
       name: 'Garimpe a peça certa nos brechós do Rio Grande do Sul.',
       level: 1,
     });
-    expect(headings).toHaveLength(2);
+    expect(headings).toHaveLength(1);
   });
 
   it('enviar pelo spotlight leva para /vintex com a mensagem, não para o catálogo', async () => {
     const user = userEvent.setup();
-    vi.mocked(getFeed).mockResolvedValue(feed);
+    vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
     renderHome();
 
     await screen.findByRole('link', { name: 'Vestido floral' });
 
-    const input = screen.getByRole('searchbox', { name: 'Buscar' });
+    const input = screen.getByPlaceholderText('O que você procura?');
     await user.type(input, 'jaqueta de couro{Enter}');
 
     expect(await screen.findByText('Vintex recebeu: jaqueta de couro')).toBeInTheDocument();
   });
-  describe('convite "Quero vender" (FE-US006-1, #212)', () => {
+  describe('convite para vender (FE-US006-1, #212)', () => {
     beforeEach(() => {
-      vi.mocked(getFeed).mockResolvedValue(feed);
+      vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
     });
 
     it('logado sem loja: mostra o convite e ele leva a /sell', async () => {
       const user = userEvent.setup();
       renderHome(BUYER);
 
-      await user.click(await screen.findByRole('link', { name: 'Quero vender' }));
+      await user.click(await screen.findByRole('link', { name: 'Anunciar Peça' }));
 
       expect(await screen.findByRole('heading', { name: 'Página de vender' })).toBeInTheDocument();
     });
@@ -205,14 +233,14 @@ describe('<Home />', () => {
       renderHome();
 
       await screen.findByRole('link', { name: 'Vestido floral' });
-      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
     });
 
     it('quem já vende não vê o convite', async () => {
       renderHome({ ...BUYER, is_seller: true });
 
       await screen.findByRole('link', { name: 'Vestido floral' });
-      expect(screen.queryByRole('link', { name: 'Quero vender' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
     });
   });
 });

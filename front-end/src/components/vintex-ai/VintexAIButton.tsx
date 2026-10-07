@@ -36,7 +36,7 @@ export function VintexAIButton({
   return (
     <div
       className={clsx(
-        'fixed right-5 z-20 h-11 w-11 overflow-hidden rounded-full',
+        'fixed right-5 z-20 h-16 w-16 overflow-hidden rounded-full',
         raised ? 'bottom-24 web:bottom-5' : 'bottom-5',
         'shadow-lg shadow-tinta/30',
         'transition-transform duration-150 ease-out active:scale-90',
@@ -45,10 +45,11 @@ export function VintexAIButton({
       )}
     >
       <IconButton
-        icon={<VintexAIIcon className="h-6 w-6" />}
+        icon={<VintexAIIcon className="h-8 w-8" />}
         onClick={onClick}
         ariaLabel={ariaLabel}
         variant="primary"
+        className="h-full w-full"
       />
     </div>
   );

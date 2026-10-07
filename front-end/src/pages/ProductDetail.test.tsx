@@ -1,11 +1,31 @@
-﻿import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import Header from '@/components/layout/Header';
 import { AuthProvider } from '@/context/AuthContext';
+import { CartProvider } from '@/context/CartContext';
+import { ToastProvider } from '@/context/ToastContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
+import { useAuth } from '@/context/useAuth';
+import { CartContext, type CartContextValue } from '@/context/useCart';
+import { PENDING_ACTION_STORAGE_KEY } from '@/hooks/useProtectedAction';
+import { paths } from '@/routes/paths';
 import type { AuthUser } from '@/types/auth';
+import type { Cart } from '@/types/cart';
 import ProductDetail from './ProductDetail';
+
+vi.mock('@/services/cartService', () => ({
+  getCart: vi.fn(),
+  addItem: vi.fn(),
+  removeItem: vi.fn(),
+}));
+
+import { addItem, getCart, removeItem } from '@/services/cartService';
+
+const mockedGetCart = vi.mocked(getCart);
+const mockedAddItem = vi.mocked(addItem);
+const mockedRemoveItem = vi.mocked(removeItem);
 
 afterEach(() => {
   cleanup();
@@ -20,46 +40,147 @@ const SAMPLE_USER: AuthUser = {
   is_admin: false,
 };
 
-function renderAt(path: string, options?: { authenticated?: boolean }) {
+const EMPTY_CART: Cart = { groups: [] };
+
+const CART_WITH_PRODUCT: Cart = {
+  groups: [
+    {
+      store: { id: '1', name: 'Brechó Mercado Público', city: 'Porto Alegre' },
+      items: [
+        {
+          product: {
+            id: '1',
+            name: 'Jaqueta jeans vintage clara',
+            price: 159.9,
+            coverImageUrl: '/images/products/jaqueta-jeans-vintage.jpg',
+            store: { id: '1', name: 'Brechó Mercado Público', city: 'Porto Alegre' },
+          },
+          addedAt: '2026-09-26T12:00:00Z',
+        },
+      ],
+      subtotalCents: 15990,
+    },
+  ],
+};
+
+function createCartValue(overrides: Partial<CartContextValue> = {}): CartContextValue {
+  return {
+    cart: EMPTY_CART,
+    count: 0,
+    loading: false,
+    error: null,
+    add: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function LoginProbe() {
+  const { login } = useAuth();
+
+  return <button onClick={() => login(SAMPLE_USER, 'tok-1')}>Concluir login</button>;
+}
+
+function CartDestination() {
+  return <h1>Carrinho de compras</h1>;
+}
+
+function renderAt(
+  path: string,
+  options?: { authenticated?: boolean; cartValue?: CartContextValue },
+) {
   if (options?.authenticated) {
     window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
     window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
   }
 
+  const cartValue = options?.cartValue ?? createCartValue();
+
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <Routes>
-          <Route path="/product/:id" element={<ProductDetail />} />
-        </Routes>
+        <CartContext.Provider value={cartValue}>
+          <ToastProvider>
+            <Routes>
+              <Route path={paths.product} element={<ProductDetail />} />
+              <Route path={paths.login} element={<LoginProbe />} />
+              <Route path={paths.cart} element={<CartDestination />} />
+            </Routes>
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
 }
 
+function renderIntegratedAt(path: string) {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AuthProvider>
+        <CartProvider>
+          <ToastProvider>
+            <Header />
+            <Routes>
+              <Route path={paths.product} element={<ProductDetail />} />
+              <Route path={paths.cart} element={<CartDestination />} />
+            </Routes>
+          </ToastProvider>
+        </CartProvider>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedGetCart.mockResolvedValue(EMPTY_CART);
+  mockedAddItem.mockResolvedValue(CART_WITH_PRODUCT);
+  mockedRemoveItem.mockResolvedValue(EMPTY_CART);
+});
+
 describe('<ProductDetail />', () => {
-  // Objetivo declarado do ticket: mostra atributos, preço e card da loja.
-  // NOTA: categoria e cor (também exigidos pelo ticket) ficaram de fora da
-  // ficha visível por decisão explícita, pra bater com o layout do print de
-  // referência (T-02) — ver JSDoc do componente.
-  it('mostra marca, tamanho, conservação, material, medidas, cidade, preço e a história da peça', async () => {
+  it('mostra os atributos do produto, preço, loja e história da peça', async () => {
     renderAt('/product/1');
 
-    expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
-    expect(screen.getByText('Nike')).toBeTruthy();
-    expect(screen.getByText('M (Médio)')).toBeTruthy();
-    expect(screen.getByText('Seminovo')).toBeTruthy();
-    expect(screen.getByText('100% algodão')).toBeTruthy();
-    expect(screen.getByText('Ombro a ombro 44cm • Comprimento 68cm')).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Roupas · Azul claro · Usado')).toBeInTheDocument();
+    expect(screen.getByText('Vintage')).toBeTruthy();
+    expect(screen.getByText('G (Grande)')).toBeTruthy();
+    expect(screen.getByText('Usado')).toBeTruthy();
+    expect(screen.getByText('Denim 100% algodão')).toBeTruthy();
+    expect(screen.getByText('Ombro a ombro 50cm • Comprimento 62cm')).toBeTruthy();
     expect(screen.getAllByText('Porto Alegre').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/R\$\s?79,90/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Peça garimpada no Mercado Público de Porto Alegre/)).toBeTruthy();
+    expect(screen.getAllByText(/R\$\s?159,90/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeTruthy();
+  });
+
+  it('mostra a curadoria do Figma e alterna o item localmente no look', async () => {
+    const user = userEvent.setup();
+    renderAt('/product/1');
+
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+    expect(screen.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Bolsa Baú de Couro Caramelo' })).toBeInTheDocument();
+
+    const addToLook = screen.getByRole('button', { name: '+ Adicionar' });
+    await user.click(addToLook);
+
+    expect(screen.getByRole('button', { name: '✓ Adicionada ao look' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('mostra a trilha de navegação (início / cidade / loja / produto)', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     const trilha = screen.getByRole('navigation', { name: 'Trilha' });
     expect(within(trilha).getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/');
@@ -67,17 +188,22 @@ describe('<ProductDetail />', () => {
     expect(
       within(trilha).getAllByText('Brechó Mercado Público', { exact: false }).length,
     ).toBeGreaterThan(0);
-    expect(within(trilha).getByText('Nike Camiseta Preto')).toHaveAttribute('aria-current', 'page');
+    expect(within(trilha).getByText('Jaqueta jeans vintage clara')).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
-  it('mostra a galeria de fotos da peça, com miniaturas de navegação', async () => {
+  it('mostra a foto da peça sem controles de navegação para uma única imagem', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getByRole('group', { name: /Galeria de fotos/ })).toBeTruthy();
-    expect(screen.getByText('Foto 1 de 3')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /Ver foto \d de 3/ })).toHaveLength(3);
+    expect(
+      screen.getByRole('img', { name: /Jaqueta jeans vintage clara — foto 1 de 1/ }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Próxima foto' })).not.toBeInTheDocument();
   });
 
   it('mostra carregando antes do produto resolver', () => {
@@ -89,26 +215,28 @@ describe('<ProductDetail />', () => {
   it('mostra nome da loja e o selo de verificado quando a loja é verificada', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getAllByText('Brechó Mercado Público').length).toBeGreaterThan(0);
     expect(screen.getByRole('img', { name: 'Confiável' })).toBeTruthy();
   });
 
-  it('não mostra o selo de verificado quando a loja não é verificada', async () => {
+  // FE-US007-1: loja ainda não validada mostra o selo Pendente, não o Confiável.
+  it('mostra o selo Pendente quando a loja não é verificada', async () => {
     renderAt('/product/3');
 
-    await screen.findByRole('heading', { name: 'Adidas Tênis Branco' });
+    await screen.findByRole('heading', { name: 'Jaqueta biker preta' });
 
     expect(screen.getAllByText('Roupa Rodada').length).toBeGreaterThan(0);
     expect(screen.queryByRole('img', { name: 'Confiável' })).toBeNull();
+    expect(screen.getByRole('img', { name: 'Pendente' })).toBeTruthy();
   });
 
   // Objetivo declarado do ticket: card da loja linka o perfil do brechó.
   it('o card da loja é um link', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.getByRole('link', { name: /Ver loja/ })).toBeTruthy();
   });
@@ -122,15 +250,15 @@ describe('<ProductDetail />', () => {
   it('botão de ação final mostra "Comprar Agora" com o preço', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
-    expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?79,90/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Comprar Agora.*R\$\s?159,90/ })).toBeTruthy();
   });
 
   it('peça vendida (status "vendido") mostra o selo "Já vendida"', async () => {
     renderAt('/product/4');
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
     expect(screen.getByText('Já vendida')).toBeInTheDocument();
   });
@@ -138,16 +266,16 @@ describe('<ProductDetail />', () => {
   it('peça vendida continua navegável — mostra o resto da ficha normalmente', async () => {
     renderAt('/product/4');
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
-    expect(screen.getByText('Zara')).toBeInTheDocument();
+    expect(screen.getByText('Sem etiqueta')).toBeInTheDocument();
     expect(screen.getAllByText(/R\$\s?149,90/).length).toBeGreaterThan(0);
   });
 
   it('peça ativa (status "ativo") NÃO mostra o selo e mantém "Comprar Agora" habilitado', async () => {
     renderAt('/product/1');
 
-    await screen.findByRole('heading', { name: 'Nike Camiseta Preto' });
+    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
 
     expect(screen.queryByText('Já vendida')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
@@ -162,7 +290,7 @@ describe('<ProductDetail />', () => {
   it('peça vendida: favoritar e comprar ficam desabilitados, mesmo logado', async () => {
     renderAt('/product/4', { authenticated: true });
 
-    await screen.findByRole('heading', { name: 'Zara Vestido Estampado' });
+    await screen.findByRole('heading', { name: 'Vestido floral midi' });
 
     expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
@@ -207,7 +335,9 @@ describe('<ProductDetail />', () => {
       await user.click(screen.getByRole('button', { name: 'Agora não' }));
 
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      expect(await screen.findByRole('heading', { name: 'Nike Camiseta Preto' })).toBeTruthy();
+      expect(
+        await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' }),
+      ).toBeTruthy();
     });
 
     it('logado: favoritar alterna o estado visual sem abrir a barreira', async () => {
@@ -234,5 +364,236 @@ describe('<ProductDetail />', () => {
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+    it('o link "Ver loja" aponta pra rota real do perfil da loja', async () => {
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+
+      const storeLink = screen.getByRole('link', { name: /Ver loja/ });
+      expect(storeLink.getAttribute('href')).toMatch(/^\/store\//);
+    });
+  });
+
+  describe('adicionar ao carrinho (FE-US021-1, #225)', () => {
+    it('logado: chama add exclusivamente com o id da peça', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      expect(add).toHaveBeenCalledOnce();
+      expect(add).toHaveBeenCalledWith('1');
+    });
+
+    it('mostra o toast de sucesso somente depois que add resolve', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+    });
+
+    it('navega para paths.cart pela ação "Ver carrinho" do toast', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1', { authenticated: true });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+      await user.click(await screen.findByRole('button', { name: 'Ver carrinho' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Carrinho de compras' }),
+      ).toBeInTheDocument();
+    });
+
+    it('mostra "No carrinho" quando a peça já pertence a um dos grupos', async () => {
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ cart: CART_WITH_PRODUCT, count: 1 }),
+      });
+
+      expect(await screen.findByRole('button', { name: 'No carrinho' })).toBeInTheDocument();
+    });
+
+    it('não chama add novamente quando a peça já está no carrinho', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ cart: CART_WITH_PRODUCT, count: 1, add }),
+      });
+
+      const cartButton = await screen.findByRole('button', { name: 'No carrinho' });
+      expect(cartButton).toBeDisabled();
+      await user.click(cartButton);
+
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('desabilita a ação de carrinho para uma peça vendida', async () => {
+      renderAt('/product/4', { authenticated: true });
+
+      expect(await screen.findByRole('button', { name: 'Adicionar ao carrinho' })).toBeDisabled();
+    });
+
+    it('deslogado: abre o LoginInterceptor sem executar add', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('preserva a origem e o id da peça na intenção do useProtectedAction', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      const rawPendingAction = window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY);
+      expect(rawPendingAction).not.toBeNull();
+
+      const pendingAction = JSON.parse(rawPendingAction ?? '{}') as {
+        returnTo?: string;
+        intent?: { type?: string; payload?: { productId?: string } };
+      };
+      expect(pendingAction.returnTo).toBe('/product/1');
+      expect(pendingAction.intent?.type).toBeTruthy();
+      expect(pendingAction.intent?.payload?.productId).toBe('1');
+    });
+
+    it('retoma a adição após autenticar e retornar à página de origem', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+      await user.click(await screen.findByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      await waitFor(() => expect(add).toHaveBeenCalledWith('1'));
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+    });
+
+    it('mostra estado de carregamento e desabilita o botão enquanto add está pendente', async () => {
+      const user = userEvent.setup();
+      let resolveAdd: (() => void) | undefined;
+      const add = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveAdd = resolve;
+          }),
+      );
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      expect(await screen.findByRole('button', { name: /Adicionando/i })).toBeDisabled();
+      resolveAdd?.();
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+    });
+
+    it('não inicia múltiplas adições durante uma operação pendente', async () => {
+      const user = userEvent.setup();
+      let resolveAdd: (() => void) | undefined;
+      const add = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveAdd = resolve;
+          }),
+      );
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+      const loadingButton = await screen.findByRole('button', { name: /Adicionando/i });
+      await user.click(loadingButton);
+
+      expect(add).toHaveBeenCalledOnce();
+      resolveAdd?.();
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+    });
+
+    it('não mostra toast de sucesso quando add rejeita', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockRejectedValue(new Error('Falha ao adicionar'));
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+      await waitFor(() => expect(add).toHaveBeenCalledOnce());
+
+      expect(screen.queryByText('Adicionada ao carrinho')).not.toBeInTheDocument();
+    });
+
+    it('permite tentar novamente depois que add rejeita', async () => {
+      const user = userEvent.setup();
+      const add = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new Error('Falha ao adicionar'))
+        .mockResolvedValueOnce(undefined);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ add }),
+      });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar ao carrinho' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeEnabled(),
+      );
+      await user.click(screen.getByRole('button', { name: 'Adicionar ao carrinho' }));
+
+      expect(add).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+    });
+
+    it('não permite iniciar a adição enquanto o carrinho está carregando', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ loading: true, add }),
+      });
+
+      const cartButton = await screen.findByRole('button', { name: 'Adicionar ao carrinho' });
+      expect(cartButton).toBeDisabled();
+      await user.click(cartButton);
+
+      expect(add).not.toHaveBeenCalled();
+    });
+  });
+
+  it('atualiza botão e contador do Header pelo CartProvider compartilhado, sem remontar', async () => {
+    const user = userEvent.setup();
+    renderIntegratedAt('/product/1');
+
+    await screen.findByRole('button', { name: 'Voltar' });
+    expect(await screen.findByRole('link', { name: 'Sacola (0)' })).toBeInTheDocument();
+
+    const addButton = await screen.findByRole('button', { name: 'Adicionar ao carrinho' });
+    await waitFor(() => expect(addButton).toBeEnabled());
+    await user.click(addButton);
+
+    expect(await screen.findByRole('button', { name: 'No carrinho' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sacola (1)' })).toBeInTheDocument();
+    expect(mockedAddItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
   });
 });

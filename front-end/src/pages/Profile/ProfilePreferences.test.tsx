@@ -139,6 +139,26 @@ describe('<ProfilePreferences />', () => {
     expect(savePreferences).toHaveBeenCalledTimes(1);
   });
 
+  it('preserva preferências de tamanho ao salvar os estilos do perfil', async () => {
+    mockLoadedPage([
+      { type: 'estilo', value: 'vintage-80-90' },
+      { type: 'tamanho_roupa', value: 'P' },
+      { type: 'tamanho_calcado', value: '37' },
+    ]);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: /salvar/i }));
+
+    await waitFor(() => {
+      expect(savePreferences).toHaveBeenCalledWith([
+        { type: 'tamanho_roupa', value: 'P' },
+        { type: 'tamanho_calcado', value: '37' },
+        { type: 'estilo', value: 'vintage-80-90' },
+      ]);
+    });
+  });
+
   it('mantém o botão de salvar funcional quando nenhum estilo está selecionado', async () => {
     const user = userEvent.setup();
 
@@ -192,6 +212,21 @@ describe('<ProfilePreferences />', () => {
     expect(await screen.findByRole('checkbox', { name: /streetwear/i })).toBeChecked();
     expect(getStyles).toHaveBeenCalledTimes(2);
     expect(getPreferences).toHaveBeenCalledTimes(2);
+  });
+
+  // #287: o `Promise.all` derrubava a tela inteira se só as preferências falhassem.
+  it('se só as preferências falharem, mostra os estilos desmarcados com aviso', async () => {
+    vi.mocked(getStyles).mockResolvedValue(mockStyles);
+    vi.mocked(getPreferences).mockRejectedValue(new Error('falha ao carregar preferências'));
+
+    renderPage();
+
+    expect(await screen.findByRole('checkbox', { name: /streetwear/i })).not.toBeChecked();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Não conseguimos carregar suas escolhas atuais. Salvar vai substituir o que estava gravado.',
+    );
+    expect(screen.queryByRole('button', { name: /tentar de novo/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /salvar preferências/i })).toBeEnabled();
   });
 
   it('preserva a seleção e permite tentar novamente quando o salvamento falha', async () => {

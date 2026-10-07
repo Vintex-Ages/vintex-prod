@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type MouseEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import AuthHeader from '@/components/auth/AuthHeader';
 import AuthTabs from '@/components/auth/AuthTabs';
 import Button from '@/components/common/Button';
 import Checkbox from '@/components/common/Checkbox';
+import DocumentModal from '@/components/common/DocumentModal';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import Container from '@/components/layout/Container';
 import { useAuth } from '@/context/useAuth';
@@ -11,13 +13,16 @@ import { paths } from '@/routes/paths';
 import { isPasswordValid, PASSWORD_POLICY_MESSAGE, register } from '@/services/authService';
 import { CepError, lookupAddress, type CepAddress } from '@/services/cepService';
 import { REDIRECT_STORAGE_KEY } from '@/services/httpClient';
+import { getTerms } from '@/services/legalService';
 import type { ApiError } from '@/types/auth';
+import type { LegalDocument } from '@/types/legal';
 import { formatCep } from '@/utils/document';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
-type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep' | 'terms', string>>;
+type FieldErrors = Partial<Record<'name' | 'email' | 'password' | 'cep', string>>;
+type TermsStatus = 'loading' | 'ready' | 'error';
 
 /** Impede o link de navegar e de repassar o clique pro checkbox (ver JSDoc de `Checkbox`). */
 function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
@@ -30,7 +35,7 @@ function preventLinkActivation(event: MouseEvent<HTMLAnchorElement>) {
  * Era o emoji 📍 — o único do `src/` inteiro, contra 22 arquivos que desenham
  * ícone como SVG inline. O sinal de "isto é um endereço" é bom e fica; emoji é
  * que não serve aqui: renderiza nas cores do sistema (vermelho e branco no
- * Windows) dentro de uma paleta fechada em 10 cores, muda de desenho por
+ * Windows) dentro de uma paleta fechada em 11 cores, muda de desenho por
  * aparelho, e como texto literal o leitor de tela anuncia "pino redondo" antes
  * do endereço. Em SVG ele herda `currentColor` e acompanha o texto.
  */
@@ -82,6 +87,12 @@ function hasStoredReturnTo(): boolean {
  * `location.state.from` (que `login()` não enxerga) ou (b) não havia origem
  * nenhuma — cadastro "orgânico", que deve cair no onboarding e não na Home.
  *
+ * Aceite dos termos (FE-US003-1, RN-93): o checkbox só fica marcado depois de
+ * "Aceitar" no `DocumentModal` com os termos versionados (`legalService`).
+ * Marcar o checkbox ou clicar em "Termos de Uso" abre o modal; "Não aceitar"
+ * fecha e mantém desmarcado. A versão aceita vai no `register()` como
+ * `acceptedTermsVersion`, e sem aceite o botão de criar conta fica desabilitado.
+ *
  * Usage:
  *   import Register from '@/pages/Auth/Register/Register';
  *   <Route path={paths.register} element={<Register />} />
@@ -96,14 +107,64 @@ function Register() {
   const [phone, setPhone] = useState('');
   const [cep, setCep] = useState('');
   const [password, setPassword] = useState('');
-  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [terms, setTerms] = useState<LegalDocument | null>(null);
+  const [termsStatus, setTermsStatus] = useState<TermsStatus>('loading');
+  const [termsModalOpen, setTermsModalOpen] = useState(false);
+  /** Versão aceita no modal; `null` = sem aceite. É ela que marca o checkbox. */
+  const [acceptedTermsVersion, setAcceptedTermsVersion] = useState<string | null>(null);
+  const termsAccepted = acceptedTermsVersion !== null;
 
   const [cepStatus, setCepStatus] = useState<CepStatus>('idle');
   const [cepAddress, setCepAddress] = useState<CepAddress | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [submitCount, setSubmitCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const loadTerms = useCallback(() => {
+    let active = true;
+    setTermsStatus('loading');
+    getTerms()
+      .then((document) => {
+        if (!active) return;
+        setTerms(document);
+        setTermsStatus('ready');
+      })
+      .catch(() => {
+        if (active) setTermsStatus('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => loadTerms(), [loadTerms]);
+
+  function handleTermsCheckboxChange(checked: boolean) {
+    // Desmarcar retira o aceite; marcar só acontece pelo "Aceitar" do modal.
+    if (!checked) {
+      setAcceptedTermsVersion(null);
+      return;
+    }
+    setTermsModalOpen(true);
+  }
+
+  function openTerms(event: MouseEvent<HTMLAnchorElement>) {
+    preventLinkActivation(event);
+    setTermsModalOpen(true);
+  }
+
+  function handleAcceptTerms(version: string) {
+    setAcceptedTermsVersion(version);
+    setTermsModalOpen(false);
+  }
+
+  function handleDeclineTerms() {
+    setAcceptedTermsVersion(null);
+    setTermsModalOpen(false);
+  }
 
   // Resolve o CEP assim que os 8 dígitos são digitados; não envia nada ao back.
   useEffect(() => {
@@ -143,15 +204,15 @@ function Register() {
       errors.password = PASSWORD_POLICY_MESSAGE;
     }
     if (cepStatus !== 'resolved') errors.cep = 'Informe um CEP válido.';
-    if (!termsAccepted) errors.terms = 'É preciso aceitar os termos para continuar.';
     return errors;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitCount((count) => count + 1);
     const errors = validate();
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0 || acceptedTermsVersion === null) return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -162,6 +223,7 @@ function Register() {
         email: email.trim(),
         password,
         phone: phone.trim() || undefined,
+        acceptedTermsVersion,
       });
 
       // Captura ANTES de login(): a própria chamada consome (lê e remove)
@@ -286,14 +348,14 @@ function Register() {
             <Checkbox
               id="terms"
               checked={termsAccepted}
-              onChange={setTermsAccepted}
+              onChange={handleTermsCheckboxChange}
               disabled={submitting}
               label={
                 <>
                   Li e aceito os{' '}
                   <a
                     href="#"
-                    onClick={preventLinkActivation}
+                    onClick={openTerms}
                     className="font-bold text-vermelho-escuro underline"
                   >
                     Termos de Uso
@@ -310,12 +372,40 @@ function Register() {
                 </>
               }
             />
-            {fieldErrors.terms ? (
+            {termsModalOpen && termsStatus === 'loading' ? (
+              <p role="status" className="mt-1 text-label text-texto-auxiliar">
+                Carregando os termos de uso…
+              </p>
+            ) : null}
+            {termsModalOpen && termsStatus === 'error' ? (
               <p role="alert" className="mt-1 text-label text-vermelho-escuro">
-                {fieldErrors.terms}
+                Não foi possível carregar os termos de uso.{' '}
+                <button
+                  type="button"
+                  onClick={loadTerms}
+                  className="font-bold underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                >
+                  Tentar de novo
+                </button>
+              </p>
+            ) : null}
+            {!termsAccepted ? (
+              <p className="mt-1 text-label text-texto-auxiliar">
+                Para criar a conta, abra os termos e toque em Aceitar.
               </p>
             ) : null}
           </div>
+
+          {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+          <FormErrorSummary
+            submitCount={submitCount}
+            items={[
+              { id: 'name', message: fieldErrors.name },
+              { id: 'email', message: fieldErrors.email },
+              { id: 'cep', message: fieldErrors.cep },
+              { id: 'password', message: fieldErrors.password },
+            ]}
+          />
 
           {submitError ? (
             <p
@@ -326,10 +416,19 @@ function Register() {
             </p>
           ) : null}
 
-          <Button type="submit" variant="primary" fullWidth disabled={submitting}>
+          <Button type="submit" variant="primary" fullWidth disabled={submitting || !termsAccepted}>
             {submitting ? 'Criando conta…' : 'Criar conta e personalizar estilos'}
           </Button>
         </form>
+
+        {terms ? (
+          <DocumentModal
+            open={termsModalOpen}
+            document={terms}
+            onAccept={handleAcceptTerms}
+            onDecline={handleDeclineTerms}
+          />
+        ) : null}
       </Container>
     </div>
   );

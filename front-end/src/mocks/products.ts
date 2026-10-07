@@ -1,181 +1,258 @@
 import type { ProductDetail } from '@/types/product';
 
 /**
- * 8 peças fixas cobrindo feed, detalhe e filtros. Lojas e cidades do RS
- * espelham `app/seeds/lojas.py` do back (BE-SEED-1) para a review mostrar a
- * mesma coisa nas duas pontas; imagens seguem o mesmo placeholder do seed de
- * peças (`app/seeds/pecas.py`, BE-SEED-2).
- *
- * `description` (texto corrido, estilo "história da peça"), `material` e
- * `measurements` são conteúdo inventado pra FE-US012-1 — não fazem parte do
- * contrato confirmado do back (ver nota em `types/product.ts`).
+ * Peças de brechó para o catálogo de demonstração. As fotos locais em
+ * `public/images/products` vieram do Unsplash; os dados de venda são fictícios.
  */
-export const products: ProductDetail[] = [
+const baseProducts: ProductDetail[] = [
   {
     id: '1',
-    name: 'Nike Camiseta Preto',
-    price: 79.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-1-0/600/800',
+    name: 'Jaqueta jeans vintage clara',
+    price: 159.9,
+    coverImageUrl: '/images/products/jaqueta-jeans-vintage.jpg',
     store: { id: '1', name: 'Brechó Mercado Público', city: 'Porto Alegre', verified: true },
     category: 'Roupas',
-    size: 'M',
-    color: 'Preto',
-    brand: 'Nike',
-    condition: 'Seminovo',
+    size: 'G',
+    color: 'Azul claro',
+    brand: 'Vintage',
+    condition: 'Usado',
     description:
-      'Peça garimpada no Mercado Público de Porto Alegre, direto de um lote de básicos pouco usados. ' +
-      'Malha 100% algodão, sem manchas ou furos, estampa ainda firme. ' +
-      'Um coringa pra qualquer produção, do dia a dia ao rolê.',
-    material: '100% algodão',
-    measurements: 'Ombro a ombro 44cm • Comprimento 68cm',
+      'Jaqueta jeans garimpada em brechó, com lavagem azul clara e caimento soltinho. ' +
+      'Tem sinais leves de uso no denim, sem rasgos ou manchas.',
+    material: 'Denim 100% algodão',
+    measurements: 'Ombro a ombro 50cm • Comprimento 62cm',
     status: 'ativo',
-    media: [
-      { type: 'image', url: 'https://picsum.photos/seed/vintex-1-0/600/800', position: 0 },
-      { type: 'image', url: 'https://picsum.photos/seed/vintex-1-1/600/800', position: 1 },
-      { type: 'image', url: 'https://picsum.photos/seed/vintex-1-2/600/800', position: 2 },
-    ],
+    media: [{ type: 'image', url: '/images/products/jaqueta-jeans-vintage.jpg', position: 0 }],
   },
   {
     id: '2',
-    name: "Levi's Jaqueta Azul",
-    price: 189.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-2-0/600/800',
+    name: 'Blusa bordada off-white',
+    price: 79.9,
+    coverImageUrl: '/images/products/blusa-bordada-vintage.jpg',
     store: { id: '2', name: 'Garimpo da Redenção', city: 'Porto Alegre', verified: true },
     category: 'Roupas',
-    size: 'G',
-    color: 'Azul',
-    brand: "Levi's",
-    condition: 'Usado',
+    size: 'M',
+    color: 'Off-white',
+    brand: 'Sem etiqueta',
+    condition: 'Seminovo',
     description:
-      'Clássica trucker jacket, achada numa feira de trocas na Redenção. ' +
-      'Jeans grosso, boa densidade, com a maciez que só o uso de verdade proporciona. ' +
-      'Marcas leves de desgaste no punho, sem comprometer nada.',
-    material: '100% algodão (denim)',
-    measurements: 'Ombro a ombro 50cm • Comprimento 62cm',
+      'Blusa leve com bordado delicado na frente e mangas curtas. ' +
+      'Peça de segunda mão bem conservada, sem avarias aparentes.',
+    material: 'Algodão',
+    measurements: 'Busto 96cm • Comprimento 58cm',
     status: 'ativo',
-    media: [
-      { type: 'image', url: 'https://picsum.photos/seed/vintex-2-0/600/800', position: 0 },
-      { type: 'image', url: 'https://picsum.photos/seed/vintex-2-1/600/800', position: 1 },
-    ],
+    media: [{ type: 'image', url: '/images/products/blusa-bordada-vintage.jpg', position: 0 }],
   },
   {
     id: '3',
-    name: 'Adidas Tênis Branco',
+    name: 'Jaqueta biker preta',
     price: 229.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-3-0/600/800',
+    coverImageUrl: '/images/products/jaqueta-biker.jpg',
     store: { id: '3', name: 'Roupa Rodada', city: 'Caxias do Sul', verified: false },
-    category: 'Sapatos',
-    size: '40',
-    color: 'Branco',
-    brand: 'Adidas',
-    condition: 'Novo com etiqueta',
-    description:
-      'Par novo, nunca usado — sobra de estoque de uma loja que fechou em Caxias do Sul. ' +
-      'Etiqueta e caixa original inclusas. ' +
-      'Solado intacto, sem sinal de uso nem armazenamento incorreto.',
-    material: 'Cabedal sintético, solado de borracha',
-    measurements: 'Numeração 40 (BR)',
-    status: 'ativo',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-3-0/600/800', position: 0 }],
-  },
-  {
-    id: '4',
-    name: 'Zara Vestido Estampado',
-    price: 149.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-4-0/600/800',
-    store: { id: '4', name: 'Segunda Chance Modas', city: 'Pelotas', verified: true },
     category: 'Roupas',
     size: 'P',
-    color: 'Estampado',
+    color: 'Preto',
     brand: 'Zara',
     condition: 'Seminovo',
     description:
-      'Vestido leve de estampa floral, usado só uma vez num casamento em Pelotas. ' +
-      'Tecido fluido, caimento solto, sem transparência. ' +
-      'Forro interno intacto, zíper lateral funcionando perfeitamente.',
-    material: 'Viscose com forro de poliéster',
-    measurements: 'Busto 88cm • Comprimento 94cm',
+      'Jaqueta biker preta de material sintético, com bolsos de zíper e ferragens em bom estado. ' +
+      'Garimpada em brechó e pronta para ganhar mais histórias.',
+    material: 'Poliuretano e poliéster',
+    measurements: 'Ombro a ombro 42cm • Comprimento 54cm',
+    status: 'ativo',
+    media: [{ type: 'image', url: '/images/products/jaqueta-biker.jpg', position: 0 }],
+  },
+  {
+    id: '4',
+    name: 'Vestido floral midi',
+    price: 149.9,
+    coverImageUrl: '/images/products/vestido-floral.jpg',
+    store: { id: '4', name: 'Segunda Chance Modas', city: 'Pelotas', verified: true },
+    category: 'Roupas',
+    size: 'M',
+    color: 'Floral em tons de rosa',
+    brand: 'Sem etiqueta',
+    condition: 'Seminovo',
+    description:
+      'Vestido midi de estampa floral, com mangas três quartos e cintura confortável. ' +
+      'Peça de brechó conservada, sem manchas ou furos.',
+    material: 'Viscose',
+    measurements: 'Busto 92cm • Comprimento 112cm',
     status: 'vendido',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-4-0/600/800', position: 0 }],
+    media: [{ type: 'image', url: '/images/products/vestido-floral.jpg', position: 0 }],
   },
   {
     id: '5',
-    name: 'Farm Bolsa Bege',
-    price: 99.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-5-0/600/800',
+    name: 'Calça jeans reta azul',
+    price: 119.9,
+    coverImageUrl: '/images/products/calca-jeans.jpg',
     store: { id: '5', name: 'Baú da Vó Nair', city: 'Santa Maria', verified: false },
-    category: 'Acessórios',
-    size: 'M',
-    color: 'Bege',
-    brand: 'Farm',
+    category: 'Roupas',
+    size: '40',
+    color: 'Azul médio',
+    brand: "Levi's",
     condition: 'Marcas de uso',
     description:
-      'Bolsa de couro sintético que já rodou bastante, com a personalidade de quem foi bem usada. ' +
-      'Marcas leves de uso no fundo e nas alças, forro interno em bom estado. ' +
-      'Fecho magnético funcionando, bolso interno com zíper intacto.',
-    material: 'Couro sintético',
-    measurements: 'Largura 32cm • Altura 24cm • Alça 60cm',
+      'Calça jeans reta de cintura média, com lavagem azul e marcas suaves do uso. ' +
+      'Denim firme, sem rasgos e com todos os botões e zíper funcionando.',
+    material: 'Denim 100% algodão',
+    measurements: 'Cintura 82cm • Comprimento 102cm',
     status: 'ativo',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-5-0/600/800', position: 0 }],
+    media: [{ type: 'image', url: '/images/products/calca-jeans.jpg', position: 0 }],
   },
   {
     id: '6',
-    name: 'Osklen Bota Preto',
-    price: 259.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-6-0/600/800',
+    name: 'Camisa social branca',
+    price: 89.9,
+    coverImageUrl: '/images/products/camisa-social.jpg',
     store: { id: '6', name: 'Desapego Serrano', city: 'Gramado', verified: true },
-    category: 'Sapatos',
-    size: '38',
-    color: 'Preto',
-    brand: 'Osklen',
-    condition: 'Usado',
-    description:
-      'Bota de couro legítimo, comprada em Gramado e usada em poucos invernos. ' +
-      'Couro macio com pátina natural, sola em bom estado sem desgaste irregular. ' +
-      'Cadarços e ilhoses originais, sem trocas.',
-    material: '100% couro bovino',
-    measurements: 'Numeração 38 (BR) • Cano 18cm',
-    status: 'ativo',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-6-0/600/800', position: 0 }],
-  },
-  {
-    id: '7',
-    name: 'Hering Moletom Verde',
-    price: 119.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-7-0/600/800',
-    store: { id: '7', name: 'Ateliê Reviver', city: 'Canoas', verified: false },
     category: 'Roupas',
-    size: 'GG',
-    color: 'Verde',
+    size: 'G',
+    color: 'Branco',
     brand: 'Hering',
     condition: 'Seminovo',
     description:
-      'Moletom felpado, ideal pros dias frios do RS. ' +
-      'Cor verde musgo sem desbotamento, felpa interna ainda macia. ' +
-      'Punhos e barra com elasticidade preservada, sem bolinhas de uso.',
-    material: '80% algodão, 20% poliéster',
-    measurements: 'Ombro a ombro 56cm • Comprimento 72cm',
+      'Camisa branca de corte clássico, fácil de combinar no trabalho ou no dia a dia. ' +
+      'Garimpada em brechó e sem marcas visíveis de desgaste.',
+    material: 'Algodão',
+    measurements: 'Ombro a ombro 46cm • Comprimento 70cm',
     status: 'ativo',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-7-0/600/800', position: 0 }],
+    media: [{ type: 'image', url: '/images/products/camisa-social.jpg', position: 0 }],
+  },
+  {
+    id: '7',
+    name: 'Jaqueta bomber caramelo',
+    price: 139.9,
+    coverImageUrl: '/images/products/jaqueta-bomber.jpg',
+    store: { id: '7', name: 'Ateliê Reviver', city: 'Canoas', verified: false },
+    category: 'Roupas',
+    size: 'G',
+    color: 'Caramelo',
+    brand: 'Vintage',
+    condition: 'Seminovo',
+    description:
+      'Jaqueta bomber leve em tom caramelo, com fechamento frontal e punhos elásticos. ' +
+      'Peça de segunda mão em ótimo estado, sem desbotamento aparente.',
+    material: 'Poliéster',
+    measurements: 'Ombro a ombro 48cm • Comprimento 64cm',
+    status: 'ativo',
+    media: [{ type: 'image', url: '/images/products/jaqueta-bomber.jpg', position: 0 }],
   },
   {
     id: '8',
-    name: 'Lacoste Boné Vermelho',
+    name: 'Camiseta gráfica retrô',
     price: 69.9,
-    coverImageUrl: 'https://picsum.photos/seed/vintex-8-0/600/800',
+    coverImageUrl: '/images/products/camiseta-grafica.jpg',
     store: { id: '1', name: 'Brechó Mercado Público', city: 'Porto Alegre', verified: true },
-    category: 'Acessórios',
+    category: 'Roupas',
     size: 'M',
-    color: 'Vermelho',
-    brand: 'Lacoste',
-    condition: 'Novo com etiqueta',
+    color: 'Off-white com azul',
+    brand: 'Vintage',
+    condition: 'Usado',
     description:
-      'Boné novo, nunca usado, ainda com a etiqueta original presa. ' +
-      'Estrutura firme, aba reta, fivela de ajuste traseira sem folga. ' +
-      'Bordado do jacaré intacto, sem sinais de manuseio.',
-    material: 'Sarja de algodão',
-    measurements: 'Ajustável — circunferência 54 a 60cm',
+      'Camiseta estampada garimpada em brechó, com gola e costuras preservadas. ' +
+      'A estampa tem leves sinais do tempo que dão personalidade à peça.',
+    material: 'Algodão',
+    measurements: 'Ombro a ombro 44cm • Comprimento 68cm',
     status: 'ativo',
-    media: [{ type: 'image', url: 'https://picsum.photos/seed/vintex-8-0/600/800', position: 0 }],
+    media: [{ type: 'image', url: '/images/products/camiseta-grafica.jpg', position: 0 }],
   },
+];
+
+const additionalProductSeeds = [
+  ['Vestido chemise azul-marinho', 139.9, 'M', 'Azul-marinho', 'Renner', 'vestido-floral.jpg'],
+  ['Blazer alfaiataria bege', 189.9, 'G', 'Bege', 'Zara', 'jaqueta-biker.jpg'],
+  ['Saia midi plissada vinho', 89.9, 'P', 'Vinho', 'C&A', 'vestido-floral.jpg'],
+  ['Cardigã de tricô mostarda', 109.9, 'M', 'Mostarda', 'Hering', 'jaqueta-bomber.jpg'],
+  ['Macacão pantacourt preto', 159.9, 'G', 'Preto', 'Amaro', 'vestido-floral.jpg'],
+  ['Regata canelada verde-oliva', 39.9, 'P', 'Verde-oliva', 'Youcom', 'blusa-bordada-vintage.jpg'],
+  ['Calça pantalona terracota', 99.9, '40', 'Terracota', 'Renner', 'calca-jeans.jpg'],
+  ['Suéter gola alta cinza', 119.9, 'M', 'Cinza', 'Hering', 'jaqueta-bomber.jpg'],
+  ['Camisa xadrez de flanela', 79.9, 'G', 'Xadrez vermelho', 'Riachuelo', 'camisa-social.jpg'],
+  ['Short de linho natural', 69.9, '38', 'Natural', 'Farm', 'calca-jeans.jpg'],
+  ['Vestido longo estampado', 169.9, 'M', 'Estampa azul', 'Farm', 'vestido-floral.jpg'],
+  ['Cropped de manga bufante', 59.9, 'P', 'Lilás', 'C&A', 'blusa-bordada-vintage.jpg'],
+  ['Jaqueta corta-vento roxa', 129.9, 'G', 'Roxo', 'Adidas', 'jaqueta-bomber.jpg'],
+  ['Calça de sarja verde', 89.9, '42', 'Verde-militar', 'Hering', 'calca-jeans.jpg'],
+  ['Blusa de gola laço', 74.9, 'M', 'Creme', 'Zara', 'camisa-social.jpg'],
+  ['Saia jeans com botões', 79.9, '38', 'Azul médio', 'Levi’s', 'calca-jeans.jpg'],
+  ['Vestido envelope coral', 119.9, 'G', 'Coral', 'Amaro', 'vestido-floral.jpg'],
+  ['Camiseta básica lavanda', 34.9, 'M', 'Lavanda', 'Hering', 'camiseta-grafica.jpg'],
+  ['Calça jogger preta', 69.9, 'P', 'Preto', 'Nike', 'calca-jeans.jpg'],
+  ['Kimono estampado tropical', 99.9, 'Único', 'Estampa tropical', 'Farm', 'vestido-floral.jpg'],
+  ['Polo listrada azul e branca', 64.9, 'G', 'Azul e branco', 'Lacoste', 'camisa-social.jpg'],
+  ['Colete de tricô caramelo', 89.9, 'M', 'Caramelo', 'Renner', 'jaqueta-bomber.jpg'],
+  ['Bermuda jeans destroyed', 59.9, '40', 'Azul claro', 'Riachuelo', 'calca-jeans.jpg'],
+  ['Blusa ombro a ombro floral', 69.9, 'P', 'Floral rosa', 'C&A', 'blusa-bordada-vintage.jpg'],
+  ['Vestido tubinho preto', 109.9, 'M', 'Preto', 'Zara', 'vestido-floral.jpg'],
+  ['Moletom college verde', 99.9, 'G', 'Verde', 'Adidas', 'camiseta-grafica.jpg'],
+  ['Calça clochard listrada', 94.9, '38', 'Listras bege', 'Amaro', 'calca-jeans.jpg'],
+  ['Camisa jeans manga curta', 84.9, 'M', 'Índigo', 'Levi’s', 'camisa-social.jpg'],
+  ['Saia envelope estampada', 74.9, 'M', 'Estampa azul', 'Farm', 'vestido-floral.jpg'],
+  [
+    'Jaqueta de sarja verde-musgo',
+    149.9,
+    'G',
+    'Verde-musgo',
+    'Hering',
+    'jaqueta-jeans-vintage.jpg',
+  ],
+  ['Blusa manga longa canelada', 54.9, 'P', 'Bordô', 'Renner', 'blusa-bordada-vintage.jpg'],
+  ['Calça skinny preta', 99.9, '40', 'Preto', 'Zara', 'calca-jeans.jpg'],
+  ['Vestido camisola estampado', 89.9, 'G', 'Estampa floral', 'C&A', 'vestido-floral.jpg'],
+  ['Camiseta listrada retrô', 49.9, 'M', 'Listras azul-marinho', 'Vintage', 'camiseta-grafica.jpg'],
+  ['Casaco de lã batida', 199.9, 'G', 'Camel', 'Zara', 'jaqueta-bomber.jpg'],
+  ['Top de alças acetinado', 64.9, 'P', 'Champanhe', 'Amaro', 'blusa-bordada-vintage.jpg'],
+  ['Calça cargo bege', 129.9, '42', 'Bege', 'Riachuelo', 'calca-jeans.jpg'],
+  ['Blazer xadrez cinza', 179.9, 'M', 'Xadrez cinza', 'Renner', 'jaqueta-biker.jpg'],
+  ['Vestido boho de crochê', 139.9, 'M', 'Cru', 'Farm', 'vestido-floral.jpg'],
+  ['Camiseta oversized terracota', 59.9, 'G', 'Terracota', 'Youcom', 'camiseta-grafica.jpg'],
+  ['Saia longa jeans', 109.9, '40', 'Azul escuro', 'Levi’s', 'calca-jeans.jpg'],
+  ['Camisa de viscose estampada', 79.9, 'M', 'Estampa verde', 'C&A', 'camisa-social.jpg'],
+  ['Jaqueta puffer vermelha', 169.9, 'G', 'Vermelho', 'Adidas', 'jaqueta-bomber.jpg'],
+  [
+    'Regata de seda estampada',
+    89.9,
+    'P',
+    'Estampa geométrica',
+    'Zara',
+    'blusa-bordada-vintage.jpg',
+  ],
+  ['Calça reta de alfaiataria', 119.9, '38', 'Grafite', 'Amaro', 'calca-jeans.jpg'],
+  ['Vestido de poá preto e branco', 129.9, 'M', 'Poá', 'Renner', 'vestido-floral.jpg'],
+  ['Suéter listrado colorido', 94.9, 'G', 'Listras coloridas', 'Hering', 'jaqueta-bomber.jpg'],
+  ['Camiseta estampada de banda', 74.9, 'M', 'Preto', 'Vintage', 'camiseta-grafica.jpg'],
+  ['Short de cintura alta floral', 59.9, '38', 'Floral amarelo', 'Farm', 'calca-jeans.jpg'],
+  ['Blusa peplum azul', 69.9, 'P', 'Azul royal', 'C&A', 'blusa-bordada-vintage.jpg'],
+  ['Vestido de malha canelada', 99.9, 'G', 'Verde-sálvia', 'Youcom', 'vestido-floral.jpg'],
+  ['Jaqueta jeans oversized', 159.9, 'G', 'Azul índigo', 'Levi’s', 'jaqueta-jeans-vintage.jpg'],
+] as const;
+
+const conditions = ['Seminovo', 'Usado', 'Marcas de uso'] as const;
+const activeStores = baseProducts.filter((product) => product.status === 'ativo');
+
+export const products: ProductDetail[] = [
+  ...baseProducts,
+  ...additionalProductSeeds.map(
+    ([name, price, size, color, brand, image], index): ProductDetail => {
+      const imageUrl = `/images/products/${image}`;
+      const store = activeStores[index % activeStores.length].store;
+
+      return {
+        id: String(baseProducts.length + index + 1),
+        name,
+        price,
+        coverImageUrl: imageUrl,
+        store,
+        category: 'Roupas',
+        size,
+        color,
+        brand,
+        condition: conditions[index % conditions.length],
+        description: 'Peça de segunda mão em bom estado, pronta para ganhar novas histórias.',
+        status: 'ativo',
+        media: [{ type: 'image', url: imageUrl, position: 0 }],
+      };
+    },
+  ),
 ];

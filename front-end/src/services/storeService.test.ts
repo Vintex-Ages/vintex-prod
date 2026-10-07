@@ -9,6 +9,7 @@ import {
 } from './storeService';
 import { logout, me, register } from './authService';
 import type { StoreInput, StoreProfile } from '@/types/store';
+import { products as mockProducts } from '@/mocks/products';
 
 const input: StoreInput = {
   name: 'Brechó da Ceci',
@@ -138,9 +139,11 @@ describe('storeService', () => {
   });
 
   it('getStoreProducts devolve só peças ativas da loja', async () => {
-    // Loja '1' tem 2 peças 'ativo' no mock de catálogo (ids 1 e 8).
+    const activeCount = mockProducts.filter(
+      (product) => product.store.id === '1' && product.status === 'ativo',
+    ).length;
     const activeStore = await getStoreProducts('1', {});
-    expect(activeStore.items.length).toBe(2);
+    expect(activeStore.items.length).toBe(Math.min(activeCount, activeStore.pageSize));
     expect(activeStore.items.every((product) => product.store.id === '1')).toBe(true);
 
     // Loja '4' só tem uma peça, com status 'vendido' — não deve aparecer.
@@ -278,6 +281,46 @@ describe('storeService (API real) — loja pública', () => {
     expect(loja.createdAt).toBe('2026-03-27T00:00:00');
     expect(loja.metrics?.activeProducts).toBe(12);
     expect(loja.metrics?.soldProducts).toBe(4);
+  });
+
+  // FE-US007-1: a rota privada não traz `verified`; o selo vem do retrato público.
+  it('getMyVerification lê a loja privada e o selo do retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(config.url ?? '');
+      const data =
+        config.url === '/users/me/store'
+          ? {
+              id: 3,
+              seller_id: 9,
+              name: 'Segunda Chance Modas',
+              description: null,
+              logo_url: null,
+              pix_key: null,
+              document_type: 'CPF',
+              document_value: '529.982.247-25',
+              terms_version: 'v1',
+              terms_accepted_at: '2026-09-27T23:00:00',
+              address: null,
+            }
+          : LOJA;
+      return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await expect(getMyVerification()).resolves.toBe('confiavel');
+    expect(urls).toEqual(['/users/me/store', '/stores/3']);
+  });
+
+  it('getMyVerification devolve null sem loja, sem consultar o retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 404, data: {} } });
+
+    await expect(getMyVerification()).resolves.toBeNull();
   });
 
   it('loja sem selo vira pendente, e sem endereço não quebra', async () => {
@@ -439,17 +482,209 @@ describe('storeService (API real) — rotas privadas de escrita', () => {
   });
 
   /**
-   * `POST /api/users/me/store/verification` devolve `{ verified: boolean }`
-   * (`SellerVerificationResponse`, no `back-end#195`) — uma terceira forma,
-   * que não dá para virar `StoreProfile`. Enquanto a rota não existe na
-   * `develop`, falhar com mensagem é melhor que estourar em `metrics`.
+   * `POST /api/users/me/store/verification` devolve `{ verified: boolean }` --
+   * `SellerVerificationResponse`, do `back-end#195`, que mergeou depois do
+   * `#274` ser escrito. O `#274` tinha deixado a funcao lancando erro fixo com
+   * o comentario "a rota ainda nao existe na develop", que ficou falso.
+   *
+   * Como o `{ verified }` nao da para virar `StoreProfile` sozinho, o perfil sai
+   * de `getMyStore` e so o selo vem da resposta.
    */
-  it('requestVerification falha com mensagem, e não com TypeError de metrics', async () => {
+  it('requestVerification le o selo da rota e o resto do perfil da loja', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { requestVerification: apiRequestVerification } = await import('./storeService');
 
-    httpClient.defaults.adapter = responder({ verified: true });
+    const chamadas: string[] = [];
+    httpClient.defaults.adapter = ((config: { url?: string }) => {
+      chamadas.push(config.url ?? '');
+      const corpo = String(config.url).includes('/verification')
+        ? { verified: true }
+        : {
+            id: 5,
+            seller_id: 2,
+            name: 'Brecho do Mauro',
+            description: null,
+            logo_url: null,
+            pix_key: null,
+            document_type: 'CPF',
+            document_value: '52998224725',
+            terms_version: null,
+            terms_accepted_at: '2026-09-27T23:00:00',
+            address: null,
+          };
+      return Promise.resolve({
+        data: corpo,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    }) as never;
 
-    await expect(apiRequestVerification()).rejects.toThrow(/contrato|indisponível/i);
+    const loja = await apiRequestVerification();
+
+    expect(chamadas).toEqual(['/users/me/store/verification', '/users/me/store']);
+    expect(loja.verification).toBe('confiavel');
+    expect(loja.name).toBe('Brecho do Mauro');
+  });
+});
+
+/**
+ * Contrato de escrita da loja (FE-FIX-1, #276). O `createStore` dava 422 sempre
+ * na API real: mandava `document_number` (o back quer `document_value`),
+ * `document_type` minúsculo, sem `terms_version`, e com `pix_key`/`address` que
+ * o `StoreCreate` descartava em silêncio por `extra="ignore"`.
+ *
+ * O fixture de resposta é `model_dump_json()` do `StoreResponse` em
+ * `back-end develop@b95fe6d`, não texto escrito à mão — foi fixture inventado
+ * que deixou a rodada anterior de correção deste arquivo passar com o contrato
+ * quebrado.
+ */
+describe('storeService (API real) — o que createStore manda', () => {
+  const RESPOSTA = {
+    id: 7,
+    seller_id: 3,
+    name: 'Brecho Aurora',
+    description: 'Pecas garimpadas',
+    logo_url: 'http://localhost:8000/api/media/stores/logos/59749fb0',
+    pix_key: 'aurora@vintex.com',
+    document_type: 'CPF',
+    document_value: '52998224725',
+    terms_version: null,
+    terms_accepted_at: '2026-03-14T12:00:00Z',
+    address: {
+      street: 'Rua Ali',
+      number: '120',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90010000',
+    },
+  };
+
+  /** Os campos que o `StoreCreate` conhece. Qualquer outro é descartado. */
+  const CAMPOS_DO_SCHEMA = [
+    'name',
+    'description',
+    'logo_url',
+    'pix_key',
+    'address',
+    'document_type',
+    'document_value',
+    'terms_version',
+  ];
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function capturar(entrada: StoreInput) {
+    const { httpClient } = await import('@/services/httpClient');
+    const { createStore: apiCreateStore } = await import('./storeService');
+    const enviados: { url: string; corpo: unknown }[] = [];
+
+    httpClient.defaults.adapter = ((config: { url?: string; data?: unknown }) => {
+      enviados.push({ url: config.url ?? '', corpo: config.data });
+      const corpo = String(config.url).includes('/media')
+        ? { kind: 'logo', items: [{ key: 'stores/logos/59749fb0', url: RESPOSTA.logo_url }] }
+        : RESPOSTA;
+      return Promise.resolve({
+        data: corpo,
+        status: 201,
+        statusText: 'Created',
+        headers: {},
+        config,
+      });
+    }) as never;
+
+    const loja = await apiCreateStore(entrada);
+    return { loja, enviados };
+  }
+
+  it('manda document_value em maiúscula e só com dígitos, e nada fora do schema', async () => {
+    const { enviados } = await capturar({
+      ...input,
+      document: { type: 'cpf', number: '529.982.247-25' },
+    });
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo.document_type).toBe('CPF');
+    expect(corpo.document_value).toBe('52998224725');
+    expect(corpo).not.toHaveProperty('document_number');
+    expect(Object.keys(corpo).filter((k) => !CAMPOS_DO_SCHEMA.includes(k))).toEqual([]);
+  });
+
+  it('manda o endereço com os nomes do back, e o CEP só com dígitos', async () => {
+    const { enviados } = await capturar(input);
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo.address).toEqual({
+      street: 'Rua das Flores',
+      number: '123',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90000000',
+    });
+    expect(corpo.pix_key).toBe('ceci@vintex.com');
+  });
+
+  it('não manda terms_version quando não houve aceite do contrato', async () => {
+    const { enviados } = await capturar(input);
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo).not.toHaveProperty('terms_version');
+  });
+
+  it('manda terms_version quando houve aceite', async () => {
+    const { enviados } = await capturar({ ...input, acceptedContractVersion: 'v0' });
+
+    expect(JSON.parse(String(enviados[0].corpo)).terms_version).toBe('v0');
+  });
+
+  it('descrição vazia vai como null, porque o back aceita nulo', async () => {
+    const { enviados } = await capturar({ ...input, description: '   ' });
+
+    expect(JSON.parse(String(enviados[0].corpo)).description).toBeNull();
+  });
+
+  /**
+   * A rota da loja recebe `logo_url`, não arquivo: `multipart/form-data` nela
+   * devolvia `422 {"body": "Input should be a valid dictionary"}`.
+   */
+  it('sobe a logo por /users/me/media com kind=logo antes de criar a loja', async () => {
+    const logo = new File(['x'], 'logo.png', { type: 'image/png' });
+    const { enviados } = await capturar({ ...input, logo });
+
+    expect(enviados).toHaveLength(2);
+    expect(enviados[0].url).toBe('/users/me/media');
+    expect((enviados[0].corpo as FormData).get('kind')).toBe('logo');
+
+    expect(enviados[1].url).toBe('/users/me/store');
+    expect(JSON.parse(String(enviados[1].corpo)).logo_url).toBe(RESPOSTA.logo_url);
+  });
+
+  it('sem logo, não chama a rota de mídia', async () => {
+    const { enviados } = await capturar(input);
+
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].url).toBe('/users/me/store');
+  });
+
+  it('lê a cidade do endereço que a rota privada passou a devolver', async () => {
+    const { loja } = await capturar(input);
+
+    expect(loja.city).toBe('Porto Alegre');
+    expect(loja.state).toBe('RS');
   });
 });

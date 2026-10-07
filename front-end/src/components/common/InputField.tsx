@@ -71,7 +71,6 @@ function InputField({
       {message ? (
         <p
           id={messageId}
-          role={hasError ? 'alert' : undefined}
           className={clsx('text-label', hasError ? 'text-vermelho-escuro' : 'text-texto-auxiliar')}
         >
           {message}

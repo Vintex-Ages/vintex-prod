@@ -2,7 +2,18 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import Layout from './Layout';
+
+const CART_VALUE: CartContextValue = {
+  cart: { groups: [] },
+  count: 0,
+  loading: false,
+  error: null,
+  add: async () => {},
+  remove: async () => {},
+  refresh: async () => {},
+};
 
 /** Só pra ler a rota atual do MemoryRouter depois do clique no FAB. */
 function LocationProbe() {
@@ -12,11 +23,13 @@ function LocationProbe() {
 
 afterEach(cleanup);
 
-function renderLayout(children: React.ReactNode, bottomSpacer = false) {
+function renderLayout(children: React.ReactNode, productDetailLayout = false, initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthProvider>
-        <Layout bottomSpacer={bottomSpacer}>{children}</Layout>
+        <CartContext.Provider value={CART_VALUE}>
+          <Layout productDetailLayout={productDetailLayout}>{children}</Layout>
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -31,33 +44,22 @@ describe('<Layout />', () => {
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
   });
 
-  /**
-   * Sem a faixa, a barra `fixed` do detalhe da peça cobre as últimas linhas do
-   * rodapé abaixo de `web`: compensar dentro do `<main>` não resolve, porque o
-   * rodapé é irmão posterior do conteúdo.
-   */
-  it('reserva a faixa abaixo do rodapé só quando pedida', () => {
-    const semFaixa = renderLayout(null);
-    expect(semFaixa.container.querySelector('.h-28')).not.toBeInTheDocument();
-    cleanup();
+  it('usa a composição própria do produto sem rodapé ou FAB global', () => {
+    renderLayout(null, true, '/product/1');
 
-    const comFaixa = renderLayout(null, true);
-    const faixa = comFaixa.container.querySelector('.h-28');
-    expect(faixa).toBeInTheDocument();
-    expect(faixa).toHaveClass('web:hidden');
-    expect(screen.getByRole('contentinfo').compareDocumentPosition(faixa!)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Abrir assistente Vintex' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('mantém a navegação principal visível em todo tamanho de tela', () => {
-    renderLayout(null);
+  it('usa a barra compacta na rota do produto', () => {
+    renderLayout(null, false, '/product/1');
 
-    // Antes a navegacao era `hidden tablet:flex`: abaixo de 720px os dois links
-    // sumiam e o catalogo so era alcancavel pelo rodape. Com a marca em `h3` em
-    // vez de `h2`, os dois cabem — e dois links nao justificam um menu sanfonado.
-    const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).not.toHaveClass('hidden');
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
   });
 
   // --- #207: FAB da Vintex só no mobile/tablet, spotlight assume no web ---
@@ -69,15 +71,7 @@ describe('<Layout />', () => {
     expect(fab.parentElement).toHaveClass('tablet:hidden');
   });
 
-  it('sobe o FAB (raised) quando bottomSpacer é true, sem sobrepor a barra fixa', () => {
-    renderLayout(null, true);
-
-    const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
-    expect(fab.parentElement).toHaveClass('bottom-24');
-    expect(fab.parentElement).toHaveClass('web:bottom-5');
-  });
-
-  it('mantém o FAB na posição padrão quando bottomSpacer é false', () => {
+  it('mantém o FAB na posição padrão em páginas fora do detalhe de produto', () => {
     renderLayout(null);
 
     const fab = screen.getByRole('button', { name: 'Abrir assistente Vintex' });
@@ -89,9 +83,11 @@ describe('<Layout />', () => {
     render(
       <MemoryRouter>
         <AuthProvider>
-          <Layout>
-            <LocationProbe />
-          </Layout>
+          <CartContext.Provider value={CART_VALUE}>
+            <Layout>
+              <LocationProbe />
+            </Layout>
+          </CartContext.Provider>
         </AuthProvider>
       </MemoryRouter>,
     );

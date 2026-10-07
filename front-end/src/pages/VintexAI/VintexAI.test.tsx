@@ -1,10 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import VintexAI from './VintexAI';
 import * as vintexAiService from '@/services/vintexAiService';
 import { resetVintexChat } from '@/hooks/useVintexChat';
+import { products as mockProducts } from '@/mocks/products';
 import type { ChatChunk } from '@/types/vintex-ai';
 
 beforeEach(() => {
@@ -72,13 +73,15 @@ describe('VintexAI page', () => {
     expect(screen.getByText('Conversa com a Vintex')).toBeInTheDocument();
   });
 
-  it('um chip de sugestão preenche o campo de busca', () => {
+  it('um chip de sugestão preenche o campo de mensagem', () => {
     fakeChat([{ type: 'done' }]);
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Look para um jantar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manter cor prata' }));
 
-    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue('Look para um jantar');
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveValue(
+      'Quero alternativas na cor prata',
+    );
   });
 
   it('enviar uma mensagem adiciona a bolha do usuário e a resposta cresce em streaming até done', async () => {
@@ -314,5 +317,139 @@ describe('VintexAI page', () => {
 
     expect(await screen.findByText('bota de cano curto')).toBeInTheDocument();
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  });
+
+  // FE-US027-3 — objetivo declarado: garantir a ponte com a VS-009.
+  it('o chunk interpreted vira chips, e "Ver no catálogo" abre a busca com os mesmos filtros', async () => {
+    fakeChat([
+      { type: 'text', delta: 'Separei algumas opções.' },
+      {
+        type: 'interpreted',
+        interpreted: {
+          filters: { category: 'Casacos', color: 'Preto', priceMax: 100 },
+          similarity: 'streetwear',
+        },
+      },
+      { type: 'done' },
+    ]);
+
+    function CatalogProbe() {
+      const { search } = useLocation();
+      return <h1>Catálogo {search}</h1>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/vintex']}>
+        <Routes>
+          <Route path="/vintex" element={<VintexAI />} />
+          <Route path="/catalog" element={<CatalogProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+      target: { value: 'casaco preto até 100 estilo streetwear' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    const entendeu = await screen.findByRole('region', {
+      name: 'Como a Vintex entendeu seu pedido',
+    });
+    expect(entendeu).toHaveTextContent('Casacos');
+    expect(entendeu).toHaveTextContent('Preto');
+    expect(entendeu).toHaveTextContent('até R$ 100,00');
+    expect(entendeu).toHaveTextContent('parecido com: streetwear');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver no catálogo' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Catálogo ?category=Casacos&color=Preto&priceMax=100',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('sem interpreted, a resposta não mostra a interpretação', async () => {
+    fakeChat([{ type: 'text', delta: 'Oi!' }, { type: 'done' }]);
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+      target: { value: 'oi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+
+    await screen.findByText('Oi!');
+    expect(screen.queryByRole('region', { name: 'Como a Vintex entendeu seu pedido' })).toBeNull();
+  });
+
+  // #297: a API real da S2 não manda `text` (back-end#149) — a bolha nunca fica vazia.
+  describe('resposta sem texto', () => {
+    function perguntar(pergunta: string) {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: pergunta },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+    }
+
+    it('com peças, a frase de reserva diz quantas foram encontradas', async () => {
+      fakeChat([{ type: 'products', products: mockProducts.slice(0, 2) }, { type: 'done' }]);
+      renderPage();
+      perguntar('vestido floral');
+
+      expect(
+        await screen.findByText('Encontrei 2 peças no catálogo que combinam com o que você pediu.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Buscar no catálogo' })).toBeNull();
+    });
+
+    it('sem peças, avisa e oferece buscar a pergunta no catálogo', async () => {
+      fakeChat([{ type: 'products', products: [] }, { type: 'done' }]);
+
+      function CatalogProbe() {
+        const { search } = useLocation();
+        return <h1>Catálogo {search}</h1>;
+      }
+
+      render(
+        <MemoryRouter initialEntries={['/vintex']}>
+          <Routes>
+            <Route path="/vintex" element={<VintexAI />} />
+            <Route path="/catalog" element={<CatalogProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      perguntar('jaqueta de couro');
+
+      expect(await screen.findByText('Não achei peças para isso agora.')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Buscar no catálogo' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Catálogo ?q=jaqueta+de+couro' }),
+      ).toBeInTheDocument();
+    });
+
+    it('o texto do back prevalece sobre a frase de reserva', async () => {
+      fakeChat([
+        { type: 'text', delta: 'Olha estas.' },
+        { type: 'products', products: [] },
+        { type: 'done' },
+      ]);
+      renderPage();
+      perguntar('saia');
+
+      await screen.findByText('Olha estas.');
+      await waitFor(() => expect(screen.queryByTestId('chat-bubble-streaming-cursor')).toBeNull());
+      expect(screen.queryByText('Não achei peças para isso agora.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Buscar no catálogo' })).toBeNull();
+    });
+
+    it('com erro, mostra o erro e não a frase de reserva', async () => {
+      fakeChat([{ type: 'error', message: 'Falhou.' }]);
+      renderPage();
+      perguntar('saia');
+
+      expect(await screen.findByText('Falhou.')).toBeInTheDocument();
+      expect(screen.queryByText('Não achei peças para isso agora.')).toBeNull();
+    });
   });
 });

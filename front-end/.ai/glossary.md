@@ -11,4 +11,6 @@
 - **Favoritar**: ação do comprador de salvar um produto para si; não gera notificação para o vendedor.
 - **Curtida**: interação do comprador com um produto que gera notificação para o vendedor (diferente de favoritar).
 
+Status da peça (Rascunho, Anunciada, Pausada, Vendida) e Indisponível no carrinho: ver `CONTEXT.md`.
+
 Amplie este arquivo somente com termos confirmados pelo domínio ou pelo cliente.

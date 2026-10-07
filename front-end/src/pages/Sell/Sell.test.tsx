@@ -50,6 +50,7 @@ function renderSell() {
           <Routes>
             <Route path="/sell" element={<Sell />} />
             <Route path="/seller" element={<h1>Painel do vendedor</h1>} />
+            <Route path="/" element={<h1>Home</h1>} />
           </Routes>
         </MemoryRouter>
       </ToastProvider>
@@ -57,9 +58,15 @@ function renderSell() {
   );
 }
 
+/** Abre `/sell` e aceita o contrato de venda (FE-US003b-1) para chegar ao formulário. */
 async function renderForm() {
   const utils = renderSell();
-  await screen.findByRole('heading', { name: 'Quero vender' });
+  const user = userEvent.setup({ delay: null });
+  const aceitar = await screen.findByRole('button', { name: 'Aceitar' });
+  // O modal habilita o Aceitar depois de medir o texto; clicar antes não faz nada.
+  await waitFor(() => expect(aceitar).toBeEnabled());
+  await user.click(aceitar);
+  await screen.findByRole('button', { name: 'Abrir minha loja' });
   return utils;
 }
 
@@ -100,6 +107,7 @@ describe('<Sell />', () => {
         name: 'Brechó da Ana',
         document: { type: 'cpf', number: '52998224725' },
         pixKey: 'ana@exemplo.com',
+        acceptedContractVersion: 'contrato-0.1-placeholder',
       }),
     );
     expect(refreshUser).toHaveBeenCalled();
@@ -173,6 +181,23 @@ describe('<Sell />', () => {
     expect(screen.getByLabelText('Chave Pix')).toHaveAccessibleDescription('Informe a chave Pix.');
     expect(screen.getByLabelText('UF')).toHaveAccessibleDescription('Selecione a UF.');
     expect(createStore).not.toHaveBeenCalled();
+  });
+
+  // #283: eram nove `role="alert"` no mesmo render e o foco ficava no botão.
+  it('envio vazio anuncia um resumo só e leva o foco ao primeiro campo inválido', async () => {
+    const user = userEvent.setup({ delay: null });
+    await renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Abrir minha loja' }));
+
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Confira 9 campos antes de continuar:');
+    expect(screen.getByLabelText('Nome da loja')).toHaveFocus();
+
+    // O link do resumo leva ao campo.
+    await user.click(screen.getByRole('link', { name: 'Informe a chave Pix.' }));
+    expect(screen.getByLabelText('Chave Pix')).toHaveFocus();
   });
 
   it('CEP inexistente aparece no próprio campo', async () => {
@@ -261,5 +286,37 @@ describe('<Sell />', () => {
 
     expect(await screen.findByText('Você já tem uma loja.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Abrir minha loja' })).toBeEnabled();
+  });
+
+  describe('contrato de venda (FE-US003b-1)', () => {
+    it('abre o contrato antes do formulário, com Aceitar esperando a rolagem até o fim', async () => {
+      renderSell();
+
+      expect(await screen.findByRole('dialog', { name: 'Contrato de venda' })).toBeInTheDocument();
+      expect(screen.getByText('Versão contrato-0.1-placeholder')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Abrir minha loja' })).toBeNull();
+    });
+
+    // Objetivo declarado: garantir o registro separado (RN-93).
+    it('Aceitar libera o formulário', async () => {
+      await renderForm();
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByLabelText('Nome da loja')).toBeInTheDocument();
+    });
+
+    // Objetivo declarado: garantir "sem aceite do contrato, sem loja".
+    it('Não aceitar volta à Home com aviso e não cria loja', async () => {
+      const user = userEvent.setup({ delay: null });
+      renderSell();
+
+      await user.click(await screen.findByRole('button', { name: 'Não aceitar' }));
+
+      expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument();
+      expect(
+        screen.getByText('Sem aceitar o contrato de venda não dá para abrir uma loja.'),
+      ).toBeInTheDocument();
+      expect(createStore).not.toHaveBeenCalled();
+    });
   });
 });

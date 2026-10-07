@@ -446,7 +446,11 @@ describe('MediaUploader', () => {
       />,
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Adicione ao menos uma foto');
+    expect(screen.getByLabelText('Fotos da peça')).toHaveAccessibleDescription(
+      'Adicione ao menos uma foto',
+    );
+    // O erro não é região `alert`: quem anuncia é o `FormErrorSummary` do formulário (#283).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Até 8 arquivos')).not.toBeInTheDocument();
   });
 

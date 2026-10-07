@@ -11,6 +11,8 @@ import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import VintexAI from '@/pages/VintexAI/VintexAI';
 import Sell from '@/pages/Sell/Sell';
 import SellerAdmin from '@/pages/SellerAdmin/SellerAdmin';
+import Review from '@/pages/SellerProduct/Review';
+import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
@@ -25,6 +27,7 @@ import { paths } from './paths';
  * Ficam DE FORA, de propósito:
  * - `/login` e `/register`: telas de autenticação de página inteira, com a
  *   própria volta e o próprio título.
+ * - `/onboarding`: a tela mobile tem cabeçalho e fluxo próprios do Figma.
  * - `/vintex`: a conversa tem cabeçalho próprio e é `h-screen overflow-hidden`;
  *   dentro do Layout a página ganharia dois `banner` e o campo de mensagem
  *   cairia abaixo da dobra.
@@ -32,12 +35,11 @@ import { paths } from './paths';
  */
 function WithLayout() {
   const { pathname } = useLocation();
-  // O detalhe da peça ancora a barra de favoritar/comprar no rodapé da
-  // viewport abaixo de `web`. Só ela precisa da faixa extra no fim.
-  const hasFixedBottomBar = matchPath(paths.product, pathname) !== null;
+  // O detalhe da peça usa a composição própria do frame do Figma.
+  const isProductDetail = matchPath(paths.product, pathname) !== null;
 
   return (
-    <Layout bottomSpacer={hasFixedBottomBar}>
+    <Layout productDetailLayout={isProductDetail}>
       <Outlet />
     </Layout>
   );
@@ -47,7 +49,7 @@ function WithLayout() {
  * Rotas da Sprint 1 (FE-FND-1c, #106) e Sprint 2 (FE-FND-4, #205).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
- * exigem sessão (`RequireAuth`); `/seller` e as duas rotas de peça exigem
+ * exigem sessão (`RequireAuth`); `/seller` e as três rotas de peça exigem
  * loja (`RequireStore`, FE-US006-2 #213 — sem loja, vai a `/sell` com aviso);
  * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
@@ -62,7 +64,6 @@ function AppRoutes() {
         <Route path={paths.home} element={<Home />} />
         <Route path={paths.catalog} element={<Catalog />} />
         <Route path={paths.product} element={<ProductDetail />} />
-        <Route path={paths.onboarding} element={<StyleSelection />} />
         <Route
           path={paths.sell}
           element={
@@ -79,22 +80,20 @@ function AppRoutes() {
             </RequireStore>
           }
         />
+        {/* Cadastro de peça (#216, #217) e revisão (#218) sob uma rota-pai:
+            o `SellerProductFlow` mantém o mesmo estado entre formulário e
+            revisão, e a guarda roda uma vez para o fluxo todo. */}
         <Route
-          path={paths.sellerProductNew}
           element={
             <RequireStore>
-              <SellerProductForm />
+              <SellerProductFlow />
             </RequireStore>
           }
-        />
-        <Route
-          path={paths.sellerProduct}
-          element={
-            <RequireStore>
-              <SellerProductForm />
-            </RequireStore>
-          }
-        />
+        >
+          <Route path={paths.sellerProductNew} element={<SellerProductForm />} />
+          <Route path={paths.sellerProduct} element={<SellerProductForm />} />
+          <Route path={paths.sellerProductReview} element={<Review />} />
+        </Route>
         <Route
           path={paths.cart}
           element={
@@ -113,6 +112,7 @@ function AppRoutes() {
           }
         />
       </Route>
+      <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path={paths.vintex} element={<VintexAI />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
