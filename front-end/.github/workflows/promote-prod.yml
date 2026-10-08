@@ -14,16 +14,19 @@ concurrency:
 
 jobs:
   promote:
-    if: vars.GPA_APP_CLIENT_ID != ''
+    if: vars.GPA_APP_CLIENT_ID != '' && github.ref == 'refs/heads/deploy'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ vars.GPA_APP_CLIENT_ID }}
           private-key: ${{ secrets.GPA_APP_PRIVATE_KEY }}
           owner: Vintex-Ages
+          repositories: vintex-prod
       - run: node .github/scripts/promote-prod.mjs
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
