@@ -131,6 +131,11 @@ function Header() {
       label: 'Meus Estilos & Preferências da IA',
       onSelect: () => goTo(paths.profilePreferences),
     },
+    { label: 'Meus pedidos', onSelect: () => goTo(paths.orders) },
+    { label: 'Meus favoritos', onSelect: () => goTo(paths.favorites) },
+    ...(user?.is_admin === true
+      ? [{ label: 'Painel admin', onSelect: () => goTo(paths.adminReceipts) }]
+      : []),
   ];
 
   /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
