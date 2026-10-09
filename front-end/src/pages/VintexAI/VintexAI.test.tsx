@@ -465,7 +465,27 @@ describe('VintexAI page', () => {
       // Ainda em streaming, antes de qualquer chunk: o aviso já saiu.
       await screen.findByText('bota');
       expect(screen.queryByRole('status')).toBeNull();
+      // A bolha de cota antiga volta a ser neutra: nem aviso, nem retry.
+      expect(screen.queryByText(AVISO_COTA)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
       expect(await screen.findByText('Achei botas.')).toBeInTheDocument();
+    });
+
+    it('pergunta nova (não retry) depois de um erro tira o erro e o retry da bolha antiga', async () => {
+      fakeChat([{ type: 'error', message: 'Falha de rede.' }]);
+      renderPage();
+      perguntar('saia');
+      await screen.findByRole('button', { name: 'Tentar de novo' });
+
+      fakeChat([{ type: 'text', delta: 'Achei saias.' }, { type: 'done' }], 30);
+      perguntar('saia longa');
+
+      // Logo no envio, antes de qualquer chunk da resposta nova.
+      expect(screen.queryByText('Falha de rede.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+      expect(await screen.findByText('Achei saias.')).toBeInTheDocument();
+      expect(screen.queryByText('Falha de rede.')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
     });
   });
 

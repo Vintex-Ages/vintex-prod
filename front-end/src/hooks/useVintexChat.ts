@@ -94,7 +94,7 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
   const controller = new AbortController();
   abortController = controller;
 
-  setState({ streamingMessageId: vintexMessageId, errorReason: undefined });
+  setState({ streamingMessageId: vintexMessageId });
 
   (async () => {
     let failed = false;
@@ -162,7 +162,15 @@ function sendMessage(text: string): void {
   const vintexMessage = createMessage('vintex', '');
   const history = [...state.messages, userMessage];
 
-  setState((current) => ({ messages: [...current.messages, userMessage, vintexMessage] }));
+  // Pergunta nova encerra o erro anterior por inteiro: limpar só parte dos
+  // três campos deixava a bolha antiga com o texto do erro e o "Tentar de
+  // novo" (inclusive numa bolha que era de cota esgotada).
+  setState((current) => ({
+    messages: [...current.messages, userMessage, vintexMessage],
+    errorMessageId: null,
+    errorText: null,
+    errorReason: undefined,
+  }));
   runStream(history, vintexMessage.id, trimmed);
 }
 
