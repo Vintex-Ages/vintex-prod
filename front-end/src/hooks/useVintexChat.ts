@@ -9,6 +9,8 @@ interface VintexChatState {
   /** Id da mensagem que falhou, ou `null` se nenhuma. */
   errorMessageId: string | null;
   errorText: string | null;
+  /** `'quota'` quando a falha foi a cota do dia esgotada (FE-US027-5): não adianta tentar de novo. */
+  errorReason: 'quota' | undefined;
 }
 
 interface UseVintexChatResult extends VintexChatState {
@@ -40,6 +42,7 @@ let state: VintexChatState = {
   streamingMessageId: null,
   errorMessageId: null,
   errorText: null,
+  errorReason: undefined,
 };
 // Identidade da navegação cuja mensagem inicial já foi enviada. Era um
 // booleano, e por ser módulo-escopado como o resto do store ele nunca voltava
@@ -91,7 +94,7 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
   const controller = new AbortController();
   abortController = controller;
 
-  setState({ streamingMessageId: vintexMessageId });
+  setState({ streamingMessageId: vintexMessageId, errorReason: undefined });
 
   (async () => {
     let failed = false;
@@ -124,7 +127,11 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
           }));
         } else if (chunk.type === 'error') {
           failed = true;
-          setState({ errorMessageId: vintexMessageId, errorText: chunk.message });
+          setState({
+            errorMessageId: vintexMessageId,
+            errorText: chunk.message,
+            errorReason: chunk.reason,
+          });
         }
       }
 
@@ -182,6 +189,7 @@ function retry(): void {
     ),
     errorMessageId: null,
     errorText: null,
+    errorReason: undefined,
   }));
 
   runStream(history, failedId, lastUserText);
@@ -197,7 +205,13 @@ export function resetVintexChat(): void {
   abortController = null;
   bootstrappedKey = null;
   lastUserText = null;
-  state = { messages: [], streamingMessageId: null, errorMessageId: null, errorText: null };
+  state = {
+    messages: [],
+    streamingMessageId: null,
+    errorMessageId: null,
+    errorText: null,
+    errorReason: undefined,
+  };
   listeners.forEach((listener) => listener());
 }
 
@@ -215,13 +229,14 @@ export function resetVintexChat(): void {
  * histórico enviado ao service inclui toda a conversa até ali.
  *
  * Usage:
- *   const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
+ *   const { messages, streamingMessageId, errorMessageId, errorText, errorReason, sendMessage, retry } =
  *     useVintexChat(location.state?.message);
  *
  *   <ChatBubble
  *     message={message}
  *     streaming={message.id === streamingMessageId}
  *     error={message.id === errorMessageId ? errorText ?? undefined : undefined}
+ *     errorReason={message.id === errorMessageId ? errorReason : undefined}
  *     onRetry={retry}
  *   />
  */

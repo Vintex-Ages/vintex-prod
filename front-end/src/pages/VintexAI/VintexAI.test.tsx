@@ -382,6 +382,93 @@ describe('VintexAI page', () => {
     expect(screen.queryByRole('region', { name: 'Como a Vintex entendeu seu pedido' })).toBeNull();
   });
 
+  // FE-US027-5 (#357): cota do dia do chat esgotada.
+  describe('cota do dia esgotada', () => {
+    const AVISO_COTA = 'Você atingiu o limite de perguntas por hoje.';
+
+    function perguntar(pergunta: string) {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: pergunta },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+    }
+
+    it('mostra o aviso como status, sem "Tentar de novo", e trava o envio', async () => {
+      fakeChat([{ type: 'error', reason: 'quota', message: AVISO_COTA }]);
+      renderPage();
+      perguntar('saia');
+
+      expect(await screen.findByRole('status')).toHaveTextContent(AVISO_COTA);
+      expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
+
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: 'outra pergunta' },
+      });
+      expect(screen.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    });
+
+    it('erro comum (503) continua com "Tentar de novo" e o envio liberado', async () => {
+      fakeChat([{ type: 'error', message: 'Falha ao conectar com a Vintex (HTTP 503).' }]);
+      renderPage();
+      perguntar('saia');
+
+      expect(await screen.findByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+      expect(screen.queryByRole('status')).toBeNull();
+
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: 'outra pergunta' },
+      });
+      expect(screen.getByRole('button', { name: 'Enviar' })).toBeEnabled();
+    });
+
+    it('recomeçar a conversa libera o envio de novo', async () => {
+      fakeChat([{ type: 'error', reason: 'quota', message: AVISO_COTA }]);
+      renderPage();
+      perguntar('saia');
+      await screen.findByRole('status');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Recomeçar conversa' }));
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), {
+        target: { value: 'outra pergunta' },
+      });
+
+      expect(screen.getByRole('button', { name: 'Enviar' })).toBeEnabled();
+    });
+
+    it('uma pergunta nova que chega pela Home limpa o aviso de cota', async () => {
+      fakeChat([{ type: 'error', reason: 'quota', message: AVISO_COTA }]);
+
+      function EntradaStub() {
+        const navigate = useNavigate();
+        return (
+          <button onClick={() => navigate('/vintex', { state: { message: 'bota' } })}>
+            perguntar
+          </button>
+        );
+      }
+
+      render(
+        <MemoryRouter initialEntries={['/vintex']}>
+          <Routes>
+            <Route path="/" element={<EntradaStub />} />
+            <Route path="/vintex" element={<VintexAI />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      perguntar('saia');
+      await screen.findByRole('status');
+
+      fakeChat([{ type: 'text', delta: 'Achei botas.' }, { type: 'done' }], 30);
+      fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'perguntar' }));
+
+      // Ainda em streaming, antes de qualquer chunk: o aviso já saiu.
+      await screen.findByText('bota');
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(await screen.findByText('Achei botas.')).toBeInTheDocument();
+    });
+  });
+
   // #297: a API real da S2 não manda `text` (back-end#149) — a bolha nunca fica vazia.
   describe('resposta sem texto', () => {
     function perguntar(pergunta: string) {
