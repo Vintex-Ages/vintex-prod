@@ -1,5 +1,6 @@
 import { matchPath, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
+import Container from '@/components/layout/Container';
 import Home from '@/pages/Home';
 import Catalog from '@/pages/Catalog/Catalog';
 import ProductDetail from '@/pages/ProductDetail';
@@ -17,7 +18,7 @@ import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
-import { RequireAuth, RequireStore } from './guards';
+import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
 /**
@@ -46,7 +47,7 @@ function WithLayout() {
 }
 
 /**
- * Rotas da Sprint 1 (FE-FND-1c, #106) e Sprint 2 (FE-FND-4, #205).
+ * Rotas das Sprints 1 (FE-FND-1c, #106), 2 (FE-FND-4, #205) e 3 (FE-FND-6, #302).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
  * exigem sessão (`RequireAuth`); `/seller` e as três rotas de peça exigem
@@ -54,8 +55,9 @@ function WithLayout() {
  * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
  *
- * Todas as rotas novas entram dentro do `WithLayout`, com placeholder mínimo
- * até a task de tela correspondente substituir o `element`.
+ * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; comprovantes
+ * exigem papel admin; `/stores` é pública. Entram dentro do `WithLayout`,
+ * com placeholder mínimo até a task de tela correspondente substituir o `element`.
  */
 function AppRoutes() {
   return (
@@ -109,6 +111,96 @@ function AppRoutes() {
             <RequireAuth>
               <ProfilePreferences />
             </RequireAuth>
+          }
+        />
+        {/* Sprint 3: apenas rotas e placeholders, sem antecipar as telas. */}
+        <Route
+          path={paths.checkout}
+          element={
+            <RequireAuth>
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Checkout</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orders}
+          element={
+            <RequireAuth>
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Meus pedidos</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orderDetail}
+          element={
+            <RequireAuth>
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Detalhe do pedido</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orderPayment}
+          element={
+            <RequireAuth>
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Pagamento do pedido</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.favorites}
+          element={
+            <RequireAuth>
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Meus favoritos</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.adminReceipts}
+          element={
+            <RequireRole role="admin">
+              <Container as="main" className="flex flex-col gap-6 py-10">
+                <h1 className="font-display text-h2 text-tinta">Painel admin</h1>
+                <p className="font-ui text-body text-texto-auxiliar">
+                  Essa tela ainda não foi implementada.
+                </p>
+              </Container>
+            </RequireRole>
+          }
+        />
+        <Route
+          path={paths.stores}
+          element={
+            <Container as="main" className="flex flex-col gap-6 py-10">
+              <h1 className="font-display text-h2 text-tinta">Brechós</h1>
+              <p className="font-ui text-body text-texto-auxiliar">
+                Essa tela ainda não foi implementada.
+              </p>
+            </Container>
           }
         />
       </Route>

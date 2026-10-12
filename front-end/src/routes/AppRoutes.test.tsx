@@ -1,6 +1,6 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
@@ -10,6 +10,7 @@ import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
 import AppRoutes from './AppRoutes';
+import * as routePaths from './paths';
 import {
   paths,
   productDetail,
@@ -96,6 +97,19 @@ const BUYER: AuthUser = {
 };
 
 const SELLER: AuthUser = { ...BUYER, id: 'u_2', is_seller: true };
+const ADMIN: AuthUser = { ...BUYER, id: 'u_3', is_admin: true };
+
+function LocationProbe() {
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+
+  return (
+    <>
+      <span data-testid="route-path">{location.pathname}</span>
+      <span data-testid="route-from">{from ?? ''}</span>
+    </>
+  );
+}
 
 function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
   return {
@@ -118,6 +132,7 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
         <CartContext.Provider value={CART_VALUE}>
           <ToastProvider>
             <AppRoutes />
+            <LocationProbe />
           </ToastProvider>
         </CartContext.Provider>
       </AuthContext.Provider>
@@ -126,6 +141,81 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 }
 
 describe('<AppRoutes />', () => {
+  describe('FE-FND-6: rotas da Sprint 3', () => {
+    it.each([
+      ['/checkout', 'Checkout', BUYER],
+      ['/profile/orders', 'Meus pedidos', BUYER],
+      ['/profile/orders/123', 'Detalhe do pedido', BUYER],
+      ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
+      ['/profile/favorites', 'Meus favoritos', BUYER],
+      ['/admin/receipts', 'Painel admin', ADMIN],
+      ['/stores', 'Brechós', null],
+    ] as const)(
+      'reconhece %s e renderiza seu placeholder no Layout',
+      async (path, heading, user) => {
+        renderAtWithAuth(path, makeAuthValue({ isAuthenticated: user !== null, user }));
+
+        expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
+        expect(screen.getByTestId('route-path').textContent).toBe(path);
+        expect(screen.getByRole('banner')).toBeInTheDocument();
+        expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+      },
+    );
+
+    it.each([
+      ['/profile/orders', 'Meus pedidos'],
+      ['/profile/orders?status=pending', 'Meus pedidos'],
+      ['/checkout', 'Checkout'],
+      ['/profile/orders/123', 'Detalhe do pedido'],
+      ['/profile/orders/123/payment', 'Pagamento do pedido'],
+      ['/profile/favorites', 'Meus favoritos'],
+      ['/admin/receipts', 'Painel admin'],
+    ])('anônimo em %s vai para login e preserva pathname + search', async (path, heading) => {
+      renderAtWithAuth(path, makeAuthValue({}));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/login'));
+      expect(screen.getByTestId('route-from').textContent).toBe(path);
+      expect(screen.getByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['comprador', BUYER],
+      ['vendedor', SELLER],
+    ] as const)('%s sem is_admin em /admin/receipts volta para home', async (_role, user) => {
+      renderAtWithAuth('/admin/receipts', makeAuthValue({ isAuthenticated: true, user }));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/'));
+      expect(screen.queryByRole('heading', { name: 'Painel admin' })).not.toBeInTheDocument();
+    });
+
+    // Os helpers são chamados dentro dos testes: sua ausência na fase RED
+    // não deve impedir a coleta e a execução dos testes das rotas existentes.
+    it('orderDetailPath monta /profile/orders/123 e abre o detalhe do pedido', async () => {
+      const path = routePaths.orderDetailPath('123');
+      expect(path).toBe('/profile/orders/123');
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Detalhe do pedido' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(path);
+    });
+
+    it('orderPaymentPath monta /profile/orders/123/payment e abre o pagamento', async () => {
+      const path = routePaths.orderPaymentPath('123');
+      expect(path).toBe('/profile/orders/123/payment');
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Pagamento do pedido' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(path);
+    });
+  });
+
   it.each([
     [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],

@@ -136,6 +136,96 @@ describe('<Header />', () => {
     window.sessionStorage.clear();
   });
 
+  describe('FE-FND-6: navegação da Sprint 3', () => {
+    it.each(['Meus pedidos', 'Meus favoritos'])(
+      'logado: exibe %s no menu da conta',
+      async (label) => {
+        renderHeaderLoggedIn();
+
+        fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      },
+    );
+
+    it.each([
+      ['Meus pedidos', (): string => paths.orders],
+      ['Meus favoritos', (): string => paths.favorites],
+    ] as const)('logado: %s navega para sua rota e fecha o menu', async (label, destination) => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+      fireEvent.click(screen.getByRole('button', { name: label }));
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(destination()));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it('admin: exibe Painel admin no menu da conta', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_admin: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+      expect(screen.getByRole('button', { name: 'Painel admin' })).toBeInTheDocument();
+    });
+
+    it('admin: Painel admin navega para paths.adminReceipts e fecha o menu', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_admin: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+      fireEvent.click(screen.getByRole('button', { name: 'Painel admin' }));
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(paths.adminReceipts));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it.each([false, true])(
+      'não-admin com is_seller=%s não exibe Painel admin',
+      async (is_seller) => {
+        renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller, is_admin: false });
+
+        fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+        expect(screen.getByRole('button', { name: 'Sair' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Painel admin' })).not.toBeInTheDocument();
+      },
+    );
+
+    it('anônimo: não exibe pedidos, favoritos ou painel admin no menu da conta', () => {
+      renderHeader();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+
+      expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
+      for (const label of ['Meus pedidos', 'Meus favoritos', 'Painel admin']) {
+        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+      }
+    });
+
+    it('exibe Brechós na navegação principal com href /stores', () => {
+      renderHeader();
+
+      const nav = screen.getByRole('navigation', { name: 'Principal' });
+      expect(within(nav).getByRole('link', { name: 'Brechós' })).toHaveAttribute('href', '/stores');
+    });
+
+    it('exibe Brechós no menu mobile e navega para /stores ao selecionar', async () => {
+      renderHeader({ initialEntry: '/sell' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+
+      const nav = screen.getByRole('navigation', { name: 'Principal mobile' });
+      const link = within(nav).getByRole('link', { name: 'Brechós' });
+      expect(link).toHaveAttribute('href', '/stores');
+      fireEvent.click(link);
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe('/stores'));
+      expect(
+        screen.queryByRole('navigation', { name: 'Principal mobile' }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   /**
    * O Header é montado pela rota-pai e não remonta quando a rota filha troca:
    * sem fechar na navegação, o menu viajava aberto para a página seguinte.

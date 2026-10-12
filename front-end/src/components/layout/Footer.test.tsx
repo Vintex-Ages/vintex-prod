@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Footer from './Footer';
 
@@ -15,6 +15,13 @@ function renderFooter() {
 }
 
 describe('<Footer />', () => {
+  it('FE-FND-6: exibe Brechós na navegação do rodapé com href /stores', () => {
+    renderFooter();
+
+    const nav = screen.getByRole('navigation', { name: 'Rodapé' });
+    expect(within(nav).getByRole('link', { name: 'Brechós' })).toHaveAttribute('href', '/stores');
+  });
+
   it('renders as the page contentinfo landmark', () => {
     renderFooter();
 
