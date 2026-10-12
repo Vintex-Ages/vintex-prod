@@ -1,6 +1,6 @@
 /**
  * Comparação entre o preço informado e a faixa sugerida pela IA (RN-68).
- * Todos os valores em centavos, como o `PriceInput`.
+ * Todos os valores em reais.
  * Só calcula: quem decide o que mostrar é o componente, e o resultado
  * nunca bloqueia o fluxo.
  */
@@ -24,7 +24,7 @@ export function comparePriceToRange(
   return 'within';
 }
 
-/** Média da faixa, arredondada para centavos inteiros (valor do "Usar R$ X"). */
+/** Média da faixa, arredondada para reais (valor do "Usar R$ X"). */
 export function averagePrice(range: PriceRange): number {
-  return Math.round((range.min + range.max) / 2);
+  return Math.round(((range.min + range.max) / 2) * 100) / 100;
 }

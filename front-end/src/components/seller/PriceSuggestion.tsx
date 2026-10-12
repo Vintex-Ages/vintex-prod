@@ -8,11 +8,12 @@ export type PriceSuggestionValue = PriceRange & { justification: string };
 
 export type PriceSuggestionProps = {
   state: 'idle' | 'loading' | 'ready' | 'unavailable';
+  /** Faixa sugerida e justificativa; `min` e `max` em reais. */
   suggestion?: PriceSuggestionValue;
-  /** Preço digitado no PriceInput, em centavos; `null` se vazio. */
+  /** Preço digitado, em reais; `null` ou ausente se vazio. */
   currentPrice?: number | null;
   onRequest: () => void;
-  /** Recebe o valor sugerido (média da faixa) em centavos. */
+  /** Recebe o valor sugerido (média da faixa), em reais. */
   onUse: (value: number) => void;
 };
 
@@ -20,6 +21,11 @@ const OUT_OF_RANGE_MESSAGE = {
   below: 'Seu preço está abaixo da faixa sugerida. Você pode mantê-lo se preferir.',
   above: 'Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.',
 } as const;
+
+/** `formatCentsToBRL` trabalha em centavos; o componente trabalha em reais. */
+function formatReais(value: number): string {
+  return formatCentsToBRL(Math.round(value * 100));
+}
 
 function SparkleIcon() {
   return (
@@ -51,13 +57,14 @@ function SpinnerIcon() {
  * Bloco de sugestão de preço pela IA, ao lado do `PriceInput` (RN-67, RN-68).
  * Só apresentação: a comparação com a faixa vem de `@/utils/priceSuggestion`
  * e o alerta de preço fora da faixa é informativo — nunca bloqueia nada.
- * Valores em centavos, como no `PriceInput`.
+ * Valores em reais, como no contrato da issue #308 (o `PriceInput` trabalha em
+ * centavos, então a tela que une os dois precisa converter).
  *
  * Usage:
  *   import PriceSuggestion from '@/components/seller/PriceSuggestion';
- *   <PriceSuggestion state="idle" onRequest={pedirSugestao} onUse={setPrecoCentavos} />
- *   <PriceSuggestion state="ready" suggestion={faixa} currentPrice={precoCentavos}
- *     onRequest={pedirSugestao} onUse={setPrecoCentavos} />
+ *   <PriceSuggestion state="idle" onRequest={pedirSugestao} onUse={setPreco} />
+ *   <PriceSuggestion state="ready" suggestion={faixa} currentPrice={preco}
+ *     onRequest={pedirSugestao} onUse={setPreco} />
  */
 function PriceSuggestion({
   state,
@@ -94,11 +101,11 @@ function PriceSuggestion({
         <div className="flex flex-col gap-3 border border-linha bg-branco-quente p-4">
           <AISuggestedTag />
           <p className="text-h4 text-tinta">
-            {formatCentsToBRL(suggestion.min)} – {formatCentsToBRL(suggestion.max)}
+            {formatReais(suggestion.min)} – {formatReais(suggestion.max)}
           </p>
           <p className="text-body-sm text-texto-auxiliar">{suggestion.justification}</p>
           <Button variant="primary" onClick={() => onUse(averagePrice(suggestion))}>
-            Usar {formatCentsToBRL(averagePrice(suggestion))}
+            Usar {formatReais(averagePrice(suggestion))}
           </Button>
         </div>
       ) : null}

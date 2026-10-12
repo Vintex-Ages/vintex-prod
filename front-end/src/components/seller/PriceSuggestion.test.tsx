@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import PriceSuggestion from './PriceSuggestion';
 
 const suggestion = {
-  min: 8000,
-  max: 12000,
+  min: 80,
+  max: 120,
   justification: 'Jaquetas de couro parecidas vendem nessa faixa.',
 };
 
@@ -49,14 +49,14 @@ describe('PriceSuggestion', () => {
       expect(screen.getByRole('img', { name: 'Sugerido pela IA' })).toBeInTheDocument();
     });
 
-    it('chama onUse com a média da faixa ao clicar em "Usar"', () => {
+    it('chama onUse com a média da faixa, em reais, ao clicar em "Usar"', () => {
       const { onUse } = setup({ state: 'ready', suggestion });
       fireEvent.click(screen.getByRole('button', { name: 'Usar R$ 100,00' }));
-      expect(onUse).toHaveBeenCalledWith(10000);
+      expect(onUse).toHaveBeenCalledWith(100);
     });
 
     it('não mostra alerta quando o preço está dentro da faixa', () => {
-      setup({ state: 'ready', suggestion, currentPrice: 10000 });
+      setup({ state: 'ready', suggestion, currentPrice: 100 });
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
@@ -66,17 +66,17 @@ describe('PriceSuggestion', () => {
     });
 
     it('mostra alerta quando o preço está abaixo da faixa', () => {
-      setup({ state: 'ready', suggestion, currentPrice: 5000 });
+      setup({ state: 'ready', suggestion, currentPrice: 50 });
       expect(screen.getByRole('status')).toHaveTextContent('abaixo da faixa sugerida');
     });
 
     it('mostra alerta quando o preço está acima da faixa', () => {
-      setup({ state: 'ready', suggestion, currentPrice: 20000 });
+      setup({ state: 'ready', suggestion, currentPrice: 200 });
       expect(screen.getByRole('status')).toHaveTextContent('acima da faixa sugerida');
     });
 
     it('o alerta nunca bloqueia: os botões continuam habilitados', () => {
-      setup({ state: 'ready', suggestion, currentPrice: 20000 });
+      setup({ state: 'ready', suggestion, currentPrice: 200 });
       expect(screen.getByRole('button', { name: 'Usar R$ 100,00' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Sugerir preço com IA' })).toBeEnabled();
     });
