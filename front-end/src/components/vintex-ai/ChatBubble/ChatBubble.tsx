@@ -22,6 +22,11 @@ type ChatBubbleProps = {
   streaming?: boolean;
   /** Presente = a resposta falhou; substitui o conteúdo normal pelo aviso + retry. */
   error?: string;
+  /**
+   * `'quota'` = cota do dia esgotada (FE-US027-5): o aviso vira `role="status"`
+   * e o "Tentar de novo" some, porque repetir a pergunta não adianta.
+   */
+  errorReason?: 'quota';
   onRetry?: () => void;
   /** Repassado ao `onOpen` do `ChatProductList` quando `message.products` existe. */
   onOpenProduct?: (id: string) => void;
@@ -34,7 +39,9 @@ type ChatBubbleProps = {
  * - `vintex`: fundo claro com borda. Três estados adicionais, evolução do
  *   `#142` para o `#199`/streaming (`#208`):
  *   - `error`: substitui o conteúdo pela mensagem de falha + "Tentar de
- *     novo" (`onRetry`), em `vermelho-escuro` sobre `vermelho-suave`.
+ *     novo" (`onRetry`), em `vermelho-escuro` sobre `vermelho-suave`. Com
+ *     `errorReason="quota"` (cota do dia esgotada) não há retry, e o aviso
+ *     é `role="status"`.
  *   - `streaming`: mostra um cursor piscando ao fim do texto e liga
  *     `aria-live="polite"` no parágrafo, para leitores de tela anunciarem
  *     o texto chegando aos poucos.
@@ -57,6 +64,7 @@ export function ChatBubble({
   message,
   streaming = false,
   error,
+  errorReason,
   onRetry,
   onOpenProduct,
 }: ChatBubbleProps) {
@@ -73,11 +81,15 @@ export function ChatBubble({
   }
 
   if (error) {
+    const cotaEsgotada = errorReason === 'quota';
     return (
-      <div className="rounded-none bg-vermelho-suave p-4">
+      <div
+        className="rounded-none bg-vermelho-suave p-4"
+        role={cotaEsgotada ? 'status' : undefined}
+      >
         <p className="text-label font-semibold uppercase text-vermelho-escuro">Vintex</p>
         <p className="mt-2 text-body text-vermelho-escuro">{error}</p>
-        {onRetry ? (
+        {onRetry && !cotaEsgotada ? (
           <button
             type="button"
             onClick={onRetry}
