@@ -205,6 +205,14 @@ function shouldMockFail(): boolean {
   return new URLSearchParams(window.location.search).get('mockFail') === '1';
 }
 
+/** Mesmo esquema do `shouldMockFail`, para a cota do dia esgotada (`?mockQuota=1`). */
+function shouldMockQuota(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('mockQuota') === '1';
+}
+
+const MOCK_COTA_ESGOTADA = 'Você atingiu o limite de perguntas por hoje. Volta amanhã.';
+
 /** `setTimeout` que resolve na hora se `signal` já abortou, ou ao ser abortado. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -227,6 +235,13 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   const { signal } = request;
+
+  if (shouldMockQuota()) {
+    if (signal?.aborted) return;
+    yield { type: 'error', reason: 'quota', message: MOCK_COTA_ESGOTADA };
+    return;
+  }
+
   const words = MOCK_RESPONSE_TEXT.split(' ');
   const failAtWordIndex = shouldMockFail() ? Math.floor(words.length / 2) : -1;
 
@@ -415,10 +430,22 @@ function toChatChunk(payload: unknown): ChatChunk | null {
     case 'done':
       return { type: 'done' };
     case 'error': {
-      const { message } = payload as { message?: unknown };
+      // PALPITE: `code` e `retry_at` são a melhor aposta para os nomes dos
+      // campos de cota, que o back ainda não fixou (back-end#258). Ajustar
+      // aqui (e nos testes) quando ele fechar. Sem `code === 'quota_exceeded'`
+      // o erro sai igual a antes, sem `reason`.
+      const { message, code, retry_at } = payload as {
+        message?: unknown;
+        code?: unknown;
+        retry_at?: unknown;
+      };
+      const texto = typeof message === 'string' ? message : FALHA_DE_CONEXAO;
+      if (code !== 'quota_exceeded') return { type: 'error', message: texto };
       return {
         type: 'error',
-        message: typeof message === 'string' ? message : FALHA_DE_CONEXAO,
+        reason: 'quota',
+        message: texto,
+        ...(typeof retry_at === 'string' ? { retryAt: retry_at } : {}),
       };
     }
     default:

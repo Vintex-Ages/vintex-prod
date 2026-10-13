@@ -97,6 +97,34 @@ describe('vintexAiService.chat (mock)', () => {
     expect(errorIndex).toBe(chunks.length - 1);
     expect(chunks.some((chunk) => chunk.type === 'done')).toBe(false);
   });
+
+  it('modo falha comum (?mockFail=1) não marca o erro como cota', async () => {
+    window.history.pushState({}, '', '/?mockFail=1');
+
+    const chunks = await collect(chat({ messages: [{ role: 'user', text: 'algo' }] }));
+
+    expect(chunks.at(-1)).not.toHaveProperty('reason');
+  });
+
+  it('modo cota (?mockQuota=1) emite só o chunk de erro de cota', async () => {
+    window.history.pushState({}, '', '/?mockQuota=1');
+
+    const chunks = await collect(chat({ messages: [{ role: 'user', text: 'algo' }] }));
+
+    expect(chunks).toEqual([{ type: 'error', reason: 'quota', message: expect.any(String) }]);
+  });
+
+  it('modo cota com signal já abortado não emite nada', async () => {
+    window.history.pushState({}, '', '/?mockQuota=1');
+    const controller = new AbortController();
+    controller.abort();
+
+    const chunks = await collect(
+      chat({ messages: [{ role: 'user', text: 'algo' }], signal: controller.signal }),
+    );
+
+    expect(chunks).toHaveLength(0);
+  });
 });
 
 describe('vintexAiService.getOutfitSuggestion (atalho independente de chat())', () => {
@@ -295,6 +323,71 @@ describe('vintexAiService.chat (API real)', () => {
     const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
 
     expect(chunks).toEqual([{ type: 'done' }]);
+  });
+
+  it('evento de erro com code quota_exceeded vira reason quota, com o retryAt', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        respostaOk(
+          sse({
+            type: 'error',
+            code: 'quota_exceeded',
+            message: 'Limite diário atingido.',
+            retry_at: '2026-10-09T03:00:00Z',
+          }),
+        ),
+      ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
+
+    expect(chunks).toEqual([
+      {
+        type: 'error',
+        reason: 'quota',
+        message: 'Limite diário atingido.',
+        retryAt: '2026-10-09T03:00:00Z',
+      },
+    ]);
+  });
+
+  it('erro de cota sem retry_at não inventa retryAt', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          respostaOk(sse({ type: 'error', code: 'quota_exceeded', message: 'Limite diário.' })),
+        ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
+
+    expect(chunks).toEqual([{ type: 'error', reason: 'quota', message: 'Limite diário.' }]);
+  });
+
+  it('evento de erro sem code (ou com outro code) continua sem reason', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          respostaOk(
+            sse(
+              { type: 'error', message: 'Provedor fora do ar.' },
+              { type: 'error', code: 'ai_unavailable', message: 'Outro.' },
+            ),
+          ),
+        ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'bolsa' }] });
+
+    expect(chunks).toEqual([
+      { type: 'error', message: 'Provedor fora do ar.' },
+      { type: 'error', message: 'Outro.' },
+    ]);
   });
 });
 

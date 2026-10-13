@@ -179,6 +179,30 @@ describe('ChatBubble', () => {
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
   });
 
+  // FE-US027-5 (#357): cota do dia esgotada.
+  it('errorReason="quota" mostra o aviso como status, sem "Tentar de novo" mesmo com onRetry', () => {
+    render(
+      <ChatBubble
+        message={vintexMessage}
+        error="Você atingiu o limite de perguntas por hoje."
+        errorReason="quota"
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Você atingiu o limite de perguntas por hoje.',
+    );
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
+  });
+
+  it('erro sem errorReason continua sem role=status', () => {
+    render(<ChatBubble message={vintexMessage} error="Falha ao responder." onRetry={() => {}} />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+  });
+
   it('não usa nenhuma cor em hex cru em nenhum dos estados', () => {
     const product: Product = {
       id: 'p1',
