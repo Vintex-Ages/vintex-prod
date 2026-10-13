@@ -7,6 +7,7 @@ import brand from '@/assets/onboarding/brand.svg';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import StyleSelector from '@/components/preferences/StyleSelector';
+import { useToast } from '@/context/useToast';
 import { paths } from '@/routes/paths';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import type { Preference, StyleOption } from '@/types/preference';
@@ -87,6 +88,7 @@ function toggleValue(values: string[], value: string): string[] {
 /** Onboarding de estilos e tamanhos (FE-US004-1). */
 function StyleSelection() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [styles, setStyles] = useState<StyleOption[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [clothingSizes, setClothingSizes] = useState<string[]>([]);
@@ -99,7 +101,10 @@ function StyleSelection() {
     setLoading(true);
     setError(false);
 
-    Promise.all([getStyles(), getPreferences()])
+    // Sem as preferências gravadas, o onboarding segue com os padrões do Figma:
+    // é o caminho de quem ainda não tem nada, e a falha não pode derrubar a
+    // tela inteira como derrubava com o `Promise.all` cru (#287).
+    Promise.all([getStyles(), getPreferences().catch((): Preference[] => [])])
       .then(([availableStyles, preferences]) => {
         if (!active) return;
 
@@ -156,7 +161,13 @@ function StyleSelection() {
 
     if (preferences.length > 0) {
       await savePreferences(preferences).catch(() => {
-        // A falha ao salvar não impede a pessoa de abrir o feed.
+        // A falha ao salvar não impede a pessoa de abrir o feed, mas também não
+        // pode sumir: sem o aviso, a pessoa achava que estava gravado (#287).
+        // O toast sobrevive à navegação para a Home.
+        toast(
+          'Não foi possível salvar seus estilos. Você pode escolher de novo em Perfil › Preferências.',
+          { kind: 'error' },
+        );
       });
     }
 

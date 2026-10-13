@@ -85,10 +85,11 @@ describe('<TextArea />', () => {
     renderField({ helperText: 'Texto de ajuda', error: 'Campo obrigatório', maxLength: 10 });
 
     const field = screen.getByRole('textbox', { name: 'Campo' });
-    const alert = screen.getByRole('alert');
+    const message = screen.getByText('Campo obrigatório');
 
-    expect(alert).toHaveTextContent('Campo obrigatório');
-    expect(alert).toHaveClass('text-vermelho-escuro');
+    expect(message).toHaveClass('text-vermelho-escuro');
+    // O erro não é região `alert`: quem anuncia é o `FormErrorSummary` do formulário (#283).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('Texto de ajuda')).not.toBeInTheDocument();
     expect(field).toHaveAttribute('aria-invalid', 'true');
     expect(field).toHaveAttribute('aria-describedby', 'campo-message campo-counter');

@@ -10,6 +10,11 @@ import type { Preference, StyleOption } from '@/types/preference';
 /**
  * `/profile/preferences` — edição das preferências de estilo no perfil
  * (FE-US004-3, #72).
+ *
+ * Os dois pedidos da abertura falham separados (#287). Sem os estilos não há o
+ * que desenhar: a tela fica no `ErrorState`. Sem as preferências, os estilos
+ * aparecem desmarcados com um aviso — o `PUT` substitui o conjunto inteiro, e
+ * salvar sem saber disso apagaria o que estava gravado.
  */
 function ProfilePreferences() {
   const { toast } = useToast();
@@ -18,6 +23,7 @@ function ProfilePreferences() {
   const [otherPreferences, setOtherPreferences] = useState<Preference[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [preferencesError, setPreferencesError] = useState(false);
   const [saving, setSaving] = useState(false);
   const latestLoad = useRef(0);
   const savingRef = useRef(false);
@@ -26,25 +32,33 @@ function ProfilePreferences() {
     const loadId = ++latestLoad.current;
     setLoading(true);
     setLoadError(false);
+    setPreferencesError(false);
 
-    Promise.all([getStyles(), getPreferences()])
-      .then(([availableStyles, preferences]) => {
+    Promise.allSettled([getStyles(), getPreferences()]).then(
+      ([stylesResult, preferencesResult]) => {
         if (loadId !== latestLoad.current) return;
 
-        setStyles(availableStyles);
-        setSelectedValues(
-          preferences
-            .filter((preference) => preference.type === 'estilo')
-            .map((preference) => preference.value),
-        );
-        setOtherPreferences(preferences.filter((preference) => preference.type !== 'estilo'));
-      })
-      .catch(() => {
-        if (loadId === latestLoad.current) setLoadError(true);
-      })
-      .finally(() => {
-        if (loadId === latestLoad.current) setLoading(false);
-      });
+        if (stylesResult.status === 'rejected') {
+          setLoadError(true);
+        } else {
+          setStyles(stylesResult.value);
+          if (preferencesResult.status === 'fulfilled') {
+            const preferences = preferencesResult.value;
+            setSelectedValues(
+              preferences
+                .filter((preference) => preference.type === 'estilo')
+                .map((preference) => preference.value),
+            );
+            setOtherPreferences(preferences.filter((preference) => preference.type !== 'estilo'));
+          } else {
+            setSelectedValues([]);
+            setOtherPreferences([]);
+            setPreferencesError(true);
+          }
+        }
+        setLoading(false);
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -68,6 +82,7 @@ function ProfilePreferences() {
 
     try {
       await savePreferences([...otherPreferences, ...preferences]);
+      setPreferencesError(false);
       toast('Preferências salvas com sucesso.', { kind: 'success' });
     } catch {
       toast('Não foi possível salvar suas preferências. Tente novamente.', { kind: 'error' });
@@ -105,6 +120,13 @@ function ProfilePreferences() {
         <ErrorState message="Não foi possível carregar suas preferências agora." onRetry={load} />
       ) : (
         <>
+          {preferencesError ? (
+            <p role="status" className="border border-dourado bg-papel p-3 text-body-sm text-tinta">
+              Não conseguimos carregar suas escolhas atuais. Salvar vai substituir o que estava
+              gravado.
+            </p>
+          ) : null}
+
           <StyleSelector
             styles={styles}
             selectedValues={selectedValues}
