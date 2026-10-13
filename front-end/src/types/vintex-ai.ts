@@ -75,7 +75,11 @@ export type ChatChunk =
   | { type: 'products'; products: Product[] }
   | { type: 'interpreted'; interpreted: InterpretedQuery }
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  /**
+   * `reason: 'quota'` = cota do dia do chat esgotada (FE-US027-5): não adianta
+   * tentar de novo. `retryAt` (ISO 8601) é quando ela volta, se o back mandar.
+   */
+  | { type: 'error'; reason?: 'quota'; message: string; retryAt?: string };
 
 export interface ChatRequest {
   messages: Pick<ChatMessage, 'role' | 'text'>[];
