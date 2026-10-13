@@ -19,6 +19,15 @@ export const AUTH_USER_STORAGE_KEY = 'vintex.auth.user';
 /** Chave de `sessionStorage` com o token da sessão ativa. */
 export const AUTH_TOKEN_STORAGE_KEY = 'vintex.auth.token';
 
+/**
+ * Chave de `sessionStorage` com o refresh token (#275).
+ *
+ * Mesmo `sessionStorage` do access token, de propósito: a sessão morre quando
+ * a aba fecha, e guardar o refresh num lugar mais duradouro mudaria essa
+ * decisão sem que ninguém tivesse pedido.
+ */
+export const AUTH_REFRESH_TOKEN_STORAGE_KEY = 'vintex.auth.refreshToken';
+
 /** Valor exposto pelo `AuthContext` / retorno de `useAuth()`. */
 export interface AuthContextValue {
   /** Usuário logado, ou `null` quando não há sessão. */
@@ -33,8 +42,12 @@ export interface AuthContextValue {
    * pode segurar conteúdo protegido enquanto for `true`.
    */
   loading: boolean;
-  /** Registra a sessão (estado + `sessionStorage`) e passa o token ao httpClient. */
-  login: (user: AuthUser, token: string) => void;
+  /**
+   * Registra a sessão (estado + `sessionStorage`) e passa o token ao
+   * httpClient. O `refreshToken` é opcional: sem ele a sessão funciona e
+   * simplesmente não se renova.
+   */
+  login: (user: AuthUser, token: string, refreshToken?: string | null) => void;
   /** Encerra a sessão (limpa estado + `sessionStorage`) e zera o token no httpClient. */
   logout: () => void;
   /**
