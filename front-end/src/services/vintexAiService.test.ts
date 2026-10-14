@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
+import type { PriceSuggestion, PriceSuggestionInput } from '@/types/vintex-ai';
 import { chat, getOutfitSuggestion } from './vintexAiService';
 import type { ChatChunk } from '@/types/vintex-ai';
 
@@ -635,5 +637,490 @@ describe('suggestListing (API real)', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.reason).toBe('timeout');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// suggestPrice (FE-SVC-vintex-ai-price, #314; contrato back-end#254)
+// ---------------------------------------------------------------------------
+
+const PRICE_INPUT = {
+  name: 'Jaqueta jeans',
+  category: 'Roupas',
+  condition: 'Seminovo',
+};
+
+const PRICE_API_RESPONSE = {
+  min: 89.9,
+  max: 149.9,
+  justification: 'Sugestão baseada no catálogo.',
+  based_on: 6,
+};
+
+const PRICE_SUGGESTION = {
+  min: 89.9,
+  max: 149.9,
+  justification: 'Sugestão baseada no catálogo.',
+  basedOn: 6,
+};
+
+function priceResponseAdapter(data: unknown = PRICE_API_RESPONSE) {
+  return vi.fn((config: InternalAxiosRequestConfig) =>
+    Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config }),
+  );
+}
+
+describe('suggestPrice (#314)', () => {
+  let priceService: typeof import('./vintexAiService');
+  let http: typeof import('./httpClient');
+  let originalAdapter: AxiosInstance['defaults']['adapter'];
+  let adapter: ReturnType<typeof priceResponseAdapter>;
+  let fetchSpy: ReturnType<typeof vi.fn<typeof fetch>>;
+  let authRequired: ReturnType<typeof vi.fn<(from: string) => void>>;
+  let originalRedirect: string | null;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.stubEnv('VITE_API_BASE_URL', 'http://api.test/api');
+
+    http = await import('./httpClient');
+    priceService = await import('./vintexAiService');
+    originalAdapter = http.httpClient.defaults.adapter;
+    originalRedirect = window.sessionStorage.getItem(http.REDIRECT_STORAGE_KEY);
+    adapter = priceResponseAdapter();
+    http.httpClient.defaults.adapter = adapter;
+    http.setAuthTokenProvider(() => null);
+    http.setSessionRefresher(null);
+    authRequired = vi.fn<(from: string) => void>();
+    http.setOnAuthRequired(authRequired);
+
+    // Impede chamadas reais também se uma implementação usar fetch indevidamente.
+    fetchSpy = vi.fn<typeof fetch>().mockRejectedValue(new Error('fetch inesperado na sugestão'));
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    http.httpClient.defaults.adapter = originalAdapter;
+    http.setAuthTokenProvider(() => null);
+    http.setSessionRefresher(null);
+    http.setOnAuthRequired(null);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    window.history.pushState({}, '', '/');
+
+    if (originalRedirect === null) {
+      window.sessionStorage.removeItem(http.REDIRECT_STORAGE_KEY);
+    } else {
+      window.sessionStorage.setItem(http.REDIRECT_STORAGE_KEY, originalRedirect);
+    }
+  });
+
+  function rejectHttp(status: number, code = 'INTERNAL_ERROR') {
+    adapter.mockImplementationOnce((config) =>
+      Promise.reject(
+        new AxiosError('Requisição recusada', 'ERR_BAD_RESPONSE', config, null, {
+          data: {
+            error: {
+              code,
+              message: 'Não foi possível sugerir o preço.',
+              return_to: '/seller/products/new?step=price',
+            },
+          },
+          status,
+          statusText: 'Error',
+          headers: {},
+          config,
+        }),
+      ),
+    );
+  }
+
+  async function resolveMock(input: PriceSuggestionInput = PRICE_INPUT): Promise<PriceSuggestion> {
+    const pending = priceService.suggestPrice(input);
+    // Observa a Promise imediatamente, inclusive se uma implementação incorreta rejeitar.
+    const [result] = await Promise.all([pending, vi.advanceTimersByTimeAsync(400)]);
+    return result;
+  }
+
+  it('exporta suggestPrice com name obrigatório e o retorno público aprovado', () => {
+    expect(priceService.suggestPrice).toBeTypeOf('function');
+    expectTypeOf<PriceSuggestionInput>().toMatchTypeOf<{ name: string }>();
+    expectTypeOf<{ name: string }>().toMatchTypeOf<PriceSuggestionInput>();
+    expectTypeOf<Omit<PriceSuggestionInput, 'name'>>().not.toMatchTypeOf<PriceSuggestionInput>();
+    expectTypeOf<typeof priceService.suggestPrice>().toEqualTypeOf<
+      (input: PriceSuggestionInput) => Promise<PriceSuggestion>
+    >();
+  });
+
+  it('exporta PriceSuggestionError', () => {
+    expect(priceService.PriceSuggestionError).toBeTypeOf('function');
+  });
+
+  describe('contrato HTTP e mapeamento', () => {
+    it.each(['http://api.test/api', 'http://api.test/api/'])(
+      'faz um POST na URL final correta com base %s',
+      async (baseURL) => {
+        http.httpClient.defaults.baseURL = baseURL;
+
+        await priceService.suggestPrice(PRICE_INPUT);
+
+        expect(adapter).toHaveBeenCalledTimes(1);
+        const config = adapter.mock.calls[0][0];
+        expect(config.method).toBe('post');
+        expect(config.url).toBe('/ai/price-suggestions');
+        expect(http.httpClient.getUri(config)).toBe('http://api.test/api/ai/price-suggestions');
+        expect(fetchSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('envia somente name quando nenhum campo opcional foi fornecido', async () => {
+      await priceService.suggestPrice({ name: 'Peça sem detalhes' });
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(adapter.mock.calls[0][0].data as string)).toEqual({
+        name: 'Peça sem detalhes',
+      });
+    });
+
+    it('envia os seis campos permitidos e ignora productId e propriedades inesperadas', async () => {
+      const input = {
+        ...PRICE_INPUT,
+        productId: 'rascunho-42',
+        brand: "Levi's",
+        size: 'M',
+        description: 'Jaqueta jeans azul em bom estado.',
+        price: 999,
+        unexpected: 'não enviar',
+      };
+
+      await priceService.suggestPrice(input);
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(adapter.mock.calls[0][0].url).toBe('/ai/price-suggestions');
+      expect(JSON.parse(adapter.mock.calls[0][0].data as string)).toEqual({
+        name: input.name,
+        category: input.category,
+        brand: input.brand,
+        condition: input.condition,
+        size: input.size,
+        description: input.description,
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('omite todos os opcionais undefined do JSON enviado', async () => {
+      await priceService.suggestPrice({
+        name: 'Peça',
+        productId: undefined,
+        category: undefined,
+        brand: undefined,
+        condition: undefined,
+        size: undefined,
+        description: undefined,
+      });
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(adapter.mock.calls[0][0].data as string)).toEqual({ name: 'Peça' });
+    });
+
+    it('mapeia o objeto individual do backend e preserva os valores numéricos em reais', async () => {
+      const suggestion = await priceService.suggestPrice(PRICE_INPUT);
+
+      expect(suggestion).toEqual(PRICE_SUGGESTION);
+      expect(typeof suggestion.min).toBe('number');
+      expect(typeof suggestion.max).toBe('number');
+    });
+
+    it('converte strings decimais para números em reais, sem conversão para centavos', async () => {
+      adapter.mockImplementationOnce(
+        priceResponseAdapter({
+          ...PRICE_API_RESPONSE,
+          min: '89.90',
+          max: '149.90',
+        }),
+      );
+
+      const suggestion = await priceService.suggestPrice(PRICE_INPUT);
+
+      expect(suggestion).toEqual(PRICE_SUGGESTION);
+      expect(typeof suggestion.min).toBe('number');
+      expect(typeof suggestion.max).toBe('number');
+    });
+
+    it('resolve normalmente quando HTTP 200 informa ausência de comparáveis', async () => {
+      adapter.mockImplementationOnce(
+        priceResponseAdapter({
+          min: null,
+          max: null,
+          justification: 'Não há comparáveis suficientes.',
+          based_on: 0,
+        }),
+      );
+
+      await expect(priceService.suggestPrice(PRICE_INPUT)).resolves.toEqual({
+        min: null,
+        max: null,
+        justification: 'Não há comparáveis suficientes.',
+        basedOn: 0,
+      });
+    });
+
+    it('não grava a sugestão nem realiza outra operação HTTP após obter o preço', async () => {
+      const storageWrite = vi.spyOn(Storage.prototype, 'setItem');
+
+      await priceService.suggestPrice(PRICE_INPUT);
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(adapter.mock.calls[0][0].method).toBe('post');
+      expect(adapter.mock.calls[0][0].url).toBe('/ai/price-suggestions');
+      expect(storageWrite).not.toHaveBeenCalled();
+    });
+
+    it('herda Authorization Bearer e X-Return-To do httpClient', async () => {
+      http.setAuthTokenProvider(() => 'token-preco');
+      window.history.pushState({}, '', '/seller/products/new?step=price');
+
+      await priceService.suggestPrice(PRICE_INPUT);
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      const config = adapter.mock.calls[0][0];
+      expect(config.headers.get('Authorization')).toBe('Bearer token-preco');
+      expect(config.headers.get('X-Return-To')).toBe('/seller/products/new?step=price');
+    });
+
+    it('respeita a renovação e repetição da requisição feita pelo interceptor', async () => {
+      http.setAuthTokenProvider(() => 'token-antigo');
+      const refresher = vi.fn().mockResolvedValue({ estado: 'renovada', token: 'token-renovado' });
+      http.setSessionRefresher(refresher);
+      rejectHttp(401, 'AUTH_REQUIRED');
+
+      await expect(priceService.suggestPrice(PRICE_INPUT)).resolves.toEqual(PRICE_SUGGESTION);
+
+      expect(refresher).toHaveBeenCalledTimes(1);
+      expect(adapter).toHaveBeenCalledTimes(2);
+      expect(adapter.mock.calls[1][0].headers.get('Authorization')).toBe('Bearer token-renovado');
+      expect(authRequired).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('erros tipados', () => {
+    it('401 AUTH_REQUIRED rejeita com erro tipado e preserva o fluxo de autenticação', async () => {
+      rejectHttp(401, 'AUTH_REQUIRED');
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'AUTH_REQUIRED', status: 401 });
+      expect(authRequired).toHaveBeenCalledTimes(1);
+      expect(authRequired).toHaveBeenCalledWith('/seller/products/new?step=price');
+      expect(window.sessionStorage.getItem(http.REDIRECT_STORAGE_KEY)).toBe(
+        '/seller/products/new?step=price',
+      );
+    });
+
+    it.each([
+      { status: 422, backendCode: 'VALIDATION_ERROR', expected: 'VALIDATION_ERROR' },
+      { status: 500, backendCode: 'INTERNAL_ERROR', expected: 'SERVER_ERROR' },
+      { status: 503, backendCode: 'INTERNAL_ERROR', expected: 'SERVER_ERROR' },
+      { status: 409, backendCode: 'CONFLICT', expected: 'HTTP_ERROR' },
+    ])('HTTP $status rejeita como $expected', async ({ status, backendCode, expected }) => {
+      rejectHttp(status, backendCode);
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: expected, status });
+      expect(authRequired).not.toHaveBeenCalled();
+    });
+
+    it('falha de rede rejeita como NETWORK_ERROR, em vez de resolver com faixa nula', async () => {
+      adapter.mockImplementationOnce((config) =>
+        Promise.reject(new AxiosError('Network Error', 'ERR_NETWORK', config)),
+      );
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+      expect(authRequired).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { field: 'min', value: 'preço ilegível' },
+      { field: 'max', value: '149,90' },
+      { field: 'min', value: '' },
+      { field: 'max', value: ' ' },
+      { field: 'min', value: 'Infinity' },
+    ])('rejeita $field=$value como INVALID_RESPONSE', async ({ field, value }) => {
+      adapter.mockImplementationOnce(
+        priceResponseAdapter({
+          ...PRICE_API_RESPONSE,
+          [field]: value,
+        }),
+      );
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    });
+  });
+
+  describe('validação da resposta HTTP', () => {
+    it('rejeita HTTP 200 com formato geral inválido', async () => {
+      adapter.mockImplementationOnce(priceResponseAdapter(null));
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    });
+
+    it('rejeita HTTP 200 com justification null', async () => {
+      adapter.mockImplementationOnce(
+        priceResponseAdapter({
+          ...PRICE_API_RESPONSE,
+          justification: null,
+        }),
+      );
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    });
+
+    it('rejeita HTTP 200 com based_on inválido', async () => {
+      adapter.mockImplementationOnce(
+        priceResponseAdapter({
+          ...PRICE_API_RESPONSE,
+          based_on: 'valor-invalido',
+        }),
+      );
+
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+
+      await expect(pending).rejects.toBeInstanceOf(priceService.PriceSuggestionError);
+      await expect(pending).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    });
+  });
+
+  describe('mock determinístico', () => {
+    beforeEach(() => {
+      vi.stubEnv('VITE_USE_MOCKS', 'true');
+      vi.useFakeTimers();
+    });
+
+    it('entradas iguais produzem a mesma sugestão em objetos independentes', async () => {
+      const first = await resolveMock(PRICE_INPUT);
+      const second = await resolveMock({ ...PRICE_INPUT });
+
+      expect(second).toEqual(first);
+      expect(second).not.toBe(first);
+      expect(first).toMatchObject({ min: 89.9, max: 149.9, basedOn: 6 });
+      expect(first.justification.trim().length).toBeGreaterThan(0);
+    });
+
+    it.each([
+      { category: 'Roupas', min: 89.9, max: 149.9, basedOn: 6 },
+      { category: 'Acessórios', min: 49.9, max: 99.9, basedOn: 4 },
+      { category: 'Sapatos', min: 119.9, max: 189.9, basedOn: 5 },
+    ])(
+      'usa a faixa aprovada para $category / Seminovo',
+      async ({ category, min, max, basedOn }) => {
+        const suggestion = await resolveMock({ ...PRICE_INPUT, category });
+
+        expect(suggestion).toMatchObject({ min, max, basedOn });
+        expect(suggestion.justification.trim().length).toBeGreaterThan(0);
+      },
+    );
+
+    it.each([
+      { condition: 'Novo com etiqueta', min: 109.9, max: 179.9 },
+      { condition: 'Usado', min: 69.9, max: 119.9 },
+      { condition: 'Marcas de uso', min: 49.9, max: 89.9 },
+    ])('diferencia a condição $condition em Roupas', async ({ condition, min, max }) => {
+      const suggestion = await resolveMock({ ...PRICE_INPUT, condition });
+
+      expect(suggestion).toMatchObject({ min, max, basedOn: 6 });
+    });
+
+    it.each([
+      { name: 'Peça sem detalhes' },
+      { name: 'Peça', category: 'Categoria desconhecida', condition: 'Condição desconhecida' },
+      { name: 'Peça', category: undefined, condition: undefined },
+    ])('usa o fallback Roupas / Seminovo para $name', async (input) => {
+      const suggestion = await resolveMock(input);
+
+      expect(suggestion).toMatchObject({ min: 89.9, max: 149.9, basedOn: 6 });
+      expect(suggestion.justification.trim().length).toBeGreaterThan(0);
+    });
+
+    it('permanece pendente aos 399 ms e resolve após os 400 ms de latência', async () => {
+      const pending = priceService.suggestPrice(PRICE_INPUT);
+      const settled = vi.fn();
+      void pending.then(settled, settled);
+
+      await vi.advanceTimersByTimeAsync(399);
+      expect(settled).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toMatchObject({ min: 89.9, max: 149.9, basedOn: 6 });
+      expect(settled).toHaveBeenCalledTimes(1);
+    });
+
+    it('mockPriceNoBase=1 resolve com limites nulos, contagem zero e justificativa', async () => {
+      window.history.pushState({}, '', '/?mockPriceNoBase=1');
+
+      const suggestion = await resolveMock();
+
+      expect(suggestion).toEqual({
+        min: null,
+        max: null,
+        justification: expect.stringMatching(/comparáveis|base|semelhantes/i),
+        basedOn: 0,
+      });
+    });
+
+    it('não realiza requisições HTTP nem grava a sugestão em storage', async () => {
+      const storageWrite = vi.spyOn(Storage.prototype, 'setItem');
+
+      await resolveMock();
+
+      expect(adapter).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(storageWrite).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('flag VITE_USE_MOCKS', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it.each([undefined, 'true', '0', 'FALSE'])(
+      'usa mock quando VITE_USE_MOCKS=%s',
+      async (flag) => {
+        vi.stubEnv('VITE_USE_MOCKS', flag);
+
+        await resolveMock();
+
+        expect(adapter).not.toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('usa API real somente para o valor literal false, mesmo com o gatilho mock na URL', async () => {
+      vi.stubEnv('VITE_USE_MOCKS', 'false');
+      window.history.pushState({}, '', '/?mockPriceNoBase=1');
+
+      await expect(priceService.suggestPrice(PRICE_INPUT)).resolves.toEqual(PRICE_SUGGESTION);
+
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
   });
 });
