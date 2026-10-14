@@ -480,6 +480,56 @@ describe('suggestListing (mock)', () => {
     if (r.ok) return;
     expect(r.reason).toBe('invalid-image');
   });
+
+  // #318: foto de etiqueta separada. A legibilidade dela decide marca e
+  // composição juntas, porque as duas saem do mesmo pedaço de pano.
+  it('etiqueta legível sugere marca e composição', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({
+      imageUrls: ['foto-frente.jpg'],
+      labelImage: new File(['e'], 'minha-etiqueta.jpg', { type: 'image/jpeg' }),
+    });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).toContain('brand');
+    expect(r.suggestion.suggested).toContain('composition');
+    expect(r.suggestion.fields.brand).toBeTruthy();
+    expect(r.suggestion.fields.composition).toBeTruthy();
+    expect(r.suggestion.notes).toBeUndefined();
+  });
+
+  // RN-59: etiqueta ilegível não vira chute; a tela recebe o motivo.
+  it('etiqueta ilegível não sugere marca nem composição, e registra o motivo', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({
+      imageUrls: ['foto-frente.jpg', 'foto-etiqueta.jpg'],
+      labelImage: new File(['e'], 'etiqueta-ilegivel.jpg', { type: 'image/jpeg' }),
+    });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).not.toContain('brand');
+    expect(r.suggestion.suggested).not.toContain('composition');
+    expect(r.suggestion.fields.brand).toBeUndefined();
+    expect(r.suggestion.fields.composition).toBeUndefined();
+    const notes = r.suggestion.notes?.join(' ') ?? '';
+    expect(notes).toMatch(/ilegível/i);
+    expect(notes).toMatch(/composição/i);
+  });
+
+  it('sem foto de etiqueta nunca sugere composição', async () => {
+    const { suggestListing } = await import('./vintexAiService');
+
+    const r = await suggestListing({ imageUrls: ['foto-frente.jpg', 'foto-etiqueta.jpg'] });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.suggestion.suggested).not.toContain('composition');
+    expect(r.suggestion.fields.composition).toBeUndefined();
+  });
 });
 
 describe('suggestListing (API real)', () => {
@@ -620,6 +670,118 @@ describe('suggestListing (API real)', () => {
       ok: false,
       reason: 'unavailable',
       message: 'Provedor recusou a imagem.',
+    });
+  });
+
+  describe('com foto de etiqueta (#318)', () => {
+    const etiqueta = new File(['e'], 'etiqueta.jpg', { type: 'image/jpeg' });
+
+    function stubUpload(impl: () => Promise<string[]>) {
+      const uploadMedia = vi.fn(impl);
+      vi.doMock('@/services/sellerProductService', () => ({ uploadMedia }));
+      return uploadMedia;
+    }
+
+    afterEach(() => {
+      vi.doUnmock('@/services/sellerProductService');
+    });
+
+    it('sobe a etiqueta como label e manda label_image_url no corpo', async () => {
+      const uploadMedia = stubUpload(() => Promise.resolve(['https://api.test/m/etiqueta.jpg']));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          respostaJson({ composition: { value: '100% algodão', confidence: 0.8 } }),
+        );
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+
+      const r = await suggestListing({
+        imageUrls: ['https://x.test/a.jpg'],
+        labelImage: etiqueta,
+      });
+
+      expect(uploadMedia).toHaveBeenCalledWith([etiqueta], 'label');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+        image_urls: ['https://x.test/a.jpg'],
+        label_image_url: 'https://api.test/m/etiqueta.jpg',
+      });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.suggestion.fields.composition).toBe('100% algodão');
+      expect(r.suggestion.suggested).toContain('composition');
+    });
+
+    it('sem etiqueta não sobe nada e o corpo fica igual ao de antes', async () => {
+      const uploadMedia = stubUpload(() => Promise.resolve(['nunca']));
+      const fetchMock = vi.fn().mockResolvedValue(respostaJson({}));
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+
+      await suggestListing({ imageUrls: ['https://x.test/a.jpg'] });
+
+      expect(uploadMedia).not.toHaveBeenCalled();
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+        image_urls: ['https://x.test/a.jpg'],
+      });
+    });
+
+    it('upload sem URL de volta não manda label_image_url', async () => {
+      stubUpload(() => Promise.resolve([]));
+      const fetchMock = vi.fn().mockResolvedValue(respostaJson({}));
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+
+      await suggestListing({ imageUrls: ['https://x.test/a.jpg'], labelImage: etiqueta });
+
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+        image_urls: ['https://x.test/a.jpg'],
+      });
+    });
+
+    it('falha no upload da etiqueta vira unavailable, sem lançar e sem chamar a IA', async () => {
+      stubUpload(() => Promise.reject(new Error('rede fora')));
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+
+      const r = await suggestListing({ imageUrls: ['https://x.test/a.jpg'], labelImage: etiqueta });
+
+      expect(r).toEqual({ ok: false, reason: 'unavailable', message: expect.any(String) });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('upload da etiqueta que passa do prazo vira timeout', async () => {
+      stubUpload(() => new Promise<string[]>(() => {}));
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+
+      const r = await suggestListing(
+        { imageUrls: ['https://x.test/a.jpg'], labelImage: etiqueta },
+        { timeoutMs: 20 },
+      );
+
+      expect(r).toEqual({ ok: false, reason: 'timeout', message: expect.any(String) });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('cancelar durante o upload da etiqueta interrompe sem chamar a IA', async () => {
+      stubUpload(() => new Promise<string[]>(() => {}));
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const { suggestListing } = await import('./vintexAiService');
+      const controller = new AbortController();
+
+      const pendente = suggestListing(
+        { imageUrls: ['https://x.test/a.jpg'], labelImage: etiqueta },
+        { signal: controller.signal },
+      );
+      controller.abort();
+      const r = await pendente;
+
+      expect(r).toEqual({ ok: false, reason: 'unavailable', message: expect.any(String) });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 

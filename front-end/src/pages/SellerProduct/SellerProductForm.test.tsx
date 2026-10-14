@@ -172,6 +172,24 @@ describe('SellerProductForm', () => {
     expect(screen.getByLabelText('Conservação')).toHaveValue('Seminovo');
   });
 
+  // #318: a IA já sabe sugerir composição, mas o campo só chega na tela na #331.
+  it('composição sugerida é ignorada enquanto o formulário não tem o campo', async () => {
+    vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+      ok: true,
+      suggestion: {
+        fields: { color: 'Preto', composition: '100% algodão' },
+        suggested: ['color', 'composition'],
+      },
+    });
+    renderForm();
+
+    await subirFoto();
+
+    await waitFor(() => expect(screen.getByLabelText('Cor')).toHaveValue('Preto'));
+    expect(screen.getAllByRole('img', { name: 'Sugerido pela IA' })).toHaveLength(1);
+    expect(screen.queryByText(/composição/i)).not.toBeInTheDocument();
+  });
+
   it('marca não identificada aparece como aviso, sem preencher o campo (RN-58)', async () => {
     renderForm();
 

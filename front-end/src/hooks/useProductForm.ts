@@ -95,8 +95,12 @@ const VALORES_INICIAIS: ProductFormValues = {
   media: [],
 };
 
-/** Campos do formulário que a IA sabe preencher, no nome que ela usa. */
-const CAMPO_POR_SUGESTAO: Record<ListingSuggestionField, keyof ProductFormValues> = {
+/**
+ * Campos do formulário que a IA sabe preencher, no nome que ela usa.
+ * `composition` fica de fora até o formulário ter o campo (#331): sugestão sem
+ * campo na tela é ignorada.
+ */
+const CAMPO_POR_SUGESTAO: Partial<Record<ListingSuggestionField, keyof ProductFormValues>> = {
   category: 'category',
   color: 'color',
   size: 'size',
@@ -128,6 +132,7 @@ const ROTULO_POR_CAMPO: Record<ListingSuggestionField, string> = {
   condition: 'a conservação',
   description: 'a descrição',
   brand: 'a marca',
+  composition: 'a composição',
 };
 
 export const MENSAGEM_SEM_FOTO = 'Adicione ao menos uma foto antes de publicar.';
@@ -472,6 +477,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
 
       for (const [chave, valor] of resolvidos) {
         const campo = CAMPO_POR_SUGESTAO[chave];
+        if (!campo) continue;
         if (atuais[campo] !== null && atuais[campo] !== '') continue;
 
         (aPreencher[campo] as string) = valor;
