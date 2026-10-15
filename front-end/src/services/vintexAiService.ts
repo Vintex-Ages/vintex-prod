@@ -1,4 +1,5 @@
-import { getAuthToken, handleAuthRequired } from '@/services/httpClient';
+import axios from 'axios';
+import { getAuthToken, handleAuthRequired, httpClient } from '@/services/httpClient';
 import { mapFeedItem, type ApiFeedItem } from '@/services/catalogService';
 import { uploadMedia } from '@/services/sellerProductService';
 import { products as mockProducts } from '@/mocks/products';
@@ -10,6 +11,8 @@ import type {
   ListingSuggestion,
   ListingSuggestionField,
   ListingSuggestionResult,
+  PriceSuggestion,
+  PriceSuggestionInput,
 } from '@/types/vintex-ai';
 
 /**
@@ -785,4 +788,179 @@ export async function getOutfitSuggestion(prompt: string): Promise<ChatMessage> 
       note: 'Conteúdo sintético para visualizar a ideia. A curadoria real poderá cruzar suas preferências com peças disponíveis.',
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// suggestPrice: comparação com o catálogo, sem modelo de IA ou persistência
+// ---------------------------------------------------------------------------
+
+export type PriceSuggestionErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'VALIDATION_ERROR'
+  | 'NETWORK_ERROR'
+  | 'SERVER_ERROR'
+  | 'INVALID_RESPONSE'
+  | 'HTTP_ERROR';
+
+export class PriceSuggestionError extends Error {
+  constructor(
+    public readonly code: PriceSuggestionErrorCode,
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'PriceSuggestionError';
+  }
+}
+
+/** Fixtures em reais, sem consulta ao catálogo. Fallback: Roupas / Seminovo. */
+const MOCK_PRICE_RANGES = {
+  Roupas: {
+    basedOn: 6,
+    'Novo com etiqueta': [109.9, 179.9],
+    Seminovo: [89.9, 149.9],
+    Usado: [69.9, 119.9],
+    'Marcas de uso': [49.9, 89.9],
+  },
+  Acessórios: {
+    basedOn: 4,
+    'Novo com etiqueta': [59.9, 129.9],
+    Seminovo: [49.9, 99.9],
+    Usado: [39.9, 79.9],
+    'Marcas de uso': [29.9, 59.9],
+  },
+  Sapatos: {
+    basedOn: 5,
+    'Novo com etiqueta': [149.9, 229.9],
+    Seminovo: [119.9, 189.9],
+    Usado: [89.9, 149.9],
+    'Marcas de uso': [69.9, 109.9],
+  },
+} as const;
+
+async function mockSuggestPrice(input: PriceSuggestionInput): Promise<PriceSuggestion> {
+  await sleep(400);
+
+  if (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('mockPriceNoBase') === '1'
+  ) {
+    return {
+      min: null,
+      max: null,
+      justification: 'Simulação: não há peças comparáveis suficientes.',
+      basedOn: 0,
+    };
+  }
+
+  const category =
+    input.category === 'Acessórios' || input.category === 'Sapatos' ? input.category : 'Roupas';
+  const condition =
+    input.condition === 'Novo com etiqueta' ||
+    input.condition === 'Usado' ||
+    input.condition === 'Marcas de uso'
+      ? input.condition
+      : 'Seminovo';
+  const fixture = MOCK_PRICE_RANGES[category];
+  const [min, max] = fixture[condition];
+
+  return {
+    min,
+    max,
+    justification: `Faixa simulada para ${category} (${condition}), com ${fixture.basedOn} peças fictícias.`,
+    basedOn: fixture.basedOn,
+  };
+}
+
+function invalidPriceResponse(status: number): PriceSuggestionError {
+  return new PriceSuggestionError(
+    'INVALID_RESPONSE',
+    'Resposta inválida da sugestão de preço.',
+    status,
+  );
+}
+
+function toPriceBound(value: unknown, status: number): number | null {
+  if (value === null) return null;
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && value.trim().length === 0)
+  ) {
+    throw invalidPriceResponse(status);
+  }
+
+  const amount = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(amount)) throw invalidPriceResponse(status);
+  return amount;
+}
+
+function mapPriceSuggestion(data: unknown, status: number): PriceSuggestion {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    throw invalidPriceResponse(status);
+  }
+
+  const { min, max, justification, based_on: basedOn } = data as Record<string, unknown>;
+  if (
+    typeof justification !== 'string' ||
+    justification.trim().length === 0 ||
+    typeof basedOn !== 'number' ||
+    !Number.isInteger(basedOn) ||
+    basedOn < 0
+  ) {
+    throw invalidPriceResponse(status);
+  }
+
+  return {
+    min: toPriceBound(min, status),
+    max: toPriceBound(max, status),
+    justification,
+    basedOn,
+  };
+}
+
+function toPriceSuggestionError(error: unknown): PriceSuggestionError {
+  if (error instanceof PriceSuggestionError) return error;
+
+  if (!axios.isAxiosError(error) || !error.response) {
+    return new PriceSuggestionError('NETWORK_ERROR', FALHA_DE_CONEXAO);
+  }
+
+  const { status, data } = error.response;
+  const message = (data as { error?: { message?: unknown } } | null)?.error?.message;
+  let code: PriceSuggestionErrorCode;
+  if (status === 401) code = 'AUTH_REQUIRED';
+  else if (status === 422) code = 'VALIDATION_ERROR';
+  else if (status >= 500 && status <= 599) code = 'SERVER_ERROR';
+  else code = 'HTTP_ERROR';
+
+  return new PriceSuggestionError(
+    code,
+    typeof message === 'string' && message.trim().length > 0
+      ? message
+      : 'Não foi possível sugerir um preço agora.',
+    status,
+  );
+}
+
+/**
+ * Faixa em reais baseada no catálogo (back-end#254). Não salva a sugestão.
+ * Sem comparáveis é sucesso com limites nulos; falhas rejeitam com PriceSuggestionError.
+ */
+export async function suggestPrice(input: PriceSuggestionInput): Promise<PriceSuggestion> {
+  if (isUsingMocks()) return mockSuggestPrice(input);
+
+  const { name, category, brand, condition, size, description } = input;
+  try {
+    const { data, status } = await httpClient.post<unknown>('/ai/price-suggestions', {
+      name,
+      category,
+      brand,
+      condition,
+      size,
+      description,
+    });
+    return mapPriceSuggestion(data, status);
+  } catch (error) {
+    throw toPriceSuggestionError(error);
+  }
 }

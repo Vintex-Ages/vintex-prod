@@ -121,3 +121,22 @@ export interface ListingSuggestion {
 export type ListingSuggestionResult =
   | { ok: true; suggestion: ListingSuggestion }
   | { ok: false; reason: 'timeout' | 'unavailable' | 'invalid-image'; message: string };
+
+/** Dados para comparar a peça com o catálogo; productId não integra o body HTTP. */
+export interface PriceSuggestionInput {
+  productId?: string;
+  name: string;
+  category?: string;
+  brand?: string;
+  condition?: string;
+  size?: string;
+  description?: string;
+}
+
+export interface PriceSuggestion {
+  /** Reais; null indica ausência de comparáveis suficientes. */
+  min: number | null;
+  max: number | null;
+  justification: string;
+  basedOn: number;
+}
