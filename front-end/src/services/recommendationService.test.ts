@@ -22,7 +22,7 @@ describe('recommendationService (mock)', () => {
     // `Product` (o item devolvido) não carrega `style` — a garantia aqui é
     // indireta: toda peça com esse nome/categoria batendo com o fixture do
     // mock de "Camisa social branca" (a única marcada alfaiataria nos
-    // produtos-base) deve aparecer, e nenhuma clmaramente de outro estilo.
+    // produtos-base) deve aparecer, e nenhuma claramente de outro estilo.
     expect(items.some((item) => item.name === 'Camisa social branca')).toBe(true);
     expect(items.some((item) => item.name === 'Jaqueta biker preta')).toBe(false);
   });
@@ -81,11 +81,8 @@ describe('recommendationService (API real) — contrato proposto pelo front', ()
 
   /**
    * Critério de aceite: mapeador testado com fixture no envelope Page real.
-   * `price` como `number`, não string — confirmado contra o back
-   * (`ProductFeedItemResponse` tem `@field_serializer("price")` forçando
-   * `float`, ver o comentário de `ApiFeedItem` no `catalogService.ts`).
-   * `mapFeedItem` é o mesmo reaproveitado pelo feed normal, então herda
-   * essa garantia — nenhuma conversão extra de dinheiro é necessária aqui.
+   * A rota ainda não existe: `price` pode chegar como número ou string, e
+   * `toReais` (do `catalogService`) converte nos dois casos.
    */
   it('mapeia o envelope Page[FeedItem] & { personalized } do contrato proposto', async () => {
     const { httpClient } = await import('@/services/httpClient');
@@ -118,6 +115,38 @@ describe('recommendationService (API real) — contrato proposto pelo front', ()
     expect(result.total).toBe(1);
     expect(result.items).toHaveLength(1);
     expect(result.items[0].id).toBe('6');
+    expect(result.items[0].price).toBe(89.9);
+  });
+
+  it('converte o preço quando o Decimal chega como string', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getRecommendations } = await import('./recommendationService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          items: [
+            {
+              id: 6,
+              name: 'Camisa social branca',
+              price: '89.90',
+              cover_image_url: null,
+              store: { id: 6, name: 'Desapego Serrano' },
+            },
+          ],
+          page: 1,
+          page_size: 20,
+          total: 1,
+          personalized: true,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const result = await getRecommendations();
+
     expect(result.items[0].price).toBe(89.9);
   });
 

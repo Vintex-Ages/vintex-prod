@@ -429,7 +429,7 @@ function validateImage(image: File): CatalogError | null {
   return null;
 }
 
-function toReais(price: number | string): number {
+export function toReais(price: number | string): number {
   const value = typeof price === 'string' ? Number(price) : price;
   if (!Number.isFinite(value)) {
     throw new CatalogError(

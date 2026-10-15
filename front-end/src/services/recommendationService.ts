@@ -1,6 +1,6 @@
 import { httpClient } from '@/services/httpClient';
 import { getPreferences } from '@/services/preferenceService';
-import { mapFeedItem } from '@/services/catalogService';
+import { mapFeedItem, toReais, type ApiFeedItem } from '@/services/catalogService';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, ProductDetail } from '@/types/product';
 
@@ -13,15 +13,13 @@ import type { Paginated, Product, ProductDetail } from '@/types/product';
  * própria issue manda reaproveitar `mapFeedItem` do `catalogService`, que
  * devolve `Product`. Usar `ProductDetail` exigiria uma chamada extra por
  * peça no modo API (buscar o detalhe de cada recomendação), sem nenhum
- * consumidor que precise desses campos a mais — decisão registrada na
- * conversa da issue.
+ * consumidor que precisa desses campos a mais -> decisão registrada em
+ * comentário na #313.
  *
- * Dinheiro: `mapFeedItem` já trata o `price` como `number` puro, sem
- * conversão — confirmado contra o back que `ProductFeedItemResponse` tem
- * `@field_serializer("price")` forçando `float` (nunca string) nesse
- * endpoint específico. A ambiguidade "Decimal como string ou número" que
- * os outros services da S3 tratam não existe aqui, porque este service
- * reaproveita o mesmo mapeador do feed normal, não implementa um novo.
+ * Dinheiro: a rota ainda não existe e o schema dela é desconhecido, então o
+ * `price` pode chegar como número ou string (`Decimal` do Pydantic). Mesmo
+ * padrão da busca por imagem (#315):
+ * `mapFeedItem({ ...item, price: toReais(item.price) })`.
  *
  * FLAG `VITE_USE_MOCKS` (mesmo padrão dos outros services da S2/S3).
  *
@@ -93,14 +91,14 @@ async function mockGetRecommendations(page: number): Promise<Recommendations> {
 }
 
 // ---------------------------------------------------------------------------
-// Modo API real — proposta do front, não confirmada (ver doc do arquivo).
+// Modo API real — proposta do front, não confirmada.
 // ---------------------------------------------------------------------------
 
-/** Mesmo shape de item que `catalogService` usa para `mapFeedItem` — reaproveitado via tipo, sem duplicar a interface. */
-type ApiFeedItem = Parameters<typeof mapFeedItem>[0];
+/** `price` aceita string porque o schema da rota ainda não existe */
+type ApiRecommendationItem = Omit<ApiFeedItem, 'price'> & { price: number | string };
 
 interface ApiRecommendationsResponse {
-  items: ApiFeedItem[];
+  items: ApiRecommendationItem[];
   page: number;
   page_size: number;
   total: number;
@@ -113,7 +111,7 @@ async function apiGetRecommendations(page: number): Promise<Recommendations> {
   });
 
   return {
-    items: data.items.map(mapFeedItem),
+    items: data.items.map((item) => mapFeedItem({ ...item, price: toReais(item.price) })),
     personalized: data.personalized,
     page: data.page,
     pageSize: data.page_size,
