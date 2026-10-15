@@ -69,6 +69,14 @@ export interface ProductDetail extends Product {
    */
   material?: string;
   measurements?: string;
+  /**
+   * Um dos 6 valores de `app/constants/styles.py` (mesmos de `StyleOption.value`
+   * em `@/types/preference`). Existia só em `ProductInput`/`SellerProduct`
+   * (cadastro do vendedor) — adicionado aqui porque a FE-SVC-recommendations
+   * (#313) é o primeiro consumidor do lado comprador. Opcional: peças
+   * cadastradas antes desse campo existir não têm valor.
+   */
+  style?: string;
 }
 
 /**

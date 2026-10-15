@@ -246,6 +246,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
+/** Exportada para `recommendationService` (#313) reaproveitar "mesma forma da vitrine". */
 export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
@@ -428,7 +429,7 @@ function validateImage(image: File): CatalogError | null {
   return null;
 }
 
-function toReais(price: number | string): number {
+export function toReais(price: number | string): number {
   const value = typeof price === 'string' ? Number(price) : price;
   if (!Number.isFinite(value)) {
     throw new CatalogError(
