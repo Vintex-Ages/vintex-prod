@@ -88,8 +88,9 @@ export interface ChatRequest {
 
 /**
  * Campos que a IA sabe sugerir a partir das fotos, e só eles: é exatamente o
- * que o `ImageAnalysisResult` do back devolve (`back-end#150`). Todos os seis
- * são chaves de `ProductInput` (`FE-SVC-seller-products`, #202), então a lista
+ * que o `ImageAnalysisResult` do back devolve (`back-end#150`), mais a
+ * `composition` lida da foto da etiqueta (#318, back-end#257). Todos são
+ * chaves de `ProductInput` (`FE-SVC-seller-products`, #202), então a lista
  * que o formulário recebe em `suggested` encaixa direto nos campos dele.
  *
  * Declarado aqui como união própria em vez de `keyof ProductInput` por dois
@@ -100,7 +101,7 @@ export interface ChatRequest {
  * (`SPIKE-01`), e `name`, que o vendedor sempre escreve.
  */
 export type ListingSuggestionField =
-  'category' | 'color' | 'size' | 'condition' | 'description' | 'brand';
+  'category' | 'color' | 'size' | 'condition' | 'description' | 'brand' | 'composition';
 
 export interface ListingSuggestion {
   /** Só os campos que a IA conseguiu preencher. */

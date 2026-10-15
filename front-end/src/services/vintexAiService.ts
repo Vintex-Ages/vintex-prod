@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { getAuthToken, handleAuthRequired, httpClient } from '@/services/httpClient';
 import { mapFeedItem, type ApiFeedItem } from '@/services/catalogService';
+import { uploadMedia } from '@/services/sellerProductService';
 import { products as mockProducts } from '@/mocks/products';
 import type {
   ChatChunk,
@@ -75,9 +76,15 @@ const CAMPOS_SUGERIVEIS: ListingSuggestionField[] = [
   'condition',
   'description',
   'brand',
+  'composition',
 ];
 
 const SEM_MARCA = 'Marca não identificada: etiqueta ilegível ou ausente.';
+// RN-59: marca e composição saem da mesma etiqueta; ilegível, nenhuma das duas.
+const ETIQUETA_ILEGIVEL =
+  'Marca e composição não identificadas: a foto da etiqueta está ilegível. Preencha à mão ou tente outra foto.';
+const ETIQUETA_NAO_ENVIADA =
+  'Não foi possível enviar a foto da etiqueta. Tente de novo ou preencha os campos à mão.';
 const NADA_IDENTIFICADO =
   'Não identificamos nada nas fotos. Preencha os campos à mão ou tente outra foto.';
 
@@ -149,6 +156,12 @@ export interface SuggestListingInput {
    * chamar a rota síncrona (ver o comentário do `realSuggestListing`).
    */
   productId?: string;
+  /**
+   * Foto da etiqueta, separada das fotos da peça (#318). O service sobe ela à
+   * parte, marcada como etiqueta (fora da galeria pública), e a IA lê dela a
+   * marca e a composição.
+   */
+  labelImage?: File;
 }
 
 export interface SuggestListingOptions {
@@ -460,6 +473,10 @@ function toChatChunk(payload: unknown): ChatChunk | null {
  * Sugestão de anúncio sem backend, para as telas do cadastro rodarem antes de
  * o flag virar. `brand` só aparece quando o nome de algum arquivo tem
  * `etiqueta`, simulando o RN-58: a IA não chuta marca, ela lê a etiqueta.
+ *
+ * Com `labelImage` (#318), quem decide é a foto da etiqueta: nome com
+ * `ilegivel` simula etiqueta ilegível (RN-59), sem marca nem composição;
+ * qualquer outro nome traz as duas.
  */
 async function mockSuggestListing(
   input: SuggestListingInput,
@@ -482,19 +499,40 @@ async function mockSuggestListing(
     return { ok: false, reason: 'unavailable', message: IA_INDISPONIVEL };
   }
 
+  const pecaSugerida: ApiImageAnalysisResult = {
+    category: { value: 'Jaquetas', confidence: 0.94 },
+    color: { value: 'Preto', confidence: 0.91 },
+    size: { value: 'M', confidence: 0.72 },
+    condition: { value: 'Seminovo', confidence: 0.68 },
+    description: {
+      value: 'Jaqueta de couro sintético preta, forro interno e zíper prateado.',
+      confidence: 0.8,
+    },
+  };
+
+  if (input.labelImage) {
+    if (input.labelImage.name.toLowerCase().includes('ilegivel')) {
+      return {
+        ok: true,
+        suggestion: { ...montarSugestao(pecaSugerida), notes: [ETIQUETA_ILEGIVEL] },
+      };
+    }
+    return {
+      ok: true,
+      suggestion: montarSugestao({
+        ...pecaSugerida,
+        brand: { value: 'Zara', confidence: 0.77 },
+        composition: { value: '100% algodão', confidence: 0.83 },
+      }),
+    };
+  }
+
   const temEtiqueta = input.imageUrls.some((url) => url.toLowerCase().includes('etiqueta'));
 
   return {
     ok: true,
     suggestion: montarSugestao({
-      category: { value: 'Jaquetas', confidence: 0.94 },
-      color: { value: 'Preto', confidence: 0.91 },
-      size: { value: 'M', confidence: 0.72 },
-      condition: { value: 'Seminovo', confidence: 0.68 },
-      description: {
-        value: 'Jaqueta de couro sintético preta, forro interno e zíper prateado.',
-        confidence: 0.8,
-      },
+      ...pecaSugerida,
       brand: temEtiqueta ? { value: 'Zara', confidence: 0.77 } : null,
     }),
   };
@@ -505,7 +543,8 @@ async function mockSuggestListing(
  *
  * - **sem `productId`**: `POST /api/ai/listing-suggestions` com as URLs, que
  *   responde na hora. É o caminho do cadastro, porque as fotos existem antes
- *   da peça.
+ *   da peça. Com `labelImage`, a etiqueta sobe antes e vai como
+ *   `label_image_url` (#318, back-end#257 — rota ainda fora da `develop`).
  * - **com `productId`**: o pipeline assíncrono já ligado à peça
  *   (`GET /api/users/me/products/{id}/ai-status`), consultado até `done` ou
  *   `failed` dentro do orçamento de tempo.
@@ -526,15 +565,65 @@ async function realSuggestListing(
     return aguardarPipeline(input.productId, prazo, opts.signal);
   }
 
+  let labelImageUrl: string | undefined;
+  if (input.labelImage) {
+    const etiqueta = await subirEtiqueta(input.labelImage, prazo, opts.signal);
+    if (!etiqueta.ok) return etiqueta.erro;
+    labelImageUrl = etiqueta.url;
+  }
+
   const resposta = await pedir<ApiImageAnalysisResult>(
     '/ai/listing-suggestions',
-    { image_urls: input.imageUrls },
+    {
+      image_urls: input.imageUrls,
+      ...(labelImageUrl ? { label_image_url: labelImageUrl } : {}),
+    },
     prazo,
     opts.signal,
   );
 
   if (!resposta.ok) return resposta.erro;
   return { ok: true, suggestion: montarSugestao(resposta.dados) };
+}
+
+type EtiquetaEnviada = { ok: true; url?: string } | { ok: false; erro: ListingSuggestionResult };
+
+/**
+ * Sobe a foto da etiqueta marcada como etiqueta (fora da galeria pública),
+ * gastando do mesmo `prazo` da análise: o orçamento de tempo é da operação
+ * inteira, upload incluso. Falha vira resultado, nunca exceção (RN-57).
+ */
+async function subirEtiqueta(
+  foto: File,
+  prazo: number,
+  signal?: AbortSignal,
+): Promise<EtiquetaEnviada> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelar: (() => void) | undefined;
+  const interrupcao = new Promise<'prazo' | 'cancelado'>((resolve) => {
+    timer = setTimeout(() => resolve('prazo'), prazo - Date.now());
+    cancelar = () => resolve('cancelado');
+    signal?.addEventListener('abort', cancelar);
+  });
+
+  try {
+    const resultado = await Promise.race([uploadMedia([foto], 'label'), interrupcao]);
+    if (resultado === 'prazo') {
+      return { ok: false, erro: { ok: false, reason: 'timeout', message: ANALISE_DEMOROU } };
+    }
+    if (resultado === 'cancelado') {
+      return {
+        ok: false,
+        erro: { ok: false, reason: 'unavailable', message: ANALISE_INTERROMPIDA },
+      };
+    }
+    return { ok: true, url: resultado[0] };
+  } catch {
+    return { ok: false, erro: { ok: false, reason: 'unavailable', message: ETIQUETA_NAO_ENVIADA } };
+  } finally {
+    clearTimeout(timer);
+    if (cancelar) signal?.removeEventListener('abort', cancelar);
+  }
 }
 
 /**
