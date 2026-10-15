@@ -131,6 +131,8 @@ export interface ProductInput {
   brand?: string;
   condition?: string;
   style?: string;
+  /** Composição do tecido, lida da etiqueta (#318). Ex.: '100% algodão'. */
+  composition?: string;
   price: number;
   /** URLs na ordem de exibição; ≥ 1 para publicar (RN-47). */
   images: string[];
