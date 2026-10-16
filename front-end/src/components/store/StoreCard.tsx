@@ -3,17 +3,7 @@ import VerifiedBadge from '@/components/common/VerifiedBadge';
 import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
 import type { Product } from '@/types/product';
 import { formatPieceCount } from '@/utils/format';
-
-/** Resumo da loja para a listagem "Brechós do RS". `activeCount` = peças ativas. */
-export type StoreSummary = {
-  id: string;
-  name: string;
-  logoUrl: string | null;
-  city: string;
-  state: string;
-  verified: boolean;
-  activeCount: number;
-};
+import type { StoreSummary } from '@/types/store';
 
 export type StoreCardProps = {
   store: StoreSummary;
@@ -23,7 +13,8 @@ export type StoreCardProps = {
 };
 
 const MAX_PREVIEW = 2;
-
+/** Colunas da prévia: até 2 peças mais a célula "Ver +N peças". */
+const PREVIEW_COLUMNS = MAX_PREVIEW + 1;
 const priceFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const wholePriceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -66,6 +57,7 @@ function StoreCard({ store, preview = [], onOpen }: StoreCardProps) {
   const shown = preview.slice(0, MAX_PREVIEW);
   const remaining = store.activeCount - shown.length;
   const showMore = shown.length > 0 && remaining > 0;
+  const emptyCells = shown.length > 0 ? PREVIEW_COLUMNS - shown.length - (showMore ? 1 : 0) : 0;
 
   return (
     <article className="relative flex flex-col border border-linha bg-branco-quente transition-colors hover:border-texto-auxiliar">
@@ -125,12 +117,22 @@ function StoreCard({ store, preview = [], onOpen }: StoreCardProps) {
 
           {showMore ? (
             <div className="flex aspect-square items-center justify-center bg-papel-profundo p-2 text-center font-ui text-label font-semibold text-tinta">
-              <span>Ver +{formatPieceCount(remaining)}</span>
-              <span aria-hidden="true" className="ml-1">
-                →
+              <span>
+                Ver +{formatPieceCount(remaining)}
+                <span aria-hidden="true" className="ml-1">
+                  →
+                </span>
               </span>
             </div>
           ) : null}
+          {Array.from({ length: emptyCells }, (_, index) => (
+            <div
+              key={`empty-${index}`}
+              data-testid="store-card-empty-cell"
+              aria-hidden="true"
+              className="aspect-square bg-papel-profundo"
+            />
+          ))}
         </div>
       ) : null}
     </article>

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import StoreCard from './StoreCard';
-import type { StoreSummary } from './StoreCard';
+import type { StoreSummary } from '@/types/store';
 import type { Product } from '@/types/product';
 
 const store: StoreSummary = {
@@ -89,6 +89,7 @@ describe('StoreCard', () => {
     setup();
     expect(screen.queryByText(/Ver \+/)).not.toBeInTheDocument();
   });
+
   it('mostra no máximo 2 peças na prévia, com o preço', () => {
     const withCover = [
       { ...preview[0], coverImageUrl: 'https://x.test/1.jpg' },
@@ -109,5 +110,25 @@ describe('StoreCard', () => {
     expect(onOpen).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Brechó Aurora/ }));
     expect(onOpen).toHaveBeenCalledWith('7');
+  });
+
+  it('preenche as colunas que sobram quando não há "Ver +N peças"', () => {
+    setup({ store: { ...store, activeCount: 2 }, preview });
+    expect(screen.getAllByTestId('store-card-empty-cell')).toHaveLength(1);
+  });
+
+  it('com uma peça só, sobram duas células vazias', () => {
+    setup({ store: { ...store, activeCount: 1 }, preview: [preview[0]] });
+    expect(screen.getAllByTestId('store-card-empty-cell')).toHaveLength(2);
+  });
+
+  it('com "Ver +N peças" e duas peças, não sobra célula vazia', () => {
+    setup({ preview });
+    expect(screen.queryAllByTestId('store-card-empty-cell')).toHaveLength(0);
+  });
+
+  it('sem prévia, não monta a grade', () => {
+    setup();
+    expect(screen.queryAllByTestId('store-card-empty-cell')).toHaveLength(0);
   });
 });
