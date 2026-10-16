@@ -12,10 +12,10 @@ let mockProducts: ProductsModule['products'];
 const USER_ID = 'u_ana';
 
 const ADDRESS: DeliveryAddress = {
-  cep: '90010-000',
+  zipCode: '90010-000',
   street: 'Rua dos Andradas',
   number: '500',
-  district: 'Centro Histórico',
+  neighborhood: 'Centro Histórico',
   city: 'Porto Alegre',
   state: 'RS',
 };
@@ -34,8 +34,8 @@ describe('orderService (mock)', () => {
   });
 
   describe('createOrder', () => {
-    // Objetivo declarado da issue: garantir o fluxo acordado.
-    it('marca as peças como vendidas e as remove do carrinho', async () => {
+    // Objetivo declarado: back-end#247 (a peça fica reservada, não vendida).
+    it('marca as peças como reservado e deixa o carrinho intocado', async () => {
       await cartService.addItem(USER_ID, '1'); // Jaqueta jeans, loja '1', mesma do Pedido
 
       const order = await orderService.createOrder(USER_ID, {
@@ -44,10 +44,23 @@ describe('orderService (mock)', () => {
       });
 
       expect(order.status).toBe('aguardando_comprovante');
-      expect(mockProducts.find((product) => product.id === '1')?.status).toBe('vendido');
+      expect(mockProducts.find((product) => product.id === '1')?.status).toBe('reservado');
 
+      // O mock não mexe no carrinho: o checkout recarrega e mostra o que o service devolver.
       const cart = await cartService.getCart(USER_ID);
-      expect(cart.groups).toEqual([]);
+      expect(cart.groups).toHaveLength(1);
+      expect(cart.groups[0].items.map((item) => item.product.id)).toEqual(['1']);
+    });
+
+    // Objetivo declarado: back-end#243 (expires_at = 3 dias depois da criação).
+    it('expiresAt é 3 dias depois de createdAt', async () => {
+      const order = await orderService.createOrder(USER_ID, {
+        productIds: ['1'],
+        deliveryAddress: ADDRESS,
+      });
+
+      const elapsed = new Date(order.expiresAt).getTime() - new Date(order.createdAt).getTime();
+      expect(elapsed).toBe(3 * 24 * 60 * 60 * 1000);
     });
 
     it('productAmount soma as peças; totalAmount é igual; platformFee é 9% (RN-11)', async () => {
@@ -192,6 +205,37 @@ describe('orderService (mock)', () => {
       expect(approved.payment?.status).toBe('aprovado');
     });
 
+    // Objetivo declarado: back-end#251 (vira vendido quando a administradora aprova).
+    it('approveReceipt leva as peças do Pedido de reservado a vendido', async () => {
+      const order = await orderService.createOrder(USER_ID, {
+        productIds: ['1', '8'], // ambas da loja '1'
+        deliveryAddress: ADDRESS,
+      });
+      const statusOf = (id: string) => mockProducts.find((product) => product.id === id)?.status;
+      expect(statusOf('1')).toBe('reservado');
+      expect(statusOf('8')).toBe('reservado');
+
+      await orderService.approveReceipt(USER_ID, order.id);
+
+      expect(statusOf('1')).toBe('vendido');
+      expect(statusOf('8')).toBe('vendido');
+    });
+
+    it('approveReceipt aprova mesmo se a peça do Pedido não existe mais no catálogo mock', async () => {
+      const order = await orderService.createOrder(USER_ID, {
+        productIds: ['1'],
+        deliveryAddress: ADDRESS,
+      });
+      const key = `orders:${USER_ID}`;
+      const stored = JSON.parse(window.sessionStorage.getItem(key) ?? '[]');
+      stored[0].items[0].productId = 'inexistente';
+      window.sessionStorage.setItem(key, JSON.stringify(stored));
+
+      const approved = await orderService.approveReceipt(USER_ID, order.id);
+
+      expect(approved.status).toBe('confirmado');
+    });
+
     // Objetivo declarado: RN-23 ("devolve o pedido ao comprador com motivo").
     it('rejectReceipt volta a aguardando_comprovante (não cria status novo) e grava o motivo', async () => {
       const order = await orderService.createOrder(USER_ID, {
@@ -222,6 +266,35 @@ describe('orderService (mock)', () => {
       expect(statuses).toContain('concluido');
       expect(items.some((order) => order.payment?.status === 'rejeitado')).toBe(true);
       expect(total).toBeGreaterThanOrEqual(7);
+    });
+
+    // Objetivo declarado: back-end#243 (Pedido de exemplo em expirado).
+    it('tem um Pedido de exemplo expirado, com expiresAt, fora da linha do tempo', async () => {
+      const example = await orderService.getOrder(USER_ID, 'example-expirado');
+
+      expect(example.status).toBe('expirado');
+      expect(example.payment).toBeNull();
+      expect(example.history.map((entry) => entry.status)).toEqual([
+        'aguardando_comprovante',
+        'expirado',
+      ]);
+      expect(new Date(example.expiresAt).getTime()).toBe(
+        new Date(example.createdAt).getTime() + 3 * 24 * 60 * 60 * 1000,
+      );
+      expect(example.history[1].at).toBe(example.expiresAt);
+    });
+
+    it('todo Pedido tem expiresAt e a lista não expõe pixKey na loja', async () => {
+      await orderService.createOrder(USER_ID, { productIds: ['1'], deliveryAddress: ADDRESS });
+
+      const { items } = await orderService.listMyOrders(USER_ID);
+
+      expect(items.length).toBeGreaterThanOrEqual(8);
+      for (const summary of items) {
+        expect(Object.keys(summary.store).sort()).toEqual(['id', 'name']);
+      }
+      const detail = await orderService.getOrder(USER_ID, items[0].id);
+      expect(detail.store.pixKey).toEqual(expect.any(String)); // o detalhe continua com a chave Pix
     });
 
     it('pedido real criado aparece primeiro na lista, antes dos exemplos', async () => {
@@ -310,10 +383,10 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
       { status: 'aguardando_comprovante', at: '2026-09-22T08:00:00Z' },
     ],
     delivery_address: {
-      cep: '90010-000',
+      zip_code: '90010-000',
       street: 'Rua dos Andradas',
       number: '500',
-      district: 'Centro Histórico',
+      neighborhood: 'Centro Histórico',
       city: 'Porto Alegre',
       state: 'RS',
     },
@@ -323,8 +396,82 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
       submitted_at: '2026-09-21T09:00:00Z',
       rejection_reason: 'Comprovante ilegível — reenvie uma foto nítida do Pix.',
     },
+    expires_at: '2026-09-23T12:00:00Z',
     created_at: '2026-09-20T12:00:00Z',
   };
+
+  /** Resposta do envio do comprovante no shape do back-end#249: só id, status, payment e history. */
+  const PARTIAL_RECEIPT_RESPONSE = {
+    id: 77,
+    status: 'em_analise',
+    payment: {
+      status: 'pendente',
+      receipt_name: 'comprovante.png',
+      submitted_at: '2026-09-21T09:00:00Z',
+    },
+    history: [
+      { status: 'aguardando_comprovante', at: '2026-09-20T12:00:00Z' },
+      { status: 'em_analise', at: '2026-09-21T09:00:00Z' },
+    ],
+  };
+
+  // Objetivo declarado: back-end#243 — status expirado e expires_at mapeiam sem erro.
+  it('mapeia status expirado e expiresAt a partir de expires_at', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getOrder: apiGetOrder } = await import('./orderService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          ...REJECTED_ORDER_RESPONSE,
+          status: 'expirado',
+          payment: null,
+          history: [
+            { status: 'aguardando_comprovante', at: '2026-09-20T12:00:00Z' },
+            { status: 'expirado', at: '2026-09-23T12:00:00Z' },
+          ],
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const order = await apiGetOrder('u_ana', '77');
+
+    expect(order.status).toBe('expirado');
+    expect(order.expiresAt).toBe('2026-09-23T12:00:00Z');
+    expect(order.history[order.history.length - 1].status).toBe('expirado');
+  });
+
+  // Objetivo declarado: nomes do banco — zip_code/neighborhood (back-end#247).
+  it('mapeia zip_code/neighborhood da API para zipCode/neighborhood', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getOrder: apiGetOrder } = await import('./orderService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: REJECTED_ORDER_RESPONSE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const order = await apiGetOrder('u_ana', '77');
+
+    expect(order.deliveryAddress).toEqual({
+      zipCode: '90010-000',
+      street: 'Rua dos Andradas',
+      number: '500',
+      complement: undefined,
+      neighborhood: 'Centro Histórico',
+      city: 'Porto Alegre',
+      state: 'RS',
+    });
+    expect(order.deliveryAddress).not.toHaveProperty('cep');
+    expect(order.deliveryAddress).not.toHaveProperty('district');
+  });
 
   // Objetivo declarado: RN-23 — rejeição lida de payment.status, com o motivo mapeado.
   it('mapeia rejectionReason e mantém status em aguardando_comprovante (fixture do contrato proposto)', async () => {
@@ -381,7 +528,7 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
       items: [
         {
           id: 10,
-          store: { id: 1, name: 'Brechó Mercado Público', pix_key: 'loja@vintex.com' },
+          store: { id: 1, name: 'Brechó Mercado Público' }, // back-end#248: sem pix_key
           items: [{ product_id: 1, name: 'Jaqueta jeans', price: 159.9, cover_image_url: null }],
           total_amount: 159.9,
           status: 'confirmado',
@@ -404,7 +551,7 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
     expect(page.total).toBe(1);
     expect(page.items).toHaveLength(1);
     expect(page.items[0].id).toBe('10');
-    expect(page.items[0].store.pixKey).toBe('loja@vintex.com');
+    expect(page.items[0].store).toEqual({ id: '1', name: 'Brechó Mercado Público' });
     expect(page.items[0].totalAmount).toBe(159.9);
   });
 
@@ -429,7 +576,17 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
     expect(calls).toEqual([
       {
         url: '/users/me/orders',
-        data: { product_ids: ['3'], delivery_address: ADDRESS },
+        data: {
+          product_ids: ['3'],
+          delivery_address: {
+            zip_code: '90010-000',
+            street: 'Rua dos Andradas',
+            number: '500',
+            neighborhood: 'Centro Histórico',
+            city: 'Porto Alegre',
+            state: 'RS',
+          },
+        },
       },
     ]);
   });
@@ -440,9 +597,14 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
 
     let capturedConfig: { url?: string; headers?: unknown; data?: unknown } | undefined;
     httpClient.defaults.adapter = (config) => {
-      capturedConfig = { url: config.url, headers: config.headers, data: config.data };
+      if (config.method === 'post') {
+        capturedConfig = { url: config.url, headers: config.headers, data: config.data };
+      }
       return Promise.resolve({
-        data: { ...REJECTED_ORDER_RESPONSE, status: 'em_analise', payment: { status: 'pendente' } },
+        data:
+          config.method === 'post'
+            ? PARTIAL_RECEIPT_RESPONSE
+            : { ...REJECTED_ORDER_RESPONSE, status: 'em_analise', payment: { status: 'pendente' } },
         status: 200,
         statusText: 'OK',
         headers: {},
@@ -456,6 +618,71 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
     expect(capturedConfig?.url).toBe('/users/me/orders/77/receipt');
     expect(capturedConfig?.data).toBeInstanceOf(FormData);
     expect(order.status).toBe('em_analise');
+  });
+
+  // Objetivo declarado: back-end#249 — resposta parcial { id, status, payment, history }.
+  it('submitReceipt devolve o Pedido completo relendo o detalhe, mesmo com a resposta parcial', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { submitReceipt: apiSubmitReceipt } = await import('./orderService');
+
+    const calls: string[] = [];
+    httpClient.defaults.adapter = (config) => {
+      calls.push(`${config.method} ${config.url}`);
+      return Promise.resolve({
+        data:
+          config.method === 'post'
+            ? PARTIAL_RECEIPT_RESPONSE
+            : {
+                ...REJECTED_ORDER_RESPONSE,
+                status: 'em_analise',
+                store: { id: 3, name: 'Roupa Rodada', pix_key: 'loja@vintex.com' },
+                history: PARTIAL_RECEIPT_RESPONSE.history,
+                payment: PARTIAL_RECEIPT_RESPONSE.payment,
+              },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    const file = new File(['x'], 'comprovante.png', { type: 'image/png' });
+    const order = await apiSubmitReceipt('u_ana', '77', file);
+
+    expect(calls).toEqual(['post /users/me/orders/77/receipt', 'get /users/me/orders/77']);
+    // Loja, peças e valores vêm do detalhe; status/payment/history refletem o envio.
+    expect(order.store).toEqual({ id: '3', name: 'Roupa Rodada', pixKey: 'loja@vintex.com' });
+    expect(order.items).toHaveLength(1);
+    expect(order.productAmount).toBe(229.9);
+    expect(order.status).toBe('em_analise');
+    expect(order.payment?.status).toBe('pendente');
+    expect(order.history.map((entry) => entry.status)).toEqual([
+      'aguardando_comprovante',
+      'em_analise',
+    ]);
+  });
+
+  // Critério de aceite: 413, 415 e 409 são erros tipados distintos.
+  it.each([
+    [413, 'RECEIPT_TOO_LARGE'],
+    [415, 'RECEIPT_INVALID_TYPE'],
+    [409, 'ORDER_NOT_AWAITING_RECEIPT'],
+  ])('submitReceipt: HTTP %i vira OrderError %s, sem reler o detalhe', async (status, code) => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { submitReceipt: apiSubmitReceipt } = await import('./orderService');
+
+    const calls: string[] = [];
+    httpClient.defaults.adapter = (config) => {
+      calls.push(`${config.method} ${config.url}`);
+      return Promise.reject({ response: { status, data: {} } });
+    };
+
+    const file = new File(['x'], 'comprovante.png', { type: 'image/png' });
+    await expect(apiSubmitReceipt('u_ana', '77', file)).rejects.toMatchObject({
+      name: 'OrderError',
+      code,
+    });
+    expect(calls).toEqual(['post /users/me/orders/77/receipt']);
   });
 
   it('erro sem envelope conhecido (ex.: rede fora) vira OrderError INTERNAL_ERROR', async () => {

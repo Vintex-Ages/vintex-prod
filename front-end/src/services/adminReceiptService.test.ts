@@ -10,10 +10,10 @@ let orderService: OrderServiceModule;
 const BUYER_ID = 'u_ana';
 
 const ADDRESS: DeliveryAddress = {
-  cep: '90010-000',
+  zipCode: '90010-000',
   street: 'Rua dos Andradas',
   number: '500',
-  district: 'Centro Histórico',
+  neighborhood: 'Centro Histórico',
   city: 'Porto Alegre',
   state: 'RS',
 };
