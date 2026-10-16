@@ -91,7 +91,7 @@ describe('PriceSuggestion', () => {
     it('mostra a mensagem sem estilo de erro e deixa seguir com o preço', () => {
       setup({ state: 'unavailable' });
       expect(
-        screen.getByText('Sugestão indisponível agora. Você pode seguir com seu preço'),
+        screen.getByText('Sugestão indisponível agora. Você pode seguir com o seu preço.'),
       ).toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Sugerir preço com IA' })).toBeEnabled();

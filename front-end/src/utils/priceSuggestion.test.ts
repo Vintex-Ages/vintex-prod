@@ -1,33 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { averagePrice, comparePriceToRange } from './priceSuggestion';
+import { averagePrice, priceRangePosition } from './priceSuggestion';
 
 const range = { min: 80, max: 120 };
 
-describe('comparePriceToRange', () => {
+describe('priceRangePosition', () => {
   it('retorna "within" para preço dentro da faixa', () => {
-    expect(comparePriceToRange(100, range)).toBe('within');
+    expect(priceRangePosition(100, range)).toBe('within');
   });
 
   it('considera os limites min e max como dentro da faixa', () => {
-    expect(comparePriceToRange(80, range)).toBe('within');
-    expect(comparePriceToRange(120, range)).toBe('within');
+    expect(priceRangePosition(80, range)).toBe('within');
+    expect(priceRangePosition(120, range)).toBe('within');
   });
 
   it('retorna "below" para preço abaixo da faixa', () => {
-    expect(comparePriceToRange(79.99, range)).toBe('below');
+    expect(priceRangePosition(79.99, range)).toBe('below');
   });
 
   it('retorna "above" para preço acima da faixa', () => {
-    expect(comparePriceToRange(120.01, range)).toBe('above');
+    expect(priceRangePosition(120.01, range)).toBe('above');
   });
 
   it('retorna "none" quando ainda não há preço informado', () => {
-    expect(comparePriceToRange(null, range)).toBe('none');
-    expect(comparePriceToRange(undefined, range)).toBe('none');
+    expect(priceRangePosition(null, range)).toBe('none');
+    expect(priceRangePosition(undefined, range)).toBe('none');
   });
 
   it('retorna "none" para preço inválido', () => {
-    expect(comparePriceToRange(Number.NaN, range)).toBe('none');
+    expect(priceRangePosition(Number.NaN, range)).toBe('none');
   });
 });
 

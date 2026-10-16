@@ -6,12 +6,12 @@
  */
 export type PriceRange = { min: number; max: number };
 
-export type PriceComparison = 'below' | 'within' | 'above' | 'none';
+export type PriceRangePosition = 'below' | 'within' | 'above' | 'none';
 
-export function comparePriceToRange(
+export function priceRangePosition(
   price: number | null | undefined,
   range: PriceRange,
-): PriceComparison {
+): PriceRangePosition {
   if (price === null || price === undefined || !Number.isFinite(price)) {
     return 'none';
   }

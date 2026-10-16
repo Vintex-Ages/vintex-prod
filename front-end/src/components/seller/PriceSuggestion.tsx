@@ -1,6 +1,6 @@
 import AISuggestedTag from '@/components/common/AISuggestedTag';
 import Button from '@/components/common/Button';
-import { averagePrice, comparePriceToRange } from '@/utils/priceSuggestion';
+import { averagePrice, priceRangePosition } from '@/utils/priceSuggestion';
 import type { PriceRange } from '@/utils/priceSuggestion';
 import { formatCentsToBRL } from '@/utils/format';
 
@@ -75,7 +75,7 @@ function PriceSuggestion({
 }: PriceSuggestionProps) {
   const isLoading = state === 'loading';
   const showSuggestion = state === 'ready' && suggestion !== undefined;
-  const comparison = showSuggestion ? comparePriceToRange(currentPrice, suggestion) : 'none';
+  const comparison = showSuggestion ? priceRangePosition(currentPrice, suggestion) : 'none';
   const outOfRangeMessage =
     comparison === 'below' || comparison === 'above' ? OUT_OF_RANGE_MESSAGE[comparison] : null;
 
@@ -93,7 +93,7 @@ function PriceSuggestion({
 
       {state === 'unavailable' ? (
         <p className="text-body-sm text-texto-auxiliar">
-          Sugestão indisponível agora. Você pode seguir com seu preço
+          Sugestão indisponível agora. Você pode seguir com o seu preço.
         </p>
       ) : null}
 
