@@ -38,10 +38,10 @@ export interface CartGroup {
   /** Soma em centavos apenas dos itens do grupo sem `unavailable`. */
   subtotalCents: number;
   /**
-   * Chave Pix do vendedor, exibida na tela de pagamento (RN-18/RN-19).
-   * Opcional: o grupo do carrinho no back ainda não manda `pix_key` (pedido
-   * na #226); no modo mock é sempre `undefined`, porque o mock de produtos
-   * não guarda chave Pix.
+   * Chave Pix do vendedor, exibida por loja no carrinho (RN-18/RN-19).
+   * Vem de `store.pix_key` no contrato proposto no back-end#259; null e
+   * respostas antigas sem o campo viram undefined. O mock de produtos
+   * não guarda chave Pix e também não inventa uma.
    */
   pixKey?: string;
 }

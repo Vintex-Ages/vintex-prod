@@ -162,12 +162,10 @@ interface ApiCartStore {
   id: number | string;
   name: string;
   verified: boolean;
-  /**
-   * Chave Pix do vendedor (RN-18/RN-19). PENDENTE NO BACK: `FeedStoreResponse`
-   * (o `store` do grupo) só tem `id`, `name` e `verified`. A loja já grava a
-   * chave desde o back-end#216; falta ela viajar aqui. Opcional até lá.
-   */
+  /** Campos do `CartStoreInfo` proposto no back-end#259; opcionais para respostas antigas. */
   pix_key?: string | null;
+  city?: string | null;
+  logo_url?: string | null;
 }
 
 interface ApiCartItem {
@@ -198,6 +196,8 @@ function mapApiStore(store: ApiCartStore): Store {
     id: String(store.id),
     name: store.name,
     verified: store.verified,
+    city: store.city ?? undefined,
+    logoUrl: store.logo_url ?? undefined,
   };
 }
 
