@@ -51,15 +51,26 @@ export function useReceiptQueue() {
     };
   }, [filter, query, attempt]);
 
-  const setFilter = useCallback((next: ReceiptFilter) => {
-    setState({ status: 'loading' });
-    setFilterState(next);
-  }, []);
+  // Valor igual ao atual não dispara nova consulta (o efeito não roda): nem
+  // volta a "carregando", senão a fila trava no skeleton.
+  const setFilter = useCallback(
+    (next: ReceiptFilter) => {
+      if (next === filter) return;
+      setState({ status: 'loading' });
+      setFilterState(next);
+    },
+    [filter],
+  );
 
-  const search = useCallback((term: string) => {
-    setState({ status: 'loading' });
-    setQuery(term.trim());
-  }, []);
+  const search = useCallback(
+    (term: string) => {
+      const next = term.trim();
+      if (next === query) return;
+      setState({ status: 'loading' });
+      setQuery(next);
+    },
+    [query],
+  );
 
   const retry = useCallback(() => {
     setState({ status: 'loading' });

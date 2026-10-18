@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AdminReceiptError, listReceipts } from '@/services/adminReceiptService';
 import ReceiptQueue from './ReceiptQueue';
 import type { ReceiptReview } from '@/types/admin';
@@ -54,10 +55,28 @@ const page = (items = [review()]) => ({
   total: items.length,
 });
 
+const AUTH: AuthContextValue = {
+  user: {
+    id: 'u_3',
+    name: 'Eva Vieira',
+    email: 'eva@exemplo.com',
+    is_seller: false,
+    is_admin: true,
+  },
+  token: 'token',
+  isAuthenticated: true,
+  loading: false,
+  login: () => {},
+  logout: () => {},
+  refreshUser: async () => {},
+};
+
 function renderPage(props: Parameters<typeof ReceiptQueue>[0] = {}) {
   return render(
     <MemoryRouter>
-      <ReceiptQueue {...props} />
+      <AuthContext.Provider value={AUTH}>
+        <ReceiptQueue {...props} />
+      </AuthContext.Provider>
     </MemoryRouter>,
   );
 }
@@ -75,6 +94,15 @@ describe('<ReceiptQueue />', () => {
     expect(screen.getByRole('status', { name: 'Carregando comprovantes' })).toBeInTheDocument();
     expect(await screen.findByText('#8921')).toBeInTheDocument();
     expect(screen.queryByRole('status', { name: 'Carregando comprovantes' })).toBeNull();
+  });
+
+  it('mostra os filtros antes da busca (como no Figma)', async () => {
+    renderPage();
+    await screen.findByText('#8921');
+
+    const filters = screen.getByRole('group', { name: 'Filtrar por status' });
+    const search = screen.getByRole('search');
+    expect(filters.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('tem título, filtros e busca', async () => {

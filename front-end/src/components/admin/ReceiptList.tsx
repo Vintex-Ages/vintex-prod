@@ -4,9 +4,14 @@ import { PaymentStatusBadge } from './PaymentStatusBadge';
 
 /**
  * Fila de comprovantes (FE-US032-1): tabela a partir do tablet e cartões no
- * celular — o mesmo `<table>` muda de aparência por CSS, então há um só
- * conjunto de botões "Ver comprovante" no DOM. Só apresentação: a ordem e o
- * filtro vêm prontos do service; abrir o detalhe é `onViewReceipt`.
+ * celular, como no Figma — o mesmo `<table>` muda de aparência por CSS, então
+ * há um só conjunto de botões "Ver comprovante" no DOM. No celular cada linha
+ * vira um grid (Pedido + status, peça, comprador, vendedor, valor) e o cartão
+ * inteiro é o clique: o botão fica invisível por cima dele (como no Figma, sem
+ * botão no cartão) e só aparece a partir do tablet. Os textos marcados
+ * `tablet:hidden` só existem nos cartões. A ordem das células no DOM é a das
+ * colunas da tabela; no cartão o `order-*` rearruma. Só apresentação: a
+ * ordem e o filtro vêm prontos do service; abrir o detalhe é `onViewReceipt`.
  *
  * Usage:
  *   import { ReceiptList } from '@/components/admin/ReceiptList';
@@ -17,30 +22,24 @@ type ReceiptListProps = {
   onViewReceipt: (item: ReceiptReview) => void;
 };
 
-const currency = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-});
+const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const headClass =
-  'px-4 py-3 text-left font-ui text-label font-bold uppercase tracking-wide text-texto-auxiliar';
-const cellClass = 'flex items-start justify-between gap-4 px-4 py-2 tablet:table-cell tablet:py-4';
+  'px-5 py-3 text-left font-ui text-label font-bold uppercase tracking-wide text-texto-auxiliar';
+const cellClass = 'tablet:table-cell tablet:px-5 tablet:py-4 tablet:align-middle';
 
-/** Rótulo do campo, só no celular (no tablet o cabeçalho da tabela assume). */
-function MobileLabel({ children }: { children: string }) {
-  return (
-    <span className="font-ui text-label font-bold uppercase text-texto-auxiliar tablet:hidden">
-      {children}
-    </span>
-  );
+/** "+2 peças": quantas peças vêm junto com a primeira. */
+function extraItemsLabel(count: number): string | null {
+  if (count <= 0) return null;
+  return `+${count} ${count === 1 ? 'peça' : 'peças'}`;
 }
 
 export function ReceiptList({ items, onViewReceipt }: ReceiptListProps) {
   return (
-    <table className="block w-full border-collapse tablet:table">
+    <table className="block w-full border-collapse tablet:table tablet:border tablet:border-linha tablet:bg-branco-quente">
       <caption className="sr-only">Comprovantes de pagamento</caption>
       <thead className="hidden tablet:table-header-group">
-        <tr className="border border-linha bg-papel-profundo">
+        <tr className="bg-papel-profundo">
           <th scope="col" className={headClass}>
             Pedido
           </th>
@@ -48,7 +47,7 @@ export function ReceiptList({ items, onViewReceipt }: ReceiptListProps) {
             Comprador
           </th>
           <th scope="col" className={headClass}>
-            Loja
+            Vendedor / Loja
           </th>
           <th scope="col" className={headClass}>
             Valor
@@ -57,51 +56,72 @@ export function ReceiptList({ items, onViewReceipt }: ReceiptListProps) {
             Status
           </th>
           <th scope="col" className={headClass}>
-            <span className="sr-only">Ações</span>
+            Comprovante
           </th>
         </tr>
       </thead>
-      <tbody className="flex flex-col gap-3 tablet:table-row-group">
+      <tbody className="flex flex-col gap-4 tablet:table-row-group">
         {items.map((item) => {
-          const contact = item.buyer.email || item.buyer.phone;
+          const extra = extraItemsLabel(item.items.length - 1);
+          const { phone, email } = item.buyer;
           return (
             <tr
               key={item.orderId}
-              className="block border border-linha bg-branco-quente py-2 tablet:table-row tablet:py-0"
+              className="relative grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border border-linha bg-branco-quente p-4 focus-within:ring-2 focus-within:ring-tinta tablet:static tablet:table-row tablet:border-0 tablet:border-t tablet:p-0 tablet:first:border-t-0 tablet:focus-within:ring-0"
             >
-              <td className={cellClass}>
-                <MobileLabel>Pedido</MobileLabel>
-                <span className="font-ui text-body font-semibold text-tinta">#{item.orderId}</span>
-              </td>
-              <td className={cellClass}>
-                <MobileLabel>Comprador</MobileLabel>
-                <span className="flex flex-col text-right tablet:text-left">
-                  <span className="font-ui text-body text-tinta">{item.buyer.name}</span>
-                  {contact ? (
-                    <span className="font-ui text-body-sm text-texto-auxiliar">{contact}</span>
-                  ) : null}
+              <td className={`order-1 ${cellClass}`}>
+                <span className="block font-ui text-body-sm font-bold text-tinta">
+                  #{item.orderId}
+                </span>
+                <span className="hidden font-ui text-label text-texto-auxiliar tablet:block">
+                  {item.items[0]?.name}
+                  {extra ? ` ${extra}` : ''}
                 </span>
               </td>
-              <td className={cellClass}>
-                <MobileLabel>Loja</MobileLabel>
-                <span className="font-ui text-body text-tinta">{item.store.name}</span>
+              <td className="order-3 col-span-2 font-ui text-body font-semibold text-tinta tablet:hidden">
+                {item.items[0]?.name}
+                {extra ? (
+                  <span className="ml-2 text-body-sm font-normal text-texto-auxiliar">{extra}</span>
+                ) : null}
               </td>
-              <td className={cellClass}>
-                <MobileLabel>Valor</MobileLabel>
-                <span className="font-ui text-body text-tinta">
+              <td
+                className={`order-4 col-span-2 font-ui text-body-sm text-texto-auxiliar ${cellClass}`}
+              >
+                <span className="tablet:block tablet:text-body-sm tablet:font-bold tablet:text-tinta">
+                  <span className="tablet:hidden">Comprador: </span>
+                  {item.buyer.name}
+                </span>
+                {phone ? <span className="block text-label tablet:text-tinta">{phone}</span> : null}
+                {email ? <span className="block text-label">{email}</span> : null}
+              </td>
+              <td
+                className={`order-5 col-span-2 font-ui text-body-sm text-texto-auxiliar ${cellClass}`}
+              >
+                <span className="tablet:hidden">Vendedor: </span>
+                <span className="tablet:text-body-sm tablet:font-bold tablet:text-tinta">
+                  {item.store.sellerName ? `${item.store.sellerName} · ` : ''}
+                  {item.store.name}
+                </span>
+              </td>
+              <td
+                className={`order-6 col-span-2 flex items-center justify-between border-t border-linha pt-2 tablet:border-t-0 tablet:pt-4 ${cellClass}`}
+              >
+                <span className="font-ui text-body-sm text-texto-auxiliar tablet:hidden">
+                  Valor do pedido
+                </span>
+                <span className="font-ui text-body font-bold text-tinta tablet:text-body-sm">
                   {currency.format(item.totalAmount)}
                 </span>
               </td>
-              <td className={cellClass}>
-                <MobileLabel>Status</MobileLabel>
+              <td className={`order-2 justify-self-end ${cellClass}`}>
                 <PaymentStatusBadge status={item.payment.status} />
               </td>
-              <td className="block px-4 py-2 tablet:table-cell tablet:py-4 tablet:text-right">
+              <td className={`absolute inset-0 tablet:static ${cellClass}`}>
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   onClick={() => onViewReceipt(item)}
                   aria-label={`Ver comprovante do pedido #${item.orderId}`}
-                  className="w-full tablet:w-auto"
+                  className="h-full w-full cursor-pointer border-0 opacity-0 tablet:h-auto tablet:w-auto tablet:border-2 tablet:opacity-100"
                 >
                   Ver comprovante
                 </Button>

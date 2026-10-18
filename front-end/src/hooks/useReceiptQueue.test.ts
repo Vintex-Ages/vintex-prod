@@ -139,4 +139,18 @@ describe('useReceiptQueue', () => {
       items: [review({ orderId: 'novo' })],
     });
   });
+
+  // Repetir a mesma busca/filtro não muda a consulta: não pode travar em "carregando".
+  it('repetir a mesma busca ou o mesmo filtro não deixa a fila carregando', async () => {
+    const { result } = renderHook(() => useReceiptQueue());
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+
+    act(() => result.current.search('lala'));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+    act(() => result.current.search('  lala '));
+    expect(result.current.state.status).toBe('ready');
+
+    act(() => result.current.setFilter('todos'));
+    expect(result.current.state.status).toBe('ready');
+  });
 });

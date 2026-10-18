@@ -6,7 +6,7 @@ afterEach(cleanup);
 
 describe('<PaymentStatusBadge />', () => {
   it.each([
-    ['pendente', 'Pendente'],
+    ['pendente', 'Pendente de validação'],
     ['aprovado', 'Aprovado'],
     ['rejeitado', 'Rejeitado'],
   ] as const)('mostra o rótulo de %s', (status, label) => {

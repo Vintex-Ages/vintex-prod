@@ -53,4 +53,18 @@ describe('FilterChip', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
     expect(onToggle).not.toHaveBeenCalled();
   });
+
+  it('compact usa o chip menor do Figma, sem a altura mínima de toque', () => {
+    render(<FilterChip label="Roupas" compact />);
+
+    const chip = screen.getByRole('button', { name: 'Roupas' });
+    expect(chip).not.toHaveClass('min-h-touch');
+    expect(chip).toHaveClass('py-2');
+  });
+
+  it('sem compact mantém a altura mínima de toque', () => {
+    render(<FilterChip label="Roupas" />);
+
+    expect(screen.getByRole('button', { name: 'Roupas' })).toHaveClass('min-h-touch');
+  });
 });
