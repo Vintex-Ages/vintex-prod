@@ -246,6 +246,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
+/** Exportada para `recommendationService` (#313) reaproveitar "mesma forma da vitrine". */
 export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
@@ -388,7 +389,119 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
       : undefined,
   };
 }
+// ---- busca por imagem (FE-SVC-image-search, #315) ----
+// Contrato: `POST /api/products/search-by-image` (back-end#255), multipart com
+// `image` + os mesmos filtros do catálogo (RN-40). Rota pública (RN-26), e o
+// back não guarda a foto. A rota ainda não existe no back: a fixture dos testes
+// segue o exemplo da issue, não uma resposta real.
 
+/** O que a IA leu da foto (RN-60). Campo vazio vira `undefined`. */
+export interface ImageInterpretation {
+  category?: string;
+  color?: string;
+  brand?: string;
+}
+
+export interface ImageSearchResult extends Paginated<Product> {
+  interpreted: ImageInterpretation;
+}
+
+/** Limites do back: recusar aqui evita um upload que voltaria 415/413. */
+const IMAGE_SEARCH_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+const IMAGE_SEARCH_MAX_BYTES = 8 * 1024 * 1024;
+
+interface ApiImageSearchItem extends Omit<ApiFeedItem, 'price'> {
+  /** `number` quando o back serializa; `string` quando o `Decimal` do Pydantic sai cru. */
+  price: number | string;
+}
+
+interface ApiImageSearchResponse extends ApiPage<ApiImageSearchItem> {
+  interpreted?: { category?: string | null; color?: string | null; brand?: string | null } | null;
+}
+
+function validateImage(image: File): CatalogError | null {
+  if (!IMAGE_SEARCH_TYPES.includes(image.type)) {
+    return new CatalogError('UNSUPPORTED_IMAGE_TYPE', 'Use uma foto JPEG, PNG, WebP ou HEIC.');
+  }
+  if (image.size > IMAGE_SEARCH_MAX_BYTES) {
+    return new CatalogError('IMAGE_TOO_LARGE', 'A foto passa de 8 MB. Escolha uma menor.');
+  }
+  return null;
+}
+
+export function toReais(price: number | string): number {
+  const value = typeof price === 'string' ? Number(price) : price;
+  if (!Number.isFinite(value)) {
+    throw new CatalogError(
+      'INVALID_RESPONSE',
+      'Resposta inválida da busca por imagem: preço ilegível.',
+    );
+  }
+  return value;
+}
+
+function mapImageSearch(data: ApiImageSearchResponse): ImageSearchResult {
+  const { category, color, brand } = data.interpreted ?? {};
+  return {
+    ...mapPage(data, (item) => mapFeedItem({ ...item, price: toReais(item.price) })),
+    interpreted: {
+      category: category || undefined,
+      color: color || undefined,
+      brand: brand || undefined,
+    },
+  };
+}
+
+function toImageSearchError(error: unknown): CatalogError {
+  if (error instanceof CatalogError) return error;
+
+  const status = (error as { response?: { status?: number } }).response?.status;
+  if (status === 415) {
+    return new CatalogError('UNSUPPORTED_IMAGE_TYPE', 'Use uma foto JPEG, PNG, WebP ou HEIC.');
+  }
+  if (status === 413) {
+    return new CatalogError('IMAGE_TOO_LARGE', 'A foto passa de 8 MB. Escolha uma menor.');
+  }
+  if (status === 503) {
+    return new CatalogError(
+      'AI_UNAVAILABLE',
+      'A busca por foto está indisponível agora. Tente de novo em instantes.',
+    );
+  }
+  return toCatalogError(error);
+}
+
+function mockSearchByImage(filters: FilterParams, page = 1): ImageSearchResult {
+  const matches = mockProducts.filter((product) => matchesFilters(product, filters));
+  const [top] = matches;
+  return {
+    ...paginate(matches.map(toProduct), page, DEFAULT_PAGE_SIZE),
+    interpreted: top ? { category: top.category, color: top.color, brand: top.brand } : {},
+  };
+}
+
+async function apiSearchByImage(
+  image: File,
+  filters: FilterParams,
+  page?: number,
+): Promise<ImageSearchResult> {
+  const form = new FormData();
+  form.append('image', image);
+  // `q` e `sort` não existem nessa rota: o contrato aceita só os filtros do catálogo.
+  const params = toApiParams({ ...filters, q: undefined, sort: undefined });
+  for (const [key, value] of Object.entries(params)) form.append(key, String(value));
+  if (page !== undefined) form.append('page', String(page));
+
+  try {
+    const { data } = await httpClient.post<ApiImageSearchResponse>(
+      '/products/search-by-image',
+      form,
+    );
+    return mapImageSearch(data);
+  } catch (error) {
+    throw toImageSearchError(error);
+  }
+}
 // ---- API pública do service ----
 
 export function getFeed(params: FeedParams = {}): Promise<Paginated<Product>> {
@@ -410,4 +523,21 @@ export function getProducts(filters: FilterParams = {}): Promise<Paginated<Produ
 
 export function search(q: string, filters: FilterParams = {}): Promise<SearchResult> {
   return useMocks ? Promise.resolve(mockSearch(q, filters)) : apiSearch(q, filters);
+}
+/**
+ * Busca por foto combinável com os filtros do catálogo (VS-031, RN-60). Tipo e
+ * tamanho são conferidos antes de qualquer requisição, no mock e na API.
+ * `interpreted` traz o que a IA leu na foto, pra tela mostrar.
+ */
+export function searchByImage(
+  image: File,
+  filters: FilterParams = {},
+  page?: number,
+): Promise<ImageSearchResult> {
+  const invalid = validateImage(image);
+  if (invalid) return Promise.reject(invalid);
+
+  return useMocks
+    ? Promise.resolve(mockSearchByImage(filters, page))
+    : apiSearchByImage(image, filters, page);
 }

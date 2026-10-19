@@ -28,6 +28,9 @@ vi.mock('@/services/httpClient', async (importOriginal) => {
 vi.mock('@/services/authService', () => ({
   logout: vi.fn(),
   me: vi.fn(),
+  // O provider tambem importa `refresh` (#275); sem ele no mock, o import fica
+  // undefined e a funcao de renovacao registrada no httpClient explode.
+  refresh: vi.fn(),
 }));
 
 const mockedAuthServiceLogout = vi.mocked(authServiceLogout);

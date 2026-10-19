@@ -42,8 +42,11 @@ function Login() {
     setErro(null);
 
     try {
-      const { user, access_token } = await authLogin({ email, password: senha });
-      registrarSessao(user, access_token);
+      const { user, access_token, refresh_token } = await authLogin({
+        email,
+        password: senha,
+      });
+      registrarSessao(user, access_token, refresh_token);
 
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from ?? paths.home);

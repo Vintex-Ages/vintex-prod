@@ -7,6 +7,7 @@ import {
   getProduct,
   getProducts,
   search,
+  searchByImage,
 } from './catalogService';
 import { products as mockProducts } from '@/mocks/products';
 
@@ -335,5 +336,192 @@ describe('catalogService.getFeed — contrato do backend 659951f', () => {
     expect(page.items[0].store.name).toBe('Brechó Aurora');
     expect(page.items[0].coverImageUrl).toBeNull();
     expect(page.items[0].price).toBe(99.9);
+  });
+  const imagem = (type = 'image/jpeg') => new File(['x'], 'look.jpg', { type });
+
+  describe('catalogService.searchByImage (mock)', () => {
+    it('devolve as peças ativas em ordem estável', async () => {
+      const first = await searchByImage(imagem());
+      const second = await searchByImage(imagem());
+
+      expect(first.items.map((item) => item.id)).toEqual(second.items.map((item) => item.id));
+      expect(first.items).toHaveLength(Math.min(ACTIVE_COUNT, first.pageSize));
+      expect(first.total).toBe(ACTIVE_COUNT);
+    });
+
+    it('respeita os filtros enviados junto com a foto', async () => {
+      const combined = await searchByImage(imagem(), { category: 'Roupas', brand: 'Zara' });
+      const none = await searchByImage(imagem(), { category: 'Sapatos' });
+
+      expect(combined.items.map((item) => item.id)).toContain('3');
+      expect(none.items).toEqual([]);
+      expect(none.total).toBe(0);
+      expect(none.interpreted).toEqual({});
+    });
+
+    it('preenche interpreted com a peça mais parecida', async () => {
+      const result = await searchByImage(imagem());
+      const top = mockProducts.find((product) => product.status === 'ativo');
+
+      expect(result.interpreted).toEqual({
+        category: top?.category,
+        color: top?.color,
+        brand: top?.brand,
+      });
+    });
+
+    it('rejeita tipo não suportado', async () => {
+      await expect(searchByImage(imagem('application/pdf'))).rejects.toMatchObject({
+        code: 'UNSUPPORTED_IMAGE_TYPE',
+      });
+    });
+
+    it('rejeita foto acima de 8 MiB', async () => {
+      const big = imagem();
+      Object.defineProperty(big, 'size', { value: 8 * 1024 * 1024 + 1 });
+
+      await expect(searchByImage(big)).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
+    });
+  });
+
+  /**
+   * Fixture no formato do exemplo de `POST /api/products/search-by-image`
+   * (back-end#255). Não é saída serializada do back real: a rota ainda não existe.
+   */
+  const BACKEND_IMAGE_SEARCH_RESPONSE = {
+    items: [
+      {
+        id: 41,
+        name: 'Jaqueta de couro',
+        price: 99.9,
+        cover_image_url: 'https://x.test/capa.jpg',
+        status: 'ativo',
+        store: { id: 7, name: 'Brechó Aurora', verified: true },
+      },
+    ],
+    interpreted: { category: 'Jaquetas', color: 'Preto', brand: 'Zara' },
+    page: 1,
+    page_size: 20,
+    total: 1,
+  };
+
+  describe('catalogService.searchByImage (API real)', () => {
+    beforeEach(() => {
+      vi.resetModules();
+      vi.stubEnv('VITE_USE_MOCKS', 'false');
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    async function setup(data: unknown = BACKEND_IMAGE_SEARCH_RESPONSE) {
+      const { httpClient } = await import('@/services/httpClient');
+      const { searchByImage: apiSearchByImage } = await import('./catalogService');
+      const adapter = vi.fn((config: InternalAxiosRequestConfig) =>
+        Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config }),
+      );
+      httpClient.defaults.adapter = adapter;
+      return { apiSearchByImage, adapter, httpClient };
+    }
+
+    it('envia os filtros junto com a foto, sem q nem sort', async () => {
+      const { apiSearchByImage, adapter } = await setup();
+
+      await apiSearchByImage(
+        imagem(),
+        { category: 'Roupas', priceMin: 100, priceMax: 300, color: 'Preto', q: 'ignorado' },
+        2,
+      );
+
+      const config = adapter.mock.calls[0][0];
+      const form = config.data as FormData;
+      expect(config).toMatchObject({ method: 'post', url: '/products/search-by-image' });
+      expect((form.get('image') as File).name).toBe('look.jpg');
+      expect(form.get('category')).toBe('Roupas');
+      expect(form.get('price_min')).toBe('100');
+      expect(form.get('price_max')).toBe('300');
+      expect(form.get('color')).toBe('Preto');
+      expect(form.get('page')).toBe('2');
+      expect(form.has('q')).toBe(false);
+    });
+
+    it('rejeita tipo inválido sem fazer requisição', async () => {
+      const { apiSearchByImage, adapter } = await setup();
+
+      await expect(apiSearchByImage(imagem('application/pdf'))).rejects.toMatchObject({
+        code: 'UNSUPPORTED_IMAGE_TYPE',
+      });
+      expect(adapter).not.toHaveBeenCalled();
+    });
+
+    it('rejeita foto grande sem fazer requisição', async () => {
+      const { apiSearchByImage, adapter } = await setup();
+      const big = imagem();
+      Object.defineProperty(big, 'size', { value: 8 * 1024 * 1024 + 1 });
+
+      await expect(apiSearchByImage(big)).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
+      expect(adapter).not.toHaveBeenCalled();
+    });
+
+    it('mapeia itens, paginação e interpreted do envelope do back', async () => {
+      const { apiSearchByImage } = await setup();
+
+      const result = await apiSearchByImage(imagem());
+
+      expect(result).toMatchObject({
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        interpreted: { category: 'Jaquetas', color: 'Preto', brand: 'Zara' },
+      });
+      expect(result.items[0]).toMatchObject({
+        id: '41',
+        name: 'Jaqueta de couro',
+        price: 99.9,
+        coverImageUrl: 'https://x.test/capa.jpg',
+        store: { id: '7', name: 'Brechó Aurora', verified: true },
+      });
+    });
+
+    it('converte o preço quando o Decimal chega como string', async () => {
+      const { apiSearchByImage } = await setup({
+        ...BACKEND_IMAGE_SEARCH_RESPONSE,
+        items: [{ ...BACKEND_IMAGE_SEARCH_RESPONSE.items[0], price: '99.90' }],
+      });
+
+      const result = await apiSearchByImage(imagem());
+
+      expect(result.items[0].price).toBe(99.9);
+    });
+
+    it('rejeita preço ilegível', async () => {
+      const { apiSearchByImage } = await setup({
+        ...BACKEND_IMAGE_SEARCH_RESPONSE,
+        items: [{ ...BACKEND_IMAGE_SEARCH_RESPONSE.items[0], price: 'abc' }],
+      });
+
+      await expect(apiSearchByImage(imagem())).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    });
+
+    it('trata campo vazio de interpreted como ausente', async () => {
+      const { apiSearchByImage } = await setup({
+        ...BACKEND_IMAGE_SEARCH_RESPONSE,
+        interpreted: { category: 'Jaquetas', color: 'Preto', brand: '' },
+      });
+
+      const result = await apiSearchByImage(imagem());
+
+      expect(result.interpreted.brand).toBeUndefined();
+    });
+
+    it('transforma 503 em CatalogError AI_UNAVAILABLE', async () => {
+      const { apiSearchByImage, httpClient } = await setup();
+      httpClient.defaults.adapter = () => Promise.reject({ response: { status: 503, data: {} } });
+
+      const error = await apiSearchByImage(imagem()).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ name: 'CatalogError', code: 'AI_UNAVAILABLE' });
+    });
   });
 });

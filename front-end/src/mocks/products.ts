@@ -23,6 +23,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Ombro a ombro 50cm • Comprimento 62cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/jaqueta-jeans-vintage.jpg', position: 0 }],
+    style: 'vintage-80-90',
   },
   {
     id: '2',
@@ -42,6 +43,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Busto 96cm • Comprimento 58cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/blusa-bordada-vintage.jpg', position: 0 }],
+    style: 'boho-romantico',
   },
   {
     id: '3',
@@ -61,6 +63,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Ombro a ombro 42cm • Comprimento 54cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/jaqueta-biker.jpg', position: 0 }],
+    style: 'gotico-dark',
   },
   {
     id: '4',
@@ -80,6 +83,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Busto 92cm • Comprimento 112cm',
     status: 'vendido',
     media: [{ type: 'image', url: '/images/products/vestido-floral.jpg', position: 0 }],
+    style: 'boho-romantico',
   },
   {
     id: '5',
@@ -99,6 +103,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Cintura 82cm • Comprimento 102cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/calca-jeans.jpg', position: 0 }],
+    style: 'vintage-80-90',
   },
   {
     id: '6',
@@ -118,6 +123,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Ombro a ombro 46cm • Comprimento 70cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/camisa-social.jpg', position: 0 }],
+    style: 'alfaiataria',
   },
   {
     id: '7',
@@ -137,6 +143,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Ombro a ombro 48cm • Comprimento 64cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/jaqueta-bomber.jpg', position: 0 }],
+    style: 'streetwear',
   },
   {
     id: '8',
@@ -156,6 +163,7 @@ const baseProducts: ProductDetail[] = [
     measurements: 'Ombro a ombro 44cm • Comprimento 68cm',
     status: 'ativo',
     media: [{ type: 'image', url: '/images/products/camiseta-grafica.jpg', position: 0 }],
+    style: 'streetwear',
   },
 ];
 
@@ -231,6 +239,35 @@ const additionalProductSeeds = [
 const conditions = ['Seminovo', 'Usado', 'Marcas de uso'] as const;
 const activeStores = baseProducts.filter((product) => product.status === 'ativo');
 
+/** Os 6 valores de `app/constants/styles.py`, na mesma ordem de rotação de fallback. */
+const STYLE_VALUES = [
+  'vintage-80-90',
+  'streetwear',
+  'alfaiataria',
+  'gotico-dark',
+  'boho-romantico',
+  'y2k',
+] as const;
+
+/**
+ * Classifica o estilo da peça pelo nome (palavras-chave na ordem mais
+ * específica primeiro). Sem nenhuma pista no nome, roda entre os 6 valores
+ * (índice da peça) garante que todo estilo tem peça suficiente pro
+ * `recommendationService` (#313) e pros filtros terem o que mostrar.
+ */
+function pickStyle(name: string, index: number): (typeof STYLE_VALUES)[number] {
+  const lower = name.toLowerCase();
+
+  if (/alfaiataria|blazer|social/.test(lower)) return 'alfaiataria';
+  if (/boho|crochê|floral|peplum/.test(lower)) return 'boho-romantico';
+  if (/gótico|poá|xadrez/.test(lower)) return 'gotico-dark';
+  if (/cropped|pantacourt|baguete|y2k/.test(lower)) return 'y2k';
+  if (/oversized|moletom|college|puffer|corta-vento|banda|cargo/.test(lower)) return 'streetwear';
+  if (/vintage|jeans|denim|retrô/.test(lower)) return 'vintage-80-90';
+
+  return STYLE_VALUES[index % STYLE_VALUES.length];
+}
+
 export const products: ProductDetail[] = [
   ...baseProducts,
   ...additionalProductSeeds.map(
@@ -252,6 +289,7 @@ export const products: ProductDetail[] = [
         description: 'Peça de segunda mão em bom estado, pronta para ganhar novas histórias.',
         status: 'ativo',
         media: [{ type: 'image', url: imageUrl, position: 0 }],
+        style: pickStyle(name, index),
       };
     },
   ),
