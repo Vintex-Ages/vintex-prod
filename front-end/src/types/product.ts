@@ -69,6 +69,14 @@ export interface ProductDetail extends Product {
    */
   material?: string;
   measurements?: string;
+  /**
+   * Um dos 6 valores de `app/constants/styles.py` (mesmos de `StyleOption.value`
+   * em `@/types/preference`). Existia só em `ProductInput`/`SellerProduct`
+   * (cadastro do vendedor) — adicionado aqui porque a FE-SVC-recommendations
+   * (#313) é o primeiro consumidor do lado comprador. Opcional: peças
+   * cadastradas antes desse campo existir não têm valor.
+   */
+  style?: string;
 }
 
 /**
@@ -123,6 +131,8 @@ export interface ProductInput {
   brand?: string;
   condition?: string;
   style?: string;
+  /** Composição do tecido, lida da etiqueta (#318). Ex.: '100% algodão'. */
+  composition?: string;
   price: number;
   /** URLs na ordem de exibição; ≥ 1 para publicar (RN-47). */
   images: string[];

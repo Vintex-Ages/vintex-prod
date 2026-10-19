@@ -350,7 +350,10 @@ async function mockGetSalesSummary(period: SalesPeriod): Promise<SalesSummary> {
   return { period, soldCount: sold.length, gross, commission: roundMoney(gross - net), net };
 }
 
-/** ObjectURLs no lugar das URLs remotas que a rota de upload vai devolver. */
+/**
+ * ObjectURLs no lugar das URLs remotas que a rota de upload vai devolver. Não
+ * recebe o `kind`: no mock não há galeria pública da qual esconder a etiqueta.
+ */
 function mockUploadMedia(files: File[]): string[] {
   return files.map((file) => URL.createObjectURL(file));
 }
@@ -387,6 +390,8 @@ interface ApiSellerProduct {
 
 /** `ProductDraftResponse` (back-end#159). */
 interface ApiSellerProductDetail extends ApiSellerProduct {
+  /** Só no detalhe, não na listagem (#318, back-end#257). */
+  composition: string | null;
   store: { id: number | string; name: string; city: string | null };
   images: string[];
   ai_corrections: ApiCorrection[];
@@ -435,6 +440,7 @@ function mapSellerProduct(item: ApiSellerProduct): SellerProduct {
 function mapSellerProductDetail(item: ApiSellerProductDetail): SellerProductDetail {
   return {
     ...mapSellerProduct(item),
+    composition: optional(item.composition),
     images: item.images,
     quantity: 1,
     store: { id: String(item.store.id), name: item.store.name, city: item.store.city },
@@ -697,17 +703,27 @@ interface ApiMediaItem {
 }
 
 /**
+ * `photo` entra na galeria pública da peça; `label` é a foto da etiqueta
+ * (#318), que só serve para a IA ler marca e composição.
+ *
+ * PALPITE: o back ainda não fixou como a etiqueta é marcada no upload
+ * (back-end#257). `kind: 'label'` é a melhor aposta; ajustar aqui (e nos
+ * testes) quando ele fechar.
+ */
+export type MediaKind = 'photo' | 'label';
+
+/**
  * `POST /api/users/me/media` (back-end#73). A URL que volta é absoluta e
  * aponta para a própria API, porque quem baixa a foto depois é o servidor,
  * ao gerar a sugestão do anúncio: URL relativa ou `blob:` do navegador não
  * serve para ele.
  */
-async function apiUploadMedia(files: File[]): Promise<string[]> {
+async function apiUploadMedia(files: File[], kind: MediaKind): Promise<string[]> {
   const formData = new FormData();
   for (const file of files) {
     formData.append('files', file);
   }
-  formData.append('kind', 'photo');
+  formData.append('kind', kind);
 
   try {
     const { data } = await httpClient.post<{ items: ApiMediaItem[] }>('/users/me/media', formData);
@@ -718,6 +734,6 @@ async function apiUploadMedia(files: File[]): Promise<string[]> {
 }
 
 /** Envia as fotos e devolve as URLs, na mesma ordem dos arquivos. */
-export async function uploadMedia(files: File[]): Promise<string[]> {
-  return useMocks ? mockUploadMedia(files) : apiUploadMedia(files);
+export async function uploadMedia(files: File[], kind: MediaKind = 'photo'): Promise<string[]> {
+  return useMocks ? mockUploadMedia(files) : apiUploadMedia(files, kind);
 }

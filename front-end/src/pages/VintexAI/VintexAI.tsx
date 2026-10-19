@@ -83,8 +83,15 @@ export default function VintexAI() {
 
   // `location.key` é única por navegação: é ela que faz cada entrada pelo
   // campo da Home valer um envio, e não só a primeira da sessão.
-  const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
-    useVintexChat(incomingMessage, location.key);
+  const {
+    messages,
+    streamingMessageId,
+    errorMessageId,
+    errorText,
+    errorReason,
+    sendMessage,
+    retry,
+  } = useVintexChat(incomingMessage, location.key);
   const [draft, setDraft] = useState('');
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +100,8 @@ export default function VintexAI() {
   }, [messages]);
 
   const hasMessages = messages.length > 0;
+  // Cota do dia esgotada (FE-US027-5): enviar só geraria outro aviso igual.
+  const quotaAtiva = errorReason === 'quota';
 
   function handleSearchSubmit(term: string) {
     sendMessage(term);
@@ -164,6 +173,7 @@ export default function VintexAI() {
                   message={message}
                   streaming={message.id === streamingMessageId}
                   error={message.id === errorMessageId ? (errorText ?? undefined) : undefined}
+                  errorReason={message.id === errorMessageId ? errorReason : undefined}
                   onRetry={retry}
                 />
                 {/* FE-US027-3: o que a Vintex entendeu, com ponte para o catálogo. */}
@@ -234,7 +244,7 @@ export default function VintexAI() {
             <button
               type="submit"
               aria-label="Enviar"
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || quotaAtiva}
               className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente disabled:cursor-not-allowed disabled:opacity-50"
             >
               <SendIcon className="h-5 w-5" />
