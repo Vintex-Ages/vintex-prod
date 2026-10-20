@@ -42,7 +42,7 @@ function ReceiptQueue({ renderDetail }: ReceiptQueueProps) {
   const [selected, setSelected] = useState<ReceiptReview | null>(null);
 
   return (
-    <div className="min-h-screen bg-white tablet:bg-papel">
+    <div className="min-h-screen bg-branco-quente tablet:bg-papel">
       <AdminHeader />
       <main className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-5 pb-12 pt-6 tablet:gap-10 tablet:px-10 tablet:pb-24 tablet:pt-14 web:px-20">
         <div className="flex flex-col gap-1.5 tablet:gap-2.5">
