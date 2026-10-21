@@ -100,7 +100,7 @@ export function useReceiptReview(item: ReceiptReview, onUpdated: (item: ReceiptR
       });
       return true;
     } catch (error) {
-      if (error instanceof AdminReceiptError && error.code === 'ORDER_NOT_IN_REVIEW') {
+      if (error instanceof AdminReceiptError && error.code === 'ALREADY_VALIDATED') {
         return reloadAfterConflict();
       }
       const forbidden = error instanceof AdminReceiptError && error.code === 'FORBIDDEN';

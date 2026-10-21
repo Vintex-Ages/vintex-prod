@@ -260,7 +260,7 @@ describe('ReceiptReviewPanel', () => {
 
     it('409: outra pessoa já validou — mostra o registro dela, sem erro genérico', async () => {
       vi.mocked(approveReceipt).mockRejectedValueOnce(
-        new AdminReceiptError('ORDER_NOT_IN_REVIEW', 'já validado'),
+        new AdminReceiptError('ALREADY_VALIDATED', 'já validado'),
       );
       vi.mocked(getReceiptReview).mockResolvedValue(rejected);
       const user = renderPanel();

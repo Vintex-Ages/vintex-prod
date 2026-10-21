@@ -333,7 +333,7 @@ describe('useReceiptReview — 409 (outra pessoa já validou)', () => {
   // Critério de aceite: recarrega o item e mostra o registro, sem erro genérico.
   it('aprovar com 409 relê o item, avisa a fila e não mostra erro', async () => {
     vi.mocked(approveReceipt).mockRejectedValueOnce(
-      new AdminReceiptError('ORDER_NOT_IN_REVIEW', 'Já validado.'),
+      new AdminReceiptError('ALREADY_VALIDATED', 'Já validado.'),
     );
     const { result, onUpdated } = setup();
 
@@ -350,7 +350,7 @@ describe('useReceiptReview — 409 (outra pessoa já validou)', () => {
 
   it('rejeitar com 409 também relê o item', async () => {
     vi.mocked(rejectReceipt).mockRejectedValueOnce(
-      new AdminReceiptError('ORDER_NOT_IN_REVIEW', 'Já validado.'),
+      new AdminReceiptError('ALREADY_VALIDATED', 'Já validado.'),
     );
     const { result, onUpdated } = setup();
 
@@ -364,7 +364,7 @@ describe('useReceiptReview — 409 (outra pessoa já validou)', () => {
 
   it('se não der para reler o item, mostra o erro', async () => {
     vi.mocked(approveReceipt).mockRejectedValueOnce(
-      new AdminReceiptError('ORDER_NOT_IN_REVIEW', 'Já validado.'),
+      new AdminReceiptError('ALREADY_VALIDATED', 'Já validado.'),
     );
     vi.mocked(getReceiptReview).mockRejectedValueOnce(new Error('rede'));
     const { result, onUpdated } = setup();

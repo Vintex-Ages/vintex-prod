@@ -17,19 +17,28 @@ import type { Paginated } from '@/types/product';
  *     "Meus pedidos";
  *   - `'false'` → API real via `httpClient`.
  *
- * API real — PROPOSTA DO FRONT, NÃO CONFIRMADA: o contrato fechado em 05/10
- * (`artefatos/contratos/admin-comprovantes.md`) não estava disponível ao
- * escrever este arquivo; rotas e shape abaixo seguem o resumo da issue #312.
- * Conferir com o contrato e ajustar AQUI (nunca na tela) antes de ligar a flag:
- *   `GET  /admin/payments?status=&q=&page=`  → Page[ReceiptReviewResponse]
- *   `POST /admin/payments/{order_id}/approve`
- *   `POST /admin/payments/{order_id}/reject` { reason }
+ * API real — contrato fechado pelo back em 05/10 (back-end#250, #251):
+ *   `GET  /admin/payments?status=&q=&page=`  → Page[ReceiptReviewResponse], do
+ *        comprovante mais antigo para o mais recente; `q` casa nome do comprador
+ *        ou da loja (não o número do Pedido) (#250)
+ *   `POST /admin/payments/{order_id}/approve` → resposta PARCIAL (#251)
+ *   `POST /admin/payments/{order_id}/reject` { reason } → resposta PARCIAL (#251)
  *   `GET  /admin/payments/{order_id}/receipt` (arquivo; vira `receiptUrl`)
  *   `GET  /admin/payments/{order_id}` → ReceiptReviewResponse (relê um item;
- *        rota PROPOSTA, usada quando outra pessoa já validou — 409)
+ *        rota PROPOSTA, não confirmada no contrato: usada no 409 e quando o
+ *        item não está guardado)
+ *
+ * Resposta parcial de aprovar/rejeitar: `{ order_id, status, payment {
+ * status, validated_by, validated_at[, rejection_reason] } }`. Sem comprador,
+ * loja, peças, valores nem `receiptUrl`. Por isso o service mescla `payment` da
+ * resposta no item que já carregou (`listReceipts`/`getReceiptReview`; se não
+ * tiver, relê o item) e devolve o `ReceiptReview` COMPLETO: a tela nunca recebe
+ * campo vazio.
+ *
  * O back responde 403 a quem não é admin: vira `FORBIDDEN`; 409 (Pedido fora de
- * `em_analise`, inclusive a segunda ação) vira `ORDER_NOT_IN_REVIEW`; 422
- * (motivo vazio) vira `REASON_REQUIRED`.
+ * `em_analise`: outra pessoa já validou, inclusive a segunda ação) vira
+ * `ALREADY_VALIDATED`; 422 (motivo vazio) vira `REASON_REQUIRED`. Ao aprovar, a
+ * peça sai de Reservada e vira Vendida (no mock também).
  *
  * Usage:
  *   import { listReceipts, approveReceipt, rejectReceipt } from '@/services/adminReceiptService';
@@ -51,7 +60,7 @@ const DEFAULT_PAGE_SIZE = 20;
 /**
  * Erro da área admin com `code` tipado mesmo formato em mock e API real.
  * Códigos: `FORBIDDEN`, `REASON_REQUIRED`, `ORDER_NOT_FOUND`,
- * `ORDER_NOT_IN_REVIEW`, `INTERNAL_ERROR` (+ os que o back enviar).
+ * `ALREADY_VALIDATED`, `INTERNAL_ERROR` (+ os que o back enviar).
  */
 export class AdminReceiptError extends Error {
   constructor(
@@ -134,7 +143,7 @@ function writeValidation(orderId: string): void {
 function assertInReview({ order, payment }: PaidOrder): void {
   if (payment.status !== 'pendente') {
     throw new AdminReceiptError(
-      'ORDER_NOT_IN_REVIEW',
+      'ALREADY_VALIDATED',
       `O Pedido ${order.id} não está em análise: o comprovante já foi validado.`,
     );
   }
@@ -178,13 +187,8 @@ function toReview(
 function matchesQuery(review: ReceiptReview, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const haystack = [
-    review.orderId,
-    review.buyer.name,
-    review.buyer.email,
-    review.store.name,
-    ...review.items.map((item) => item.name),
-  ];
+  // back-end#250: `q` casa nome do comprador ou da loja (não o número do Pedido).
+  const haystack = [review.buyer.name, review.store.name];
   return haystack.some((value) => value.toLowerCase().includes(needle));
 }
 
@@ -301,6 +305,18 @@ interface ApiReceiptReview {
   };
 }
 
+/** Resposta PARCIAL de aprovar/rejeitar (back-end#251). */
+interface ApiValidationResponse {
+  order_id: number | string;
+  status: string;
+  payment: {
+    status: PaymentStatus;
+    validated_by?: { id: number | string; name: string } | null;
+    validated_at?: string | null;
+    rejection_reason?: string | null;
+  };
+}
+
 interface ApiPage<T> {
   items: T[];
   page: number;
@@ -351,6 +367,53 @@ function mapApiReview(data: ApiReceiptReview): ReceiptReview {
   };
 }
 
+/**
+ * Último item de cada Pedido que a fila carregou (`listReceipts` /
+ * `getReceiptReview`): base da mescla com a resposta parcial de aprovar/rejeitar.
+ */
+const loadedReviews = new Map<string, ReceiptReview>();
+
+function remember(review: ReceiptReview): ReceiptReview {
+  loadedReviews.set(review.orderId, review);
+  return review;
+}
+
+/** Mescla `payment` da resposta parcial no item completo (sem campo vazio). */
+function mergeValidation(base: ReceiptReview, partial: ApiValidationResponse): ReceiptReview {
+  const { payment } = partial;
+  return remember({
+    ...base,
+    payment: {
+      ...base.payment,
+      status: payment.status,
+      validatedBy: payment.validated_by
+        ? { id: String(payment.validated_by.id), name: payment.validated_by.name }
+        : undefined,
+      validatedAt: payment.validated_at ?? undefined,
+      rejectionReason: payment.rejection_reason ?? undefined,
+    },
+  });
+}
+
+async function validate(
+  orderId: string,
+  path: 'approve' | 'reject',
+  body?: { reason: string },
+): Promise<ReceiptReview> {
+  let partial: ApiValidationResponse;
+  try {
+    ({ data: partial } = await httpClient.post<ApiValidationResponse>(
+      `/admin/payments/${orderId}/${path}`,
+      body,
+    ));
+  } catch (error) {
+    throw toAdminError(error);
+  }
+  // Item que a fila não carregou: relê (rota proposta) para ter o item completo.
+  const base = loadedReviews.get(orderId) ?? (await apiGetReceiptReview(orderId));
+  return mergeValidation(base, partial);
+}
+
 function toAdminError(error: unknown): AdminReceiptError {
   const response = (
     error as {
@@ -362,7 +425,7 @@ function toAdminError(error: unknown): AdminReceiptError {
   // antes de olhar o envelope.
   if (response?.status === 409) {
     return new AdminReceiptError(
-      'ORDER_NOT_IN_REVIEW',
+      'ALREADY_VALIDATED',
       'O comprovante já foi validado por outra pessoa.',
     );
   }
@@ -389,7 +452,7 @@ async function apiListReceipts(params: ListReceiptsParams): Promise<Paginated<Re
       params: { status: params.status, q: params.q || undefined, page: params.page },
     });
     return {
-      items: data.items.map(mapApiReview),
+      items: data.items.map(mapApiReview).map(remember),
       page: data.page,
       pageSize: data.page_size,
       total: data.total,
@@ -399,30 +462,18 @@ async function apiListReceipts(params: ListReceiptsParams): Promise<Paginated<Re
   }
 }
 
-async function apiApproveReceipt(orderId: string): Promise<ReceiptReview> {
-  try {
-    const { data } = await httpClient.post<ApiReceiptReview>(`/admin/payments/${orderId}/approve`);
-    return mapApiReview(data);
-  } catch (error) {
-    throw toAdminError(error);
-  }
+function apiApproveReceipt(orderId: string): Promise<ReceiptReview> {
+  return validate(orderId, 'approve');
 }
 
-async function apiRejectReceipt(orderId: string, reason: string): Promise<ReceiptReview> {
-  try {
-    const { data } = await httpClient.post<ApiReceiptReview>(`/admin/payments/${orderId}/reject`, {
-      reason,
-    });
-    return mapApiReview(data);
-  } catch (error) {
-    throw toAdminError(error);
-  }
+function apiRejectReceipt(orderId: string, reason: string): Promise<ReceiptReview> {
+  return validate(orderId, 'reject', { reason });
 }
 
 async function apiGetReceiptReview(orderId: string): Promise<ReceiptReview> {
   try {
     const { data } = await httpClient.get<ApiReceiptReview>(`/admin/payments/${orderId}`);
-    return mapApiReview(data);
+    return remember(mapApiReview(data));
   } catch (error) {
     throw toAdminError(error);
   }
