@@ -64,11 +64,15 @@ describe('adminReceiptService (mock)', () => {
       expect(items.every((review) => review.payment.status === 'pendente')).toBe(true);
     });
 
-    it('busca q casa por nome da peça, loja ou comprador', async () => {
-      await submittedOrder('u_ana', '1');
-      await submittedOrder('u_bia', '2');
+    // Objetivo declarado: back-end#250 — q casa nome do comprador ou da loja.
+    it('busca q casa por nome do comprador ou da loja, não por número do Pedido nem peça', async () => {
+      const ana = await submittedOrder('u_ana', '1'); // loja 'Brechó Mercado Público'
+      await submittedOrder('u_bia', '2'); // loja 'Garimpo da Redenção'
 
-      expect((await admin.listReceipts({ q: 'u_bia' })).items).toHaveLength(1);
+      expect((await admin.listReceipts({ q: 'u_bia' })).items).toHaveLength(1); // comprador
+      expect((await admin.listReceipts({ q: 'redenção' })).items).toHaveLength(1); // loja
+      expect((await admin.listReceipts({ q: ana.id })).items).toHaveLength(0); // nº do Pedido
+      expect((await admin.listReceipts({ q: 'jaqueta' })).items).toHaveLength(0); // peça
       expect((await admin.listReceipts({ q: 'inexistente' })).items).toHaveLength(0);
     });
 
@@ -130,6 +134,18 @@ describe('adminReceiptService (mock)', () => {
       expect(seenByBuyer.status).toBe('confirmado');
     });
 
+    // Objetivo declarado: a venda se confirma na aprovação (back-end#251).
+    it('leva as peças do Pedido de reservado a vendido', async () => {
+      const { products } = await import('@/mocks/products');
+      const statusOf = (id: string) => products.find((product) => product.id === id)?.status;
+      const order = await submittedOrder(BUYER_ID, '1');
+      expect(statusOf('1')).toBe('reservado');
+
+      await admin.approveReceipt(order.id);
+
+      expect(statusOf('1')).toBe('vendido');
+    });
+
     it('ORDER_NOT_FOUND para Pedido inexistente', async () => {
       await expect(admin.approveReceipt('inexistente')).rejects.toMatchObject({
         code: 'ORDER_NOT_FOUND',
@@ -179,6 +195,30 @@ describe('adminReceiptService (mock)', () => {
     it('ORDER_NOT_FOUND para Pedido inexistente', async () => {
       await expect(admin.rejectReceipt('inexistente', 'motivo')).rejects.toMatchObject({
         code: 'ORDER_NOT_FOUND',
+      });
+    });
+  });
+
+  // FE-SVC-admin-receipts-2 (#360): a segunda ação sobre o mesmo Pedido vira ALREADY_VALIDATED.
+  describe('segunda ação sobre o mesmo comprovante', () => {
+    it('aprovar de novo falha com ALREADY_VALIDATED e não muda o registro', async () => {
+      const order = await submittedOrder();
+      const first = await admin.approveReceipt(order.id);
+
+      await expect(admin.approveReceipt(order.id)).rejects.toMatchObject({
+        code: 'ALREADY_VALIDATED',
+      });
+
+      const [again] = (await admin.listReceipts()).items;
+      expect(again.payment.validatedAt).toBe(first.payment.validatedAt);
+    });
+
+    it('rejeitar depois de aprovar falha com ALREADY_VALIDATED', async () => {
+      const order = await submittedOrder();
+      await admin.approveReceipt(order.id);
+
+      await expect(admin.rejectReceipt(order.id, 'motivo')).rejects.toMatchObject({
+        code: 'ALREADY_VALIDATED',
       });
     });
   });
@@ -288,37 +328,107 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
     expect(review.sellerNetAmount).toBe(209.21);
   });
 
-  it('approveReceipt faz POST em /approve e mapeia validatedBy/validatedAt', async () => {
-    const calls = await stubAdapter(() => ({
-      ...API_REVIEW,
-      payment: {
-        ...API_REVIEW.payment,
-        status: 'aprovado',
-        validated_by: { id: 1, name: 'Admin' },
-        validated_at: '2026-10-07T12:00:00Z',
-      },
-    }));
-    const { approveReceipt } = await import('./adminReceiptService');
+  /** Resposta de aprovar no shape PARCIAL do back-end#251. */
+  const PARTIAL_APPROVED = {
+    order_id: 77,
+    status: 'confirmado',
+    payment: {
+      status: 'aprovado',
+      validated_by: { id: 1, name: 'Admin' },
+      validated_at: '2026-10-07T12:00:00Z',
+    },
+  };
+
+  /** Resposta de rejeitar no shape PARCIAL do back-end#251. */
+  const PARTIAL_REJECTED = {
+    order_id: 77,
+    status: 'aguardando_comprovante',
+    payment: {
+      status: 'rejeitado',
+      rejection_reason: 'Ilegível.',
+      validated_by: { id: 1, name: 'Admin' },
+      validated_at: '2026-10-07T12:00:00Z',
+    },
+  };
+
+  const PAGE_WITH_REVIEW = { items: [API_REVIEW], page: 1, page_size: 20, total: 1 };
+
+  // Objetivo declarado: back-end#251, RN-22.
+  it('approveReceipt com resposta parcial devolve o item completo com validatedBy/validatedAt', async () => {
+    const calls = await stubAdapter((config) =>
+      config.method === 'post' ? PARTIAL_APPROVED : PAGE_WITH_REVIEW,
+    );
+    const { listReceipts, approveReceipt } = await import('./adminReceiptService');
+    await listReceipts();
 
     const review = await approveReceipt('77');
 
-    expect(calls[0]).toMatchObject({ method: 'post', url: '/admin/payments/77/approve' });
+    expect(calls[1]).toMatchObject({ method: 'post', url: '/admin/payments/77/approve' });
+    expect(calls).toHaveLength(2); // item já carregado pela fila: não relê
+    expect(review.buyer.name).toBe('Ana');
+    expect(review.store.name).toBe('Roupa Rodada');
+    expect(review.items[0].name).toBe('Jaqueta biker preta');
+    expect(review.totalAmount).toBe(229.9);
+    expect(review.payment.receiptUrl).toBe('/api/admin/payments/77/receipt');
+    expect(review.payment.receiptType).toBe('pdf');
+    expect(review.payment.status).toBe('aprovado');
     expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
     expect(review.payment.validatedAt).toBe('2026-10-07T12:00:00Z');
   });
 
-  it('rejectReceipt envia { reason } no corpo', async () => {
-    const calls = await stubAdapter(() => ({
-      ...API_REVIEW,
-      payment: { ...API_REVIEW.payment, status: 'rejeitado', rejection_reason: 'Ilegível.' },
-    }));
-    const { rejectReceipt } = await import('./adminReceiptService');
+  it('approveReceipt de item que a fila não carregou relê o item e mescla a resposta parcial', async () => {
+    const calls = await stubAdapter((config) =>
+      config.method === 'post' ? PARTIAL_APPROVED : API_REVIEW,
+    );
+    const { approveReceipt } = await import('./adminReceiptService');
+
+    const review = await approveReceipt('77');
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'post /admin/payments/77/approve',
+      'get /admin/payments/77',
+    ]);
+    expect(review.buyer.name).toBe('Ana');
+    expect(review.payment.status).toBe('aprovado');
+    expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
+  });
+
+  it('approveReceipt: se a releitura do item falhar, propaga o erro tipado', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = (config) =>
+      config.method === 'post'
+        ? Promise.resolve({
+            data: PARTIAL_APPROVED,
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+          })
+        : Promise.reject({
+            response: { status: 404, data: { error: { code: 'ORDER_NOT_FOUND' } } },
+          });
+    const { approveReceipt } = await import('./adminReceiptService');
+
+    await expect(approveReceipt('77')).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+
+  it('rejectReceipt envia { reason } e devolve o item completo com o motivo e quem validou', async () => {
+    const calls = await stubAdapter((config) =>
+      config.method === 'post' ? PARTIAL_REJECTED : PAGE_WITH_REVIEW,
+    );
+    const { listReceipts, rejectReceipt } = await import('./adminReceiptService');
+    await listReceipts();
 
     const review = await rejectReceipt('77', 'Ilegível.');
 
-    expect(calls[0]).toMatchObject({ method: 'post', url: '/admin/payments/77/reject' });
-    expect(JSON.parse(calls[0].data as string)).toEqual({ reason: 'Ilegível.' });
+    expect(calls[1]).toMatchObject({ method: 'post', url: '/admin/payments/77/reject' });
+    expect(JSON.parse(calls[1].data as string)).toEqual({ reason: 'Ilegível.' });
+    expect(review.buyer.name).toBe('Ana');
+    expect(review.items).toHaveLength(1);
+    expect(review.payment.status).toBe('rejeitado');
     expect(review.payment.rejectionReason).toBe('Ilegível.');
+    expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
+    expect(review.payment.validatedAt).toBe('2026-10-07T12:00:00Z');
   });
 
   // Critério de aceite: sem motivo, falha antes de chamar a API.
@@ -412,5 +522,27 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
     const { listReceipts } = await import('./adminReceiptService');
 
     await expect(listReceipts()).rejects.toMatchObject({ code: 'INTERNAL_ERROR' });
+  });
+
+  // 409 e 422 do contrato (back-end#251).
+  it('409 vira ALREADY_VALIDATED em aprovar e rejeitar', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 409, data: {} } });
+    const { approveReceipt, rejectReceipt } = await import('./adminReceiptService');
+
+    await expect(approveReceipt('77')).rejects.toMatchObject({ code: 'ALREADY_VALIDATED' });
+    await expect(rejectReceipt('77', 'motivo')).rejects.toMatchObject({
+      code: 'ALREADY_VALIDATED',
+    });
+  });
+
+  it('422 vira REASON_REQUIRED', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 422, data: {} } });
+    const { rejectReceipt } = await import('./adminReceiptService');
+
+    await expect(rejectReceipt('77', 'motivo')).rejects.toMatchObject({
+      code: 'REASON_REQUIRED',
+    });
   });
 });
