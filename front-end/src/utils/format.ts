@@ -24,3 +24,41 @@ export function formatCentsToBRL(cents: number): string {
   const centavos = safeCents % 100;
   return `R$ ${reais.toLocaleString('pt-BR')},${String(centavos).padStart(2, '0')}`;
 }
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+const dateFormat = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+const clockFormat = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function agoLabel(count: number, one: string, many: string): string {
+  return `há ${count} ${count === 1 ? one : many}`;
+}
+
+/** Tempo decorrido: "há 12 minutos", "há 1 hora", "há 3 dias". `now` existe para os testes. */
+export function formatTimeAgo(iso: string, now: number = Date.now()): string {
+  const elapsed = now - new Date(iso).getTime();
+  if (elapsed < MINUTE_MS) return 'há menos de 1 minuto';
+  if (elapsed < HOUR_MS) return agoLabel(Math.floor(elapsed / MINUTE_MS), 'minuto', 'minutos');
+  if (elapsed < DAY_MS) return agoLabel(Math.floor(elapsed / HOUR_MS), 'hora', 'horas');
+  return agoLabel(Math.floor(elapsed / DAY_MS), 'dia', 'dias');
+}
+
+/** Hora de uma data ISO: "14:32". */
+export function formatClock(iso: string): string {
+  return clockFormat.format(new Date(iso));
+}
+
+/** Data e hora de uma data ISO: "01/10/2026 às 14:32". */
+export function formatDateTime(iso: string): string {
+  return `${dateFormat.format(new Date(iso))} às ${formatClock(iso)}`;
+}

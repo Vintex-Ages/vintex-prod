@@ -25,7 +25,11 @@ import type { Paginated } from '@/types/product';
  *   `POST /admin/payments/{order_id}/approve`
  *   `POST /admin/payments/{order_id}/reject` { reason }
  *   `GET  /admin/payments/{order_id}/receipt` (arquivo; vira `receiptUrl`)
- * O back responde 403 a quem não é admin: vira `FORBIDDEN`.
+ *   `GET  /admin/payments/{order_id}` → ReceiptReviewResponse (relê um item;
+ *        rota PROPOSTA, usada quando outra pessoa já validou — 409)
+ * O back responde 403 a quem não é admin: vira `FORBIDDEN`; 409 (Pedido fora de
+ * `em_analise`, inclusive a segunda ação) vira `ORDER_NOT_IN_REVIEW`; 422
+ * (motivo vazio) vira `REASON_REQUIRED`.
  *
  * Usage:
  *   import { listReceipts, approveReceipt, rejectReceipt } from '@/services/adminReceiptService';
@@ -33,6 +37,11 @@ import type { Paginated } from '@/types/product';
  *   const { items } = await listReceipts({ status: 'pendente', q: 'ana' });
  *   await approveReceipt(items[0].orderId);
  *   await rejectReceipt(orderId, 'Comprovante ilegível.');
+ *
+ *   // O arquivo só baixa com o token: o `httpClient` baixa como Blob e a tela
+ *   // mostra por `URL.createObjectURL(blob)` (abrir a rota crua não funciona).
+ *   const blob = await downloadReceipt(orderId);
+ *   const fresh = await getReceiptReview(orderId);
  */
 
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
@@ -42,7 +51,7 @@ const DEFAULT_PAGE_SIZE = 20;
 /**
  * Erro da área admin com `code` tipado mesmo formato em mock e API real.
  * Códigos: `FORBIDDEN`, `REASON_REQUIRED`, `ORDER_NOT_FOUND`,
- * `INTERNAL_ERROR` (+ os que o back enviar).
+ * `ORDER_NOT_IN_REVIEW`, `INTERNAL_ERROR` (+ os que o back enviar).
  */
 export class AdminReceiptError extends Error {
   constructor(
@@ -119,6 +128,16 @@ function writeValidation(orderId: string): void {
     VALIDATIONS_KEY,
     JSON.stringify({ ...readValidations(), [orderId]: validation }),
   );
+}
+
+/** 409: só comprovante pendente (Pedido em `em_analise`) pode ser validado. */
+function assertInReview({ order, payment }: PaidOrder): void {
+  if (payment.status !== 'pendente') {
+    throw new AdminReceiptError(
+      'ORDER_NOT_IN_REVIEW',
+      `O Pedido ${order.id} não está em análise: o comprovante já foi validado.`,
+    );
+  }
 }
 
 function receiptTypeFromName(name?: string): 'image' | 'pdf' {
@@ -199,19 +218,49 @@ function mockListReceipts(params: ListReceiptsParams): Paginated<ReceiptReview> 
 }
 
 async function mockApproveReceipt(orderId: string): Promise<ReceiptReview> {
-  const { userId } = findPaidOrder(orderId);
+  const paid = findPaidOrder(orderId);
+  assertInReview(paid);
 
-  await approveOrderReceipt(userId, orderId);
+  await approveOrderReceipt(paid.userId, orderId);
   writeValidation(orderId);
   return toReview(findPaidOrder(orderId), readValidations());
 }
 
 async function mockRejectReceipt(orderId: string, reason: string): Promise<ReceiptReview> {
-  const { userId } = findPaidOrder(orderId);
+  const paid = findPaidOrder(orderId);
+  assertInReview(paid);
 
-  await rejectOrderReceipt(userId, orderId, reason);
+  await rejectOrderReceipt(paid.userId, orderId, reason);
   writeValidation(orderId);
   return toReview(findPaidOrder(orderId), readValidations());
+}
+
+function mockGetReceiptReview(orderId: string): ReceiptReview {
+  return toReview(findPaidOrder(orderId), readValidations());
+}
+
+/**
+ * Arquivos de exemplo do mock (só existem com `VITE_USE_MOCKS`; com a API real
+ * o comprovante é o arquivo enviado pelo comprador): um desenho em SVG, com o
+ * visual do espaço do comprovante no Figma, e um PDF mínimo.
+ */
+const MOCK_RECEIPT_IMAGE =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="340" viewBox="0 0 400 340">' +
+  '<text x="200" y="165" text-anchor="middle" font-family="sans-serif" font-size="44">🧾</text>' +
+  '<text x="200" y="205" text-anchor="middle" font-family="sans-serif" font-size="12.5" fill="#655e57">Comprovante Pix anexado pelo comprador</text>' +
+  '</svg>';
+
+const MOCK_RECEIPT_PDF =
+  '%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
+  '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+  '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n' +
+  'trailer<</Root 1 0 R>>\n%%EOF';
+
+function mockDownloadReceipt(orderId: string): Blob {
+  const { payment } = findPaidOrder(orderId);
+  return receiptTypeFromName(payment.receiptName) === 'pdf'
+    ? new Blob([MOCK_RECEIPT_PDF], { type: 'application/pdf' })
+    : new Blob([MOCK_RECEIPT_IMAGE], { type: 'image/svg+xml' });
 }
 
 // Modo API REAL — proposta do front, não confirmada (ver doc do arquivo).
@@ -309,6 +358,17 @@ function toAdminError(error: unknown): AdminReceiptError {
     }
   ).response;
 
+  // 409 e 422 do contrato de aprovar/rejeitar (back-end#251): pelo status HTTP,
+  // antes de olhar o envelope.
+  if (response?.status === 409) {
+    return new AdminReceiptError(
+      'ORDER_NOT_IN_REVIEW',
+      'O comprovante já foi validado por outra pessoa.',
+    );
+  }
+  if (response?.status === 422) {
+    return new AdminReceiptError('REASON_REQUIRED', 'Informe o motivo da rejeição.');
+  }
   // 403 é "sem permissão", nunca erro genérico.
   if (response?.status === 403) {
     return new AdminReceiptError(
@@ -359,6 +419,27 @@ async function apiRejectReceipt(orderId: string, reason: string): Promise<Receip
   }
 }
 
+async function apiGetReceiptReview(orderId: string): Promise<ReceiptReview> {
+  try {
+    const { data } = await httpClient.get<ApiReceiptReview>(`/admin/payments/${orderId}`);
+    return mapApiReview(data);
+  } catch (error) {
+    throw toAdminError(error);
+  }
+}
+
+/** O token vai pelo `httpClient`; `responseType: 'blob'` devolve o arquivo cru. */
+async function apiDownloadReceipt(orderId: string): Promise<Blob> {
+  try {
+    const { data } = await httpClient.get<Blob>(`/admin/payments/${orderId}/receipt`, {
+      responseType: 'blob',
+    });
+    return data;
+  } catch (error) {
+    throw toAdminError(error);
+  }
+}
+
 // Seleção do modo.
 
 /** Fila de comprovantes, com filtro por situação (`status`) e busca (`q`). */
@@ -375,4 +456,21 @@ export function approveReceipt(orderId: string): Promise<ReceiptReview> {
 export async function rejectReceipt(orderId: string, reason: string): Promise<ReceiptReview> {
   const normalized = normalizeReason(reason);
   return useMocks ? mockRejectReceipt(orderId, normalized) : apiRejectReceipt(orderId, normalized);
+}
+
+/** Relê um item da fila (ex.: depois de um 409, para mostrar quem validou). */
+export function getReceiptReview(orderId: string): Promise<ReceiptReview> {
+  return useMocks
+    ? Promise.resolve().then(() => mockGetReceiptReview(orderId))
+    : apiGetReceiptReview(orderId);
+}
+
+/**
+ * Baixa o comprovante (imagem ou PDF) como Blob, pela rota autenticada. Quem
+ * chama mostra por `URL.createObjectURL`; a URL crua não serve (vai sem token).
+ */
+export function downloadReceipt(orderId: string): Promise<Blob> {
+  return useMocks
+    ? Promise.resolve().then(() => mockDownloadReceipt(orderId))
+    : apiDownloadReceipt(orderId);
 }

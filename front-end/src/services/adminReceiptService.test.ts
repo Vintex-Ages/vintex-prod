@@ -208,6 +208,75 @@ describe('adminReceiptService (mock)', () => {
       });
     });
   });
+
+  // FE-US032-2: 409 — Pedido fora de em_analise, inclusive a segunda ação.
+  describe('segunda ação sobre o mesmo comprovante', () => {
+    it('aprovar de novo falha com ORDER_NOT_IN_REVIEW e não muda o registro', async () => {
+      const order = await submittedOrder();
+      const first = await admin.approveReceipt(order.id);
+
+      await expect(admin.approveReceipt(order.id)).rejects.toMatchObject({
+        code: 'ORDER_NOT_IN_REVIEW',
+      });
+
+      const again = await admin.getReceiptReview(order.id);
+      expect(again.payment.validatedAt).toBe(first.payment.validatedAt);
+    });
+
+    it('rejeitar depois de aprovar falha com ORDER_NOT_IN_REVIEW', async () => {
+      const order = await submittedOrder();
+      await admin.approveReceipt(order.id);
+
+      await expect(admin.rejectReceipt(order.id, 'motivo')).rejects.toMatchObject({
+        code: 'ORDER_NOT_IN_REVIEW',
+      });
+    });
+  });
+
+  describe('getReceiptReview', () => {
+    it('devolve o item atual, com quem validou depois da ação', async () => {
+      const order = await submittedOrder();
+      await admin.approveReceipt(order.id);
+
+      const review = await admin.getReceiptReview(order.id);
+
+      expect(review.orderId).toBe(order.id);
+      expect(review.payment.status).toBe('aprovado');
+      expect(review.payment.validatedBy).toEqual({ id: 'u_admin', name: 'Admin Vintex' });
+    });
+
+    it('ORDER_NOT_FOUND para Pedido inexistente', async () => {
+      await expect(admin.getReceiptReview('inexistente')).rejects.toMatchObject({
+        code: 'ORDER_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('downloadReceipt', () => {
+    it('devolve um Blob de imagem para comprovante de imagem', async () => {
+      const order = await submittedOrder(BUYER_ID, '1', 'comprovante.png');
+
+      const blob = await admin.downloadReceipt(order.id);
+
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toMatch(/^image\//);
+      expect(blob.size).toBeGreaterThan(0);
+    });
+
+    it('devolve um Blob application/pdf para comprovante PDF', async () => {
+      const order = await submittedOrder(BUYER_ID, '1', 'comprovante.pdf');
+
+      const blob = await admin.downloadReceipt(order.id);
+
+      expect(blob.type).toBe('application/pdf');
+    });
+
+    it('ORDER_NOT_FOUND para Pedido inexistente', async () => {
+      await expect(admin.downloadReceipt('inexistente')).rejects.toMatchObject({
+        code: 'ORDER_NOT_FOUND',
+      });
+    });
+  });
 });
 
 describe('adminReceiptService (API real) — contrato proposto pelo front', () => {
@@ -438,5 +507,89 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
     const { listReceipts } = await import('./adminReceiptService');
 
     await expect(listReceipts()).rejects.toMatchObject({ code: 'INTERNAL_ERROR' });
+  });
+
+  // FE-US032-2: 409 e 422 do contrato (back-end#251).
+  it('409 vira ORDER_NOT_IN_REVIEW em aprovar e rejeitar', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 409, data: {} } });
+    const { approveReceipt, rejectReceipt } = await import('./adminReceiptService');
+
+    await expect(approveReceipt('77')).rejects.toMatchObject({ code: 'ORDER_NOT_IN_REVIEW' });
+    await expect(rejectReceipt('77', 'motivo')).rejects.toMatchObject({
+      code: 'ORDER_NOT_IN_REVIEW',
+    });
+  });
+
+  it('422 vira REASON_REQUIRED', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 422, data: {} } });
+    const { rejectReceipt } = await import('./adminReceiptService');
+
+    await expect(rejectReceipt('77', 'motivo')).rejects.toMatchObject({
+      code: 'REASON_REQUIRED',
+    });
+  });
+
+  it('getReceiptReview lê o item pela rota do Pedido e mapeia o registro de quem validou', async () => {
+    const calls = await stubAdapter(() => ({
+      ...API_REVIEW,
+      payment: {
+        ...API_REVIEW.payment,
+        status: 'aprovado',
+        validated_by: { id: 1, name: 'Admin' },
+        validated_at: '2026-10-07T12:00:00Z',
+      },
+    }));
+    const { getReceiptReview } = await import('./adminReceiptService');
+
+    const review = await getReceiptReview('77');
+
+    expect(calls[0]).toMatchObject({ method: 'get', url: '/admin/payments/77' });
+    expect(review.orderId).toBe('77');
+    expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
+  });
+
+  it('getReceiptReview: 404 do back vira ORDER_NOT_FOUND', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () =>
+      Promise.reject({ response: { status: 404, data: { error: { code: 'ORDER_NOT_FOUND' } } } });
+    const { getReceiptReview } = await import('./adminReceiptService');
+
+    await expect(getReceiptReview('77')).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+
+  // Critério de aceite: o arquivo vem da rota autenticada, como Blob, pelo httpClient.
+  it('downloadReceipt baixa como Blob pelo httpClient (com o token)', async () => {
+    const calls: { url?: string; method?: string; responseType?: string }[] = [];
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = (config) => {
+      calls.push({ url: config.url, method: config.method, responseType: config.responseType });
+      return Promise.resolve({
+        data: new Blob(['x'], { type: 'image/png' }),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+    const { downloadReceipt } = await import('./adminReceiptService');
+
+    const blob = await downloadReceipt('77');
+
+    expect(calls[0]).toEqual({
+      url: '/admin/payments/77/receipt',
+      method: 'get',
+      responseType: 'blob',
+    });
+    expect(blob).toBeInstanceOf(Blob);
+  });
+
+  it('downloadReceipt: 403 vira FORBIDDEN', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 403 } });
+    const { downloadReceipt } = await import('./adminReceiptService');
+
+    await expect(downloadReceipt('77')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
