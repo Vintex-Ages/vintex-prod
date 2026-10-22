@@ -186,7 +186,8 @@ function mockListReceipts(params: ListReceiptsParams): Paginated<ReceiptReview> 
     .map((paid) => toReview(paid, validations))
     .filter((review) => !params.status || review.payment.status === params.status)
     .filter((review) => matchesQuery(review, params.q ?? ''))
-    .sort((a, b) => b.payment.submittedAt.localeCompare(a.payment.submittedAt));
+    // Fila: o comprovante mais antigo primeiro (quem espera há mais tempo).
+    .sort((a, b) => a.payment.submittedAt.localeCompare(b.payment.submittedAt));
 
   const start = (page - 1) * DEFAULT_PAGE_SIZE;
   return {

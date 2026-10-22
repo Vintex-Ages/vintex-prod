@@ -106,6 +106,32 @@ describe('adminReceiptService (mock)', () => {
       expect(review.payment.submittedAt).toBe(order.createdAt);
     });
 
+    // FE-US032-1: a fila mostra o comprovante mais antigo primeiro.
+    it('ordena do comprovante mais antigo para o mais recente', async () => {
+      const seed = (userId: string, id: string, submittedAt: string) => {
+        const order = {
+          id,
+          store: { id: 's1', name: 'Brechó', pixKey: null },
+          items: [],
+          productAmount: 10,
+          platformFee: 0.9,
+          totalAmount: 10,
+          status: 'aguardando_validacao',
+          history: [],
+          createdAt: submittedAt,
+          payment: { status: 'pendente', receiptName: 'c.png', submittedAt },
+        };
+        window.sessionStorage.setItem(`orders:${userId}`, JSON.stringify([order]));
+      };
+      seed('u_novo', 'recente', '2026-10-03T10:00:00.000Z');
+      seed('u_velho', 'antigo', '2026-10-01T10:00:00.000Z');
+      seed('u_meio', 'meio', '2026-10-02T10:00:00.000Z');
+
+      const { items } = await admin.listReceipts();
+
+      expect(items.map((review) => review.orderId)).toEqual(['antigo', 'meio', 'recente']);
+    });
+
     it('page fora do intervalo devolve lista vazia, mantendo o total', async () => {
       await submittedOrder();
 

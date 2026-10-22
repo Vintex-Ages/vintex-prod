@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
@@ -6,6 +6,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
+import { listReceipts } from '@/services/adminReceiptService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -24,6 +25,11 @@ vi.mock('@/services/storeService', async (importOriginal) => ({
   getMyStore: vi.fn(),
 }));
 
+vi.mock('@/services/adminReceiptService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminReceiptService')>()),
+  listReceipts: vi.fn(),
+}));
+
 const STORE: StoreProfile = {
   id: 'store-1',
   name: 'Brechó da Ana',
@@ -38,6 +44,9 @@ const STORE: StoreProfile = {
 beforeEach(() => {
   // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
   vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
+  vi.mocked(listReceipts)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
 });
 
 afterEach(cleanup);
@@ -148,7 +157,6 @@ describe('<AppRoutes />', () => {
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
       ['/profile/favorites', 'Meus favoritos', BUYER],
-      ['/admin/receipts', 'Painel admin', ADMIN],
       ['/stores', 'Brechós', null],
     ] as const)(
       'reconhece %s e renderiza seu placeholder no Layout',
@@ -169,7 +177,7 @@ describe('<AppRoutes />', () => {
       ['/profile/orders/123', 'Detalhe do pedido'],
       ['/profile/orders/123/payment', 'Pagamento do pedido'],
       ['/profile/favorites', 'Meus favoritos'],
-      ['/admin/receipts', 'Painel admin'],
+      ['/admin/receipts', 'Repasses de pagamentos Pix'],
     ])('anônimo em %s vai para login e preserva pathname + search', async (path, heading) => {
       renderAtWithAuth(path, makeAuthValue({}));
 
@@ -186,7 +194,24 @@ describe('<AppRoutes />', () => {
       renderAtWithAuth('/admin/receipts', makeAuthValue({ isAuthenticated: true, user }));
 
       await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/'));
-      expect(screen.queryByRole('heading', { name: 'Painel admin' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Repasses de pagamentos Pix' }),
+      ).not.toBeInTheDocument();
+      // RN-24: quem não é admin nem dispara a consulta da fila.
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
+
+    it('admin em /admin/receipts vê a fila de comprovantes, com cabeçalho próprio e sem rodapé', async () => {
+      renderAtWithAuth('/admin/receipts', makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Repasses de pagamentos Pix' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe('/admin/receipts');
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.getByRole('link', { name: 'Comprovantes' })).toBeInTheDocument();
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      await waitFor(() => expect(listReceipts).toHaveBeenCalled());
     });
 
     // Os helpers são chamados dentro dos testes: sua ausência na fase RED
