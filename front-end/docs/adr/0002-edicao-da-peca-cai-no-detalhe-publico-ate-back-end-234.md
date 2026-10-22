@@ -1,21 +1,97 @@
 ---
-status: accepted · provisória até back-end#234 e back-end#146
+status: superseded · fallback de edição removido pela front-end#339; resumo financeiro pendente de back-end#146
 date: 2026-09-30
+updated: 2026-10-21
 ---
 
-# Edição da peça cai no detalhe público enquanto a rota do vendedor não existe
+# Edição da peça do vendedor: remoção do fallback para o detalhe público
 
-O formulário de edição (`/seller/products/:id`) e a revisão (`/seller/products/:id/review`) carregam a peça por `sellerProductService.getById`, que chama `GET /api/users/me/products/{id}` (back-end#234) — rota que ainda não existe na `develop` do back. Com a API real, editar qualquer peça ou dar F5 na revisão mostra erro de carregamento com um "Tentar de novo" que nunca funciona. O mesmo vale para a visão financeira do painel, que chama `GET /api/users/me/sales/summary` (back-end#146), também inexistente.
+## Contexto
 
-**Decidimos que `getById` usa o detalhe público `GET /api/products/{id}` como fallback** quando a rota do vendedor não existe — o envelope de erro do back responde 405 `METHOD_NOT_ALLOWED` (o caminho existe só com `PATCH`) ou 404 `NOT_FOUND` genérico, nunca o `PRODUCT_NOT_FOUND` de peça inexistente. O detalhe público traz todos os campos do formulário — `""` vira ausente, `media[]` vira `images` ordenado por `position`, `ai_corrections` não faz falta porque o back acumula as correções no `PATCH`. Isso faz a edição de peça **Anunciada** funcionar hoje. Onde nenhum dos dois caminhos resolve — peça **Pausada** (o detalhe público responde 404 para `despublicado`) e o resumo financeiro — a tela mostra um estado próprio de "ainda não disponível", sem botão de tentar de novo, em vez do erro genérico. A adaptação fica no service; as telas só distinguem "indisponível por enquanto" de "falhou".
+O formulário de edição (`/seller/products/:id`) e a revisão
+(`/seller/products/:id/review`) carregam a peça por
+`sellerProductService.getById`.
 
-## Considered Options
+Na decisão original, registrada em 30/09/2026, a rota
+`GET /api/users/me/products/{id}` ainda não estava disponível na
+`develop` do back-end.
 
-- **Só o estado honesto, sem fallback:** mais simples, mas deixa a edição de peça Anunciada — o caso principal — quebrada até a #234.
-- **Manter o erro genérico:** tratava como falha de rede um bloqueio conhecido do back, e o "Tentar de novo" prometia algo impossível.
+Por isso, o frontend utilizava provisoriamente
+`GET /api/products/{id}` como fallback quando a rota do vendedor
+respondia 405 `METHOD_NOT_ALLOWED` ou 404 `NOT_FOUND` genérico.
 
-## Consequences
+O detalhe público permitia carregar algumas peças, mas não atendia
+corretamente todos os estados. Em particular, uma peça
+`despublicado` retornava 404, impedindo o vendedor de editá-la.
 
-- O fallback é **provisório**: sai quando a back-end#234 entrar na `develop`. O código aponta para esta ADR e para a issue.
-- Hoje o detalhe público também devolve `rascunho` (só bloqueia `despublicado`), e por isso o fallback cobre o F5 na revisão. Isso é um defeito do back — rascunho não deveria ser público — e, quando for corrigido, a revisão volta a depender da #234. O caso principal (Anunciada) não depende desse defeito.
-- O que o fallback lê é o retrato público da peça: se um dia o detalhe público omitir campo que o vendedor edita, salvar a partir dele apagaria o campo. Qualquer mudança no `ProductDetailResponse` do back precisa ser conferida contra o formulário enquanto o fallback existir.
+Esse comportamento também fazia a tela exibir a mensagem de que
+editar uma peça pausada ainda não estava disponível, orientando
+o vendedor a republicá-la antes da edição.
+
+## Decisão original
+
+Enquanto a rota autenticada não estivesse disponível, o serviço
+tentaria carregar a peça pelo detalhe público.
+
+Essa solução era temporária e tinha limitações conhecidas:
+
+- O detalhe público não garantia acesso a todos os estados da peça.
+- O formato da resposta pública era diferente do formato usado
+  pelo formulário de edição.
+- O fallback dependia de comportamentos da API pública que não
+  deveriam ser utilizados para gerenciar anúncios do vendedor.
+- Peças despublicadas não podiam ser editadas diretamente.
+
+## Atualização — front-end#339
+
+A rota `GET /api/users/me/products/{product_id}` foi disponibilizada
+na `develop` do back-end em 30/09/2026.
+
+Com essa dependência atendida, o frontend passou a utilizar
+exclusivamente a rota autenticada para carregar o detalhe da peça
+do vendedor.
+
+O método `sellerProductService.getById` não utiliza mais
+`GET /api/products/{id}` como fallback.
+
+A rota autenticada permite ao proprietário consultar sua peça
+nos quatro estados:
+
+- `rascunho`
+- `ativo`
+- `vendido`
+- `despublicado`
+
+Para peças pertencentes a outro vendedor, a API continua
+respondendo 404 `PRODUCT_NOT_FOUND`.
+
+A edição de peças despublicadas não depende mais de republicação
+prévia.
+
+Essa mudança também permite editar rascunhos quando a rota
+pública retorna 404 para esse estado, conforme o comportamento
+previsto na back-end#240.
+
+## Consequências
+
+- O fallback para o detalhe público foi removido do serviço.
+- O formulário de edição utiliza o contrato `ProductDraftResponse`
+  retornado pela rota autenticada.
+- Não é mais necessário converter o formato `ProductDetailResponse`
+  da rota pública para os campos do formulário.
+- Erros da rota autenticada são tratados diretamente, sem uma
+  segunda requisição ao detalhe público.
+- O proprietário pode carregar peças despublicadas para edição
+  sem republicá-las.
+- O acesso a peças de outros vendedores permanece restrito,
+  com resposta 404.
+
+## Pendência independente: resumo financeiro
+
+A rota `GET /api/users/me/sales/summary`, relacionada à
+back-end#146, permanece uma dependência independente desta decisão.
+
+Enquanto essa rota não estiver disponível, o serviço mantém
+o tratamento `NOT_AVAILABLE_YET` para o resumo financeiro.
+
+A front-end#339 não altera esse comportamento.
