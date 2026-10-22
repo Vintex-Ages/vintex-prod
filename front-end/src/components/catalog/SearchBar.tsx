@@ -17,8 +17,14 @@ import clsx from 'clsx';
  *   resolve o uso na conversa com a Vintex, onde a mesma barra envia mensagem
  *   e o verbo certo é "Enviar".
  *
+ * - **Exceção: `submitVariant="arrow"`.** O Figma da área admin (fila de
+ *   comprovantes, FE-US032-1) desenha o botão como um quadrado verde só com a
+ *   seta. Existe só para essa tela: o padrão (`text`) segue como acima, e o
+ *   botão continua com o nome acessível "Buscar".
+ *
  * Uso:
  *   <SearchBar value={term} onChange={setTerm} onSubmit={handleSearch} />
+ *   <SearchBar value={term} onChange={setTerm} onSubmit={buscar} submitVariant="arrow" />
  *   <SearchBar value={draft} onChange={setDraft} onSubmit={send} submitLabel="Enviar" />
  */
 type SearchBarProps = {
@@ -36,6 +42,8 @@ type SearchBarProps = {
   submitLabel?: string;
   /** `sm` encolhe a altura para caber na barra do cabeçalho. */
   size?: 'md' | 'sm';
+  /** `arrow`: botão verde quadrado só com a seta (Figma da área admin). Default `text`. */
+  submitVariant?: 'text' | 'arrow';
 };
 
 function SearchIcon({ className }: { className?: string }) {
@@ -56,6 +64,23 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
+function ArrowUpIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+
 export function SearchBar({
   value,
   onChange,
@@ -64,6 +89,7 @@ export function SearchBar({
   loading = false,
   submitLabel = 'Buscar',
   size = 'md',
+  submitVariant = 'text',
 }: SearchBarProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,6 +98,7 @@ export function SearchBar({
   }
 
   const compact = size === 'sm';
+  const arrow = submitVariant === 'arrow';
 
   return (
     <form
@@ -80,6 +107,7 @@ export function SearchBar({
       className={clsx(
         'flex w-full items-stretch overflow-hidden border border-linha bg-branco-quente',
         'focus-within:border-tinta focus-within:ring-1 focus-within:ring-tinta',
+        arrow && 'shadow-sm',
       )}
     >
       <span
@@ -107,16 +135,22 @@ export function SearchBar({
       <button
         type="submit"
         disabled={loading}
-        aria-label={loading ? 'Buscando' : undefined}
+        aria-label={loading ? 'Buscando' : arrow ? submitLabel : undefined}
         className={clsx(
-          'relative flex shrink-0 items-center justify-center gap-2 bg-vermelho-escuro font-semibold text-branco-quente transition',
+          'relative flex shrink-0 items-center justify-center gap-2 font-semibold text-branco-quente transition',
           'hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente',
           'disabled:cursor-not-allowed disabled:opacity-70',
           'min-h-touch',
-          compact ? 'px-3 text-body-sm' : 'px-4 text-body',
+          arrow
+            ? 'w-11 bg-verde-rs'
+            : clsx('bg-vermelho-escuro', compact ? 'px-3 text-body-sm' : 'px-4 text-body'),
         )}
       >
-        <span className={loading ? 'invisible' : undefined}>{submitLabel}</span>
+        {arrow ? (
+          <ArrowUpIcon className={clsx('h-4 w-4', loading && 'invisible')} />
+        ) : (
+          <span className={loading ? 'invisible' : undefined}>{submitLabel}</span>
+        )}
         {loading && (
           <svg
             aria-hidden="true"

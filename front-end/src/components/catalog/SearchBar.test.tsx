@@ -66,4 +66,55 @@ describe('SearchBar', () => {
 
     expect(onChange).toHaveBeenCalledWith('a');
   });
+
+  describe('submitVariant="arrow" (admin, Figma)', () => {
+    it('o botão é verde, quadrado e só tem a seta, mas continua se chamando "Buscar"', () => {
+      render(<SearchBar value="" onChange={() => {}} onSubmit={() => {}} submitVariant="arrow" />);
+
+      const button = screen.getByRole('button', { name: 'Buscar' });
+      expect(button).toHaveClass('bg-verde-rs');
+      expect(button).not.toHaveClass('bg-vermelho-escuro');
+      expect(button).toHaveTextContent('');
+      expect(button.querySelector('svg')).toBeInTheDocument();
+    });
+
+    it('dispara onSubmit com o termo ao clicar na seta', async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+
+      render(
+        <SearchBar
+          value="camiseta"
+          onChange={() => {}}
+          onSubmit={onSubmit}
+          submitVariant="arrow"
+        />,
+      );
+      await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+      expect(onSubmit).toHaveBeenCalledWith('camiseta');
+    });
+
+    it('carregando, desabilita e vira "Buscando"', () => {
+      render(
+        <SearchBar
+          value="a"
+          onChange={() => {}}
+          onSubmit={() => {}}
+          submitVariant="arrow"
+          loading
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: 'Buscando' })).toBeDisabled();
+    });
+
+    it('o padrão continua sendo o botão vermelho com texto', () => {
+      render(<SearchBar value="" onChange={() => {}} onSubmit={() => {}} />);
+
+      const button = screen.getByRole('button', { name: 'Buscar' });
+      expect(button).toHaveClass('bg-vermelho-escuro');
+      expect(button).toHaveTextContent('Buscar');
+    });
+  });
 });
