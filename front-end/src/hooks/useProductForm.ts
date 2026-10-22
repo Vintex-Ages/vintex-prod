@@ -8,7 +8,6 @@ import {
   update,
   publish,
   uploadMedia,
-  NOT_AVAILABLE_YET,
   SellerProductError,
 } from '@/services/sellerProductService';
 import { suggestListing } from '@/services/vintexAiService';
@@ -62,10 +61,9 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * conhecido: um F5 na revisão recarrega a peça pelo `getById`, mas as marcas
  * de sugerido e as correções ainda não enviadas se perdem.
  *
- * "Recarregar" o rascunho depois de salvar usa a resposta do próprio
- * `createDraft`/`update`, e não um `getById`: ele ainda não tem rota no back
- * (#202) e quebraria o fluxo fora do mock. `getById` só roda quando se entra
- * direto numa URL com um id que este hook ainda não tem em memória.
+ * Depois de salvar, o formulário usa a resposta de `createDraft` ou `update`.
+ * Ao acessar diretamente a URL de uma peça, `getById` consulta a rota
+ * autenticada do vendedor, independentemente do status da peça.
  */
 
 export interface ProductFormValues {
@@ -168,7 +166,11 @@ export type PublishResult =
   | { status: 'error'; message: string };
 
 function semAcento(valor: string): string {
-  return valor.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+  return valor
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 /**
@@ -298,9 +300,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [draftId, setDraftId] = useState<string | undefined>(productId);
   const [productStatus, setProductStatus] = useState<ProductStatus | undefined>(undefined);
 
-  // Id da peça que já está em memória, do `getById` ou da resposta do último
-  // save. Quando um rascunho novo é salvo, a URL passa a ter o id dele; é isto
-  // que evita um `getById` desnecessário (e sem rota no back) nessa hora.
+  // Id da peça já carregada em memória, pelo getById ou pelo último save.
+  // Evita buscar novamente a mesma peça durante a navegação.
   const carregadoRef = useRef<string | undefined>(undefined);
 
   // Último estado renderizado. `setMedia` roda depois de duas idas à rede e
@@ -310,9 +311,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const valuesRef = useRef(values);
   valuesRef.current = values;
 
-  // Modo edição (FE-US019-2) e entrada direta na revisão: carrega pelo
-  // `getById`. Sem a rota do vendedor no back, ele cai no detalhe público,
-  // que não serve para peça pausada (`docs/adr/0002`).
+  // Modo edição e entrada direta na revisão: carrega a peça pela rota
+  // autenticada do vendedor, inclusive rascunhos e peças despublicadas.
   useEffect(() => {
     // O mesmo hook atravessa as rotas do fluxo: voltar a `/new` com um
     // rascunho em memória é começar outra peça do zero.
@@ -348,13 +348,9 @@ export function useProductForm(productId?: string): UseProductFormResult {
         setAiNotes([]);
         setSemFotoNoBack(false);
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (!ativo) return;
-        setFormError(
-          error instanceof SellerProductError && error.code === NOT_AVAILABLE_YET
-            ? error.message
-            : 'Não foi possível carregar esta peça.',
-        );
+        setFormError('Não foi possível carregar esta peça.');
         setLoadFailed(true);
       })
       .finally(() => {

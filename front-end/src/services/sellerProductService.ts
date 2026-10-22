@@ -67,11 +67,7 @@ function noImage(): SellerProductError {
   return new SellerProductError('NO_IMAGE', 'Adicione ao menos uma foto antes de publicar.');
 }
 
-/**
- * Código só do front: a operação depende de rota que o back ainda não tem
- * (`docs/adr/0002`). A tela mostra "ainda não disponível", sem "Tentar de
- * novo" — tentar de novo não muda nada até o back entregar.
- */
+/** Código usado pelo resumo financeiro enquanto sua rota não está disponível. */
 export const NOT_AVAILABLE_YET = 'NOT_AVAILABLE_YET';
 
 function notAvailableYet(message: string): SellerProductError {
@@ -362,8 +358,7 @@ function mockUploadMedia(files: File[]): string[] {
 // Rotas e schemas lidos dos PRs `back-end#157` e `back-end#159` (ver tabela
 // "API real" da #202). Prefixo `/users/me/products` (ADR 0001 §4), mesmo que
 // alguns endpoints ainda estejam em `/products/{id}` nos PRs — o combinado é
-// mover. `getById` usa a rota declarada na back-end#234, que o back ainda
-// não entregou (ver `apiGetById`).
+// mover. `getById` usa a rota autenticada de detalhes do vendedor.
 
 interface ApiCorrection {
   field: string;
@@ -526,84 +521,13 @@ async function apiTransition(
   }
 }
 
-/** `ProductDetailResponse` do detalhe público: vazio chega como `""`, não `null`. */
-interface ApiPublicProductDetail {
-  id: number | string;
-  name: string;
-  description: string;
-  category: string;
-  style: string;
-  brand: string;
-  color: string;
-  size: string;
-  condition: string;
-  price: number | string;
-  status: ProductStatus;
-  city: string;
-  media: { url: string; position: number }[];
-  store: { id: number | string; name: string };
-}
-
-function blankToUndefined(value: string): string | undefined {
-  return value === '' ? undefined : value;
-}
-
-function mapPublicDetail(item: ApiPublicProductDetail): SellerProductDetail {
-  return {
-    id: String(item.id),
-    name: item.name,
-    price: Number(item.price),
-    status: item.status,
-    description: blankToUndefined(item.description),
-    category: blankToUndefined(item.category),
-    size: blankToUndefined(item.size),
-    color: blankToUndefined(item.color),
-    brand: blankToUndefined(item.brand),
-    condition: blankToUndefined(item.condition),
-    style: blankToUndefined(item.style),
-    images: [...item.media].sort((a, b) => a.position - b.position).map((media) => media.url),
-    quantity: 1,
-    store: { id: String(item.store.id), name: item.store.name, city: item.city || null },
-    // O back acumula as correções no `PATCH`; o formulário só manda as novas.
-    aiCorrections: [],
-  };
-}
-
-/**
- * Fallback provisório (`docs/adr/0002`, #297) até a back-end#234: o detalhe
- * público traz todos os campos do formulário, mas responde
- * `PRODUCT_NOT_FOUND` para peça `despublicado`.
- */
-async function apiGetPublicDetail(id: string): Promise<SellerProductDetail> {
-  try {
-    const { data } = await httpClient.get<ApiPublicProductDetail>(`/products/${id}`);
-    return mapPublicDetail(data);
-  } catch (error) {
-    const normalized = toSellerProductError(error);
-    if (normalized.code === 'PRODUCT_NOT_FOUND') {
-      throw notAvailableYet(
-        'Editar peça pausada ainda não está disponível. Republique a peça para editá-la.',
-      );
-    }
-    throw normalized;
-  }
-}
-
-/**
- * `GET /users/me/products/{id}` — pedida na #202 e registrada como
- * back-end#234; ainda não existe na `develop` do back (29/09). O contrato
- * esperado é o mesmo `ProductDraftResponse` das transições, em qualquer
- * status. Enquanto a rota não chega, cai no detalhe público
- * (`docs/adr/0002`); remover o fallback quando a #234 entrar.
- */
+/** Busca o detalhe da peça pela rota autenticada, em qualquer status (#339). */
 async function apiGetById(id: string): Promise<SellerProductDetail> {
   try {
     const { data } = await httpClient.get<ApiSellerProductDetail>(`/users/me/products/${id}`);
     return mapSellerProductDetail(data);
   } catch (error) {
-    const normalized = toSellerProductError(error);
-    if (isMissingRoute(normalized)) return apiGetPublicDetail(id);
-    throw normalized;
+    throw toSellerProductError(error);
   }
 }
 
@@ -663,8 +587,8 @@ export async function createDraft(
 
 /**
  * Peça do vendedor em qualquer status, pro formulário de edição (#216/#221) —
- * o detalhe público não serve: responde 404 pra `despublicado` e não traz
- * rascunho. A rota real é a back-end#234 (ver `apiGetById`).
+ * o detalhe público não serve: responde 404 para rascunhos e peças
+ * despublicadas. A rota autenticada atende o dono em qualquer status (#339).
  */
 export async function getById(id: string): Promise<SellerProductDetail> {
   return useMocks ? mockGetById(id) : apiGetById(id);
