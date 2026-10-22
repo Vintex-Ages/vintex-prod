@@ -16,8 +16,12 @@ import clsx from 'clsx';
  *   `min-h-touch`; a faixa pode quebrar em telas estreitas para evitar scroll
  *   horizontal escondido.
  *
+ * - **`compact`** é o chip menor do Figma da área admin (altura de ~32px, sem
+ *   a altura mínima de toque). O padrão continua o de 44px do catálogo.
+ *
  * Uso:
  *   <FilterChip label="Roupas" active={selecionado} onToggle={() => alternar()} />
+ *   <FilterChip label="Pendentes" compact />
  *   <FilterChip label="Tamanho M" removable onRemove={() => remover('M')} />
  */
 type FilterChipProps = {
@@ -26,10 +30,14 @@ type FilterChipProps = {
   onToggle?: () => void;
   removable?: boolean;
   onRemove?: () => void;
+  compact?: boolean;
 };
 
 const baseClass =
-  'inline-flex min-h-touch shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
+  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
+
+/** Altura mínima de toque (44px) no padrão; `compact` dispensa. */
+const touchClass = 'min-h-touch';
 
 function RemoveIcon() {
   return (
@@ -53,7 +61,9 @@ export function FilterChip({
   onToggle,
   removable = false,
   onRemove,
+  compact = false,
 }: FilterChipProps) {
+  const sizeClass = compact ? undefined : touchClass;
   const toneClass = active
     ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
     : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
@@ -64,7 +74,7 @@ export function FilterChip({
         type="button"
         aria-label={`Remover ${label}`}
         onClick={onRemove}
-        className={clsx(baseClass, toneClass)}
+        className={clsx(baseClass, sizeClass, toneClass)}
       >
         <span>{label}</span>
         <RemoveIcon />
@@ -77,7 +87,7 @@ export function FilterChip({
       type="button"
       aria-pressed={active}
       onClick={onToggle}
-      className={clsx(baseClass, toneClass)}
+      className={clsx(baseClass, sizeClass, toneClass)}
     >
       {label}
     </button>
