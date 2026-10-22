@@ -52,3 +52,14 @@ export interface StoreInput {
   /** VS-003b (Should) — opcional até esse fluxo existir. */
   acceptedContractVersion?: string;
 }
+
+/** Resumo da loja na listagem "Brechós do RS" (FE-CMP-38). `activeCount` = peças ativas. */
+export interface StoreSummary {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  city: string;
+  state: string;
+  verified: boolean;
+  activeCount: number;
+}
