@@ -10,8 +10,12 @@ import type { StoreVerification } from '@/types/store';
  * Status da peça com os mesmos valores do JSON do back (decidido na
  * back-end#144) — é o que vai no corpo e no `?status=`. Os rótulos da tela
  * (`Anunciada`, `Já vendida`, `Pausada`) ficam só no `StatusBadge`.
+ *
+ * `reservado`: a peça tem um Pedido aberto e ainda sem comprovante aprovado
+ * (back-end#247); vira `vendido` na aprovação (back-end#251) e volta a `ativo`
+ * se o Pedido expirar (back-end#243).
  */
-export type ProductStatus = 'rascunho' | 'ativo' | 'vendido' | 'despublicado';
+export type ProductStatus = 'rascunho' | 'ativo' | 'reservado' | 'vendido' | 'despublicado';
 
 export interface Store {
   id: string;

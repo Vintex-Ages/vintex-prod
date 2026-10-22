@@ -1,18 +1,26 @@
 /**
  * Contrato de dados do Pedido do comprador (FE-SVC-orders, issue #311).
  *
- * Vocabulário (`CONTEXT.md`, raiz do repo, atualizado 30/09): um Pedido é a
+ * Vocabulário (`CONTEXT.md`, raiz do repo): um Pedido é a
  * compra das peças de **uma única loja**; finalizar um carrinho com N lojas
  * gera N Pedidos, um por vez (modelagem `orders §1.11`).
  */
 
 /**
- * Os seis status da VS-023. Nenhum status além destes — rejeição de
- * comprovante NÃO é um sétimo status, é lida de `payment.status` (RN-23,
- * ver `Order.payment` abaixo).
+ * Os seis status da linha do tempo (VS-023) mais `expirado`, a saída negativa
+ * dela (back-end#243): sem comprovante aprovado em 3 dias (`expiresAt`), o
+ * Pedido expira e as peças voltam a `ativo`. `expirado` NÃO é etapa da linha
+ * do tempo. Rejeição de comprovante continua não sendo status: é lida de
+ * `payment.status` (RN-23, ver `Order.payment` abaixo).
  */
 export type OrderStatus =
-  'aguardando_comprovante' | 'em_analise' | 'confirmado' | 'preparando' | 'enviado' | 'concluido';
+  | 'aguardando_comprovante'
+  | 'em_analise'
+  | 'confirmado'
+  | 'preparando'
+  | 'enviado'
+  | 'concluido'
+  | 'expirado';
 
 export type PaymentStatus = 'pendente' | 'aprovado' | 'rejeitado';
 
@@ -28,12 +36,16 @@ export interface OrderItem {
   coverImageUrl: string | null;
 }
 
+/**
+ * Endereço de entrega, com os nomes do banco (`zip_code`, `neighborhood`;
+ * back-end#247). A tela continua mostrando "CEP" e "Bairro" (`AddressFields`).
+ */
 export interface DeliveryAddress {
-  cep: string;
+  zipCode: string;
   street: string;
   number: string;
   complement?: string;
-  district: string;
+  neighborhood: string;
   city: string;
   state: string;
 }
@@ -64,10 +76,16 @@ export interface Order {
     rejectionReason?: string;
   } | null;
   createdAt: string;
+  /** ISO. 3 dias depois de `createdAt`; sem comprovante aprovado até lá, o Pedido vira `expirado`. */
+  expiresAt: string;
 }
 
-/** Shape enxuto pra listagem ("Meus Pedidos") — sem `history`/`deliveryAddress`/`platformFee`. */
+/**
+ * Shape enxuto pra listagem ("Meus Pedidos") — sem `history`/`deliveryAddress`/
+ * `platformFee`. A loja é só `{ id, name }`: a lista (back-end#248) não traz a
+ * chave Pix, só o detalhe.
+ */
 export type OrderSummary = Pick<
   Order,
-  'id' | 'store' | 'items' | 'totalAmount' | 'status' | 'payment' | 'createdAt'
->;
+  'id' | 'items' | 'totalAmount' | 'status' | 'payment' | 'createdAt'
+> & { store: { id: string; name: string } };
