@@ -1,4 +1,4 @@
-import { type FormEvent } from 'react';
+import { type ChangeEvent, type FormEvent } from 'react';
 import clsx from 'clsx';
 
 /**
@@ -22,10 +22,17 @@ import clsx from 'clsx';
  *   seta. Existe só para essa tela: o padrão (`text`) segue como acima, e o
  *   botão continua com o nome acessível "Buscar".
  *
+ * - **Busca por foto (FE-US031-1, RN-60): `onImageSelect`.** Quando a tela passa
+ *   esse callback, aparece o botão de câmera (um `<label>` com `<input
+ *   type="file">`, que abre a câmera no celular e o seletor de arquivos no
+ *   desktop). Sem o callback a barra fica exatamente como antes, então as
+ *   outras telas que usam o componente não mudam.
+ *
  * Uso:
  *   <SearchBar value={term} onChange={setTerm} onSubmit={handleSearch} />
  *   <SearchBar value={term} onChange={setTerm} onSubmit={buscar} submitVariant="arrow" />
  *   <SearchBar value={draft} onChange={setDraft} onSubmit={send} submitLabel="Enviar" />
+ *   <SearchBar value={term} onChange={setTerm} onSubmit={buscar} onImageSelect={buscarPorFoto} />
  */
 type SearchBarProps = {
   value: string;
@@ -44,6 +51,11 @@ type SearchBarProps = {
   size?: 'md' | 'sm';
   /** `arrow`: botão verde quadrado só com a seta (Figma da área admin). Default `text`. */
   submitVariant?: 'text' | 'arrow';
+  /**
+   * Quando informado, mostra o botão de câmera (busca por imagem, RN-60) e
+   * entrega a foto escolhida ou tirada. Sem ele, a barra fica como sempre.
+   */
+  onImageSelect?: (file: File) => void;
 };
 
 function SearchIcon({ className }: { className?: string }) {
@@ -81,6 +93,24 @@ function ArrowUpIcon({ className }: { className?: string }) {
   );
 }
 
+function CameraIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </svg>
+  );
+}
+
 export function SearchBar({
   value,
   onChange,
@@ -90,11 +120,19 @@ export function SearchBar({
   submitLabel = 'Buscar',
   size = 'md',
   submitVariant = 'text',
+  onImageSelect,
 }: SearchBarProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (loading) return;
     onSubmit(value);
+  }
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Limpa o campo: escolher a mesma foto de novo precisa disparar `change`.
+    event.target.value = '';
+    if (file) onImageSelect?.(file);
   }
 
   const compact = size === 'sm';
@@ -131,6 +169,26 @@ export function SearchBar({
           compact ? 'px-2 py-1.5 text-body-sm' : 'px-2 py-2.5 text-body',
         )}
       />
+
+      {onImageSelect && (
+        <label
+          className={clsx(
+            'flex shrink-0 cursor-pointer items-center text-texto-auxiliar transition-colors hover:bg-papel-profundo hover:text-tinta',
+            'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-tinta',
+            compact ? 'px-2' : 'px-3',
+          )}
+        >
+          <span className="sr-only">Buscar por foto</span>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleImageChange}
+            className="sr-only"
+          />
+          <CameraIcon className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
+        </label>
+      )}
 
       <button
         type="submit"

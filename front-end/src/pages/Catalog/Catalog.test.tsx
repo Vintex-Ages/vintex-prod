@@ -3,7 +3,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Catalog from './Catalog';
-import { search } from '@/services/catalogService';
+import { search, searchByImage } from '@/services/catalogService';
+import type { ImageSearchResult } from '@/services/catalogService';
 import type { SearchResult } from '@/types/product';
 
 /**
@@ -18,7 +19,9 @@ function VintexProbe() {
 }
 
 /** A página navega para o detalhe, então precisa de contexto de router. */
-function renderCatalog(initialEntry = '/catalog') {
+function renderCatalog(
+  initialEntry: string | { pathname: string; search?: string; state?: unknown } = '/catalog',
+) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
@@ -32,6 +35,7 @@ function renderCatalog(initialEntry = '/catalog') {
 
 vi.mock('@/services/catalogService', () => ({
   search: vi.fn(),
+  searchByImage: vi.fn(),
 }));
 
 // Dublês de SearchResult para a UI, não fixtures reais do backend.
@@ -357,5 +361,179 @@ describe('Catalog', () => {
       '',
       expect.objectContaining({ category: 'Casacos', color: 'Preto', priceMax: 100 }),
     );
+  });
+});
+
+// --- FE-US031-1: busca por imagem ---
+
+const photo = () => new File(['x'], 'look.jpg', { type: 'image/jpeg' });
+
+const failure = (code: string, message = 'falha') => Object.assign(new Error(message), { code });
+
+// Dublê de ImageSearchResult para a UI, não fixture real do backend.
+const imageResult: ImageSearchResult = {
+  items: [
+    {
+      id: '7',
+      name: 'Jaqueta parecida',
+      price: 120,
+      coverImageUrl: null,
+      store: { id: '1', name: 'Loja' },
+    },
+  ],
+  page: 1,
+  pageSize: 20,
+  total: 1,
+  interpreted: { category: 'Jaquetas', color: 'Preto', brand: 'Zara' },
+};
+
+describe('Catalog: busca por imagem', () => {
+  beforeEach(() => {
+    vi.mocked(search).mockReset();
+    vi.mocked(searchByImage).mockReset();
+    URL.createObjectURL = vi.fn(() => 'blob:preview');
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  async function enterImageMode(entry = '/catalog') {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+    const file = photo();
+    renderCatalog(entry);
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    await user.upload(screen.getByLabelText('Buscar por foto'), file);
+    return { user, file };
+  }
+
+  it('escolher uma foto chama searchByImage com os filtros ativos', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+
+    const { file } = await enterImageMode('/catalog?category=Casacos&color=Preto');
+
+    await waitFor(() =>
+      expect(searchByImage).toHaveBeenCalledWith(
+        file,
+        expect.objectContaining({ category: 'Casacos', color: 'Preto' }),
+      ),
+    );
+    expect(await screen.findByText('Jaqueta parecida')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Foto da busca' })).toBeInTheDocument();
+  });
+
+  it('mudar um filtro refaz a busca com a mesma foto', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+    const { user, file } = await enterImageMode();
+    await screen.findByText('Jaqueta parecida');
+
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+
+    await waitFor(() =>
+      expect(searchByImage).toHaveBeenLastCalledWith(
+        file,
+        expect.objectContaining({ category: 'Roupas' }),
+      ),
+    );
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('tirar a foto volta ao catálogo normal e mantém os filtros', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+    const { user } = await enterImageMode('/catalog?category=Roupas');
+    await screen.findByText('Jaqueta parecida');
+
+    await user.click(screen.getByRole('button', { name: 'Sair da busca por foto' }));
+
+    await waitFor(() =>
+      expect(search).toHaveBeenLastCalledWith('', expect.objectContaining({ category: 'Roupas' })),
+    );
+    expect(screen.queryByRole('img', { name: 'Foto da busca' })).not.toBeInTheDocument();
+  });
+
+  it('mostra o que foi lido da foto', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+
+    await enterImageMode();
+
+    expect(await screen.findByText('Jaquetas')).toBeInTheDocument();
+    expect(screen.getByText('Preto')).toBeInTheDocument();
+    expect(screen.getByText('Zara')).toBeInTheDocument();
+  });
+
+  it('sem resultados: oferece limpar filtros e buscar por texto, nunca só "não encontrado"', async () => {
+    vi.mocked(searchByImage).mockResolvedValue({ ...imageResult, items: [], total: 0 });
+    const { user, file } = await enterImageMode('/catalog?category=Roupas');
+
+    expect(await screen.findByText('Nada parecido com essa foto')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buscar por texto' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+
+    await waitFor(() =>
+      expect(searchByImage).toHaveBeenLastCalledWith(
+        file,
+        expect.objectContaining({ category: undefined }),
+      ),
+    );
+    expect(screen.getByRole('img', { name: 'Foto da busca' })).toBeInTheDocument();
+  });
+
+  it('análise indisponível: avisa, deixa tentar de novo e buscar por texto', async () => {
+    vi.mocked(searchByImage)
+      .mockRejectedValueOnce(failure('AI_UNAVAILABLE'))
+      .mockResolvedValue(imageResult);
+    const { user } = await enterImageMode();
+
+    const alerta = await screen.findByRole('alert');
+    expect(alerta).toHaveTextContent('indisponível');
+    expect(screen.getByRole('button', { name: 'Buscar por texto' })).toBeInTheDocument();
+
+    await user.click(within(alerta).getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(await screen.findByText('Jaqueta parecida')).toBeInTheDocument();
+    expect(searchByImage).toHaveBeenCalledTimes(2);
+  });
+
+  it('foto inválida: sai do modo imagem e mostra o motivo', async () => {
+    vi.mocked(searchByImage).mockRejectedValue(
+      failure('UNSUPPORTED_IMAGE_TYPE', 'Use uma foto JPEG, PNG, WebP ou HEIC.'),
+    );
+
+    await enterImageMode();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use uma foto JPEG');
+    expect(screen.queryByRole('img', { name: 'Foto da busca' })).not.toBeInTheDocument();
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+  });
+
+  it('recarregar no modo imagem, sem a foto, volta ao catálogo normal com aviso', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+
+    renderCatalog('/catalog?modo=imagem');
+
+    expect(await screen.findByText(/Não foi possível recuperar a foto/)).toBeInTheDocument();
+    expect(searchByImage).not.toHaveBeenCalled();
+    await waitFor(() => expect(search).toHaveBeenCalledWith('', {}));
+  });
+
+  it('a foto que chega por navegação abre direto no modo imagem', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+    const file = photo();
+
+    renderCatalog({ pathname: '/catalog', search: '?modo=imagem', state: { image: file } });
+
+    await waitFor(() => expect(searchByImage).toHaveBeenCalledWith(file, expect.any(Object)));
+    expect(search).not.toHaveBeenCalled();
+    expect(await screen.findByText('Jaqueta parecida')).toBeInTheDocument();
+  });
+
+  it('digitar na busca sai do modo imagem', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+    const { user } = await enterImageMode();
+    await screen.findByText('Jaqueta parecida');
+
+    await user.type(screen.getByRole('searchbox'), 'a');
+
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith('a', expect.any(Object)));
+    expect(screen.queryByRole('img', { name: 'Foto da busca' })).not.toBeInTheDocument();
   });
 });
