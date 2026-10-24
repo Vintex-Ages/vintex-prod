@@ -1,15 +1,76 @@
 ﻿import { useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, useAuth } from '@/context/useAuth';
 import { CartContext, type CartContextValue } from '@/context/useCart';
-import { paths } from '@/routes/paths';
+import { paths, productDetail } from '@/routes/paths';
 import { me } from '@/services/authService';
 import type { AuthUser } from '@/types/auth';
+import type { Notification } from '@/types/notification';
 import Header from './Header';
+
+type HeaderNotificationsValue = {
+  items: Notification[];
+  unreadCount: number;
+  loading: boolean;
+  error: string | null;
+  pendingIds: string[];
+  markingAll: boolean;
+  retry: () => void;
+  markAsRead: (id: string) => Promise<void>;
+  markAllAsRead: () => Promise<void>;
+};
+
+// Dublê da fronteira do contexto: os testes do provider exercitam o estado real.
+// Sem import de runtime do módulo futuro, o Header atual continua coletável no RED.
+const notificationSource = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const markAsRead = vi.fn<(id: string) => Promise<void>>();
+  const markAllAsRead = vi.fn<() => Promise<void>>();
+  let snapshot: HeaderNotificationsValue = {
+    items: [],
+    unreadCount: 0,
+    loading: false,
+    error: null,
+    pendingIds: [],
+    markingAll: false,
+    retry: vi.fn(),
+    markAsRead,
+    markAllAsRead,
+  };
+  function setItems(items: Notification[]) {
+    snapshot = { ...snapshot, items, unreadCount: items.filter((item) => !item.isRead).length };
+    listeners.forEach((listener) => listener());
+  }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    setItems,
+    reset: () => {
+      setItems([]);
+      markAsRead.mockReset().mockImplementation(async (id) => {
+        setItems(snapshot.items.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
+      });
+      markAllAsRead.mockReset().mockImplementation(async () => {
+        setItems(snapshot.items.map((item) => ({ ...item, isRead: true })));
+      });
+    },
+  };
+});
+
+vi.mock('@/context/useNotifications', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useNotifications: () =>
+      useSyncExternalStore(notificationSource.subscribe, notificationSource.getSnapshot),
+  };
+});
 
 // Só `me` é substituído: é o que `refreshUser()` consulta. O resto do
 // authService (logout etc.) segue o comportamento real do modo mock.
@@ -701,3 +762,204 @@ describe('<Header />', () => {
     });
   });
 });
+
+function headerNotification(id: string, isRead = false): Notification {
+  return {
+    id,
+    type: 'sale',
+    recipientUserId: SAMPLE_USER.id,
+    productName: `Peça fictícia ${id}`,
+    createdAt: '2026-10-21T15:00:00.000Z',
+    isRead,
+  };
+}
+
+function renderNotificationHeader(initialEntry: string = paths.home) {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-notifications');
+  return renderHeader({ initialEntry });
+}
+
+describe('FE-US036-1 — sino integrado ao Header', () => {
+  beforeEach(() => {
+    notificationSource.reset();
+    vi.mocked(me).mockResolvedValue(SAMPLE_USER);
+  });
+
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it('não mostra sino ou dados de notificações para deslogado', () => {
+    notificationSource.setItems([headerNotification('privada')]);
+    renderHeader();
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Peça fictícia privada')).not.toBeInTheDocument();
+  });
+
+  it('mostra o sino para usuário autenticado no Header geral', async () => {
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeEnabled();
+  });
+
+  it('não mostra o sino na barra de produto quando deslogado', () => {
+    renderHeader({ initialEntry: productDetailForHeaderTest });
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+  });
+
+  it('mostra o sino autenticado também na barra compacta do produto', async () => {
+    renderNotificationHeader(productDetailForHeaderTest);
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+  });
+
+  it('com zero não lidas mantém o sino sem contador', async () => {
+    notificationSource.setItems([headerNotification('lida', true)]);
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.queryByText('0', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('1', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it.each([1, 3])('mostra contador %i de não lidas, sem somar as já lidas', async (count) => {
+    notificationSource.setItems([
+      ...Array.from({ length: count }, (_, index) => headerNotification(`nova-${index}`)),
+      headerNotification('já-lida', true),
+    ]);
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.getByText(String(count), { exact: true })).toBeInTheDocument();
+  });
+
+  it('mostra 99+ visualmente e anuncia a contagem lógica completa', async () => {
+    notificationSource.setItems(
+      Array.from({ length: 105 }, (_, index) => headerNotification(`nova-${index}`)),
+    );
+    renderNotificationHeader();
+
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    expect(screen.getByText('99+')).toBeInTheDocument();
+    expect(bell).toHaveAccessibleDescription(/105 notificações não lidas/i);
+  });
+
+  it('anuncia uma não lida sem alterar o nome acessível Notificações', async () => {
+    notificationSource.setItems([headerNotification('uma')]);
+    renderNotificationHeader();
+
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    expect(bell).toHaveAccessibleName('Notificações');
+    expect(bell).toHaveAccessibleDescription(/1 notificação não lida/i);
+  });
+
+  it('remove o badge após ler a última notificação sem remontar o Header', async () => {
+    const user = userEvent.setup();
+    notificationSource.setItems([headerNotification('última')]);
+    renderNotificationHeader();
+    await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /Sua peça Peça fictícia última foi vendida/i }),
+    );
+
+    await waitFor(() => expect(screen.queryByText('1', { exact: true })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+  });
+
+  it('logout remove imediatamente sino e conteúdo privado', async () => {
+    const user = userEvent.setup();
+    notificationSource.setItems([headerNotification('privada')]);
+    renderNotificationHeader();
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: SAMPLE_USER.name }));
+    await user.click(screen.getByRole('button', { name: 'Sair' }));
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sua peça Peça fictícia privada/)).not.toBeInTheDocument();
+  });
+
+  it('reflete alteração de contagem do contexto sem reload', async () => {
+    renderNotificationHeader();
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+
+    act(() => notificationSource.setItems([headerNotification('nova')]));
+
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument();
+  });
+
+  it.each(['conta', 'navegação', 'busca'] as const)(
+    'abrir notificações fecha %s que já estava aberta',
+    async (menu) => {
+      const user = userEvent.setup();
+      renderNotificationHeader(paths.sell);
+      await screen.findByRole('button', { name: SAMPLE_USER.name });
+      const opener =
+        menu === 'conta'
+          ? screen.getByRole('button', { name: SAMPLE_USER.name })
+          : menu === 'navegação'
+            ? screen.getByRole('button', { name: 'Abrir menu principal' })
+            : getMobileSearchToggle();
+      await user.click(opener);
+      expect(opener).toHaveAttribute('aria-expanded', 'true');
+
+      await user.click(screen.getByRole('button', { name: 'Notificações' }));
+
+      expect(screen.getByRole('region', { name: 'Notificações' })).toBeInTheDocument();
+      expect(opener).toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it.each(['conta', 'navegação', 'busca'] as const)(
+    'abrir %s fecha notificações sem bloquear o controle',
+    async (menu) => {
+      const user = userEvent.setup();
+      renderNotificationHeader(paths.sell);
+      await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+      const opener =
+        menu === 'conta'
+          ? screen.getByRole('button', { name: SAMPLE_USER.name })
+          : menu === 'navegação'
+            ? screen.getByRole('button', { name: 'Abrir menu principal' })
+            : getMobileSearchToggle();
+
+      await user.click(opener);
+
+      expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+      expect(opener).toHaveAttribute('aria-expanded', 'true');
+    },
+  );
+
+  it('mudar de rota fecha o painel de notificações', async () => {
+    const user = userEvent.setup();
+    renderNotificationHeader();
+    await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+
+    await user.click(screen.getByRole('link', { name: 'Catálogo' }));
+
+    expect(screen.getByTestId('path')).toHaveTextContent(paths.catalog);
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+  });
+
+  it('Escape fecha notificações e devolve o foco ao sino', async () => {
+    const user = userEvent.setup();
+    renderNotificationHeader();
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    await user.click(bell);
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(bell).toHaveFocus();
+    expect(bell).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+const productDetailForHeaderTest = productDetail('produto-ficticio-341');

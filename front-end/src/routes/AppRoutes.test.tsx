@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
@@ -87,11 +88,13 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <CartContext.Provider value={CART_VALUE}>
-          <ToastProvider>
-            <AppRoutes />
-          </ToastProvider>
-        </CartContext.Provider>
+        <NotificationsProvider>
+          <CartContext.Provider value={CART_VALUE}>
+            <ToastProvider>
+              <AppRoutes />
+            </ToastProvider>
+          </CartContext.Provider>
+        </NotificationsProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -138,12 +141,14 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthContext.Provider value={authValue}>
-        <CartContext.Provider value={CART_VALUE}>
-          <ToastProvider>
-            <AppRoutes />
-            <LocationProbe />
-          </ToastProvider>
-        </CartContext.Provider>
+        <NotificationsProvider>
+          <CartContext.Provider value={CART_VALUE}>
+            <ToastProvider>
+              <AppRoutes />
+              <LocationProbe />
+            </ToastProvider>
+          </CartContext.Provider>
+        </NotificationsProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
