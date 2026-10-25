@@ -20,6 +20,7 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
 /** Painel in-app controlado pelo Header; dados e operações pertencem ao provider. */
 export default function NotificationBell({ open, onToggle, onClose }: NotificationBellProps) {
   const {
+    available,
     items,
     unreadCount,
     loading,
@@ -96,6 +97,9 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
       }
     }
   }
+
+  // Sem a integração no back não há o que mostrar: nada de sino com erro fixo.
+  if (!available) return null;
 
   return (
     <div className="inline-flex shrink-0 tablet:relative">

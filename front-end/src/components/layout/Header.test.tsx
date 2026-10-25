@@ -13,6 +13,7 @@ import type { Notification } from '@/types/notification';
 import Header from './Header';
 
 type HeaderNotificationsValue = {
+  available: boolean;
   items: Notification[];
   unreadCount: number;
   loading: boolean;
@@ -31,6 +32,7 @@ const notificationSource = vi.hoisted(() => {
   const markAsRead = vi.fn<(id: string) => Promise<void>>();
   const markAllAsRead = vi.fn<() => Promise<void>>();
   let snapshot: HeaderNotificationsValue = {
+    available: true,
     items: [],
     unreadCount: 0,
     loading: false,

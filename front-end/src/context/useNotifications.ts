@@ -3,6 +3,8 @@ import type { Notification } from '@/types/notification';
 
 export interface NotificationsContextValue {
   items: Notification[];
+  /** `false` enquanto o back não tem notificações: quem consome não mostra o sino. */
+  available: boolean;
   unreadCount: number;
   loading: boolean;
   error: string | null;

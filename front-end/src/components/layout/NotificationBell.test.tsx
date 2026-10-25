@@ -297,6 +297,20 @@ describe('NotificationBell — painel e acessibilidade', () => {
     expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  // Sem rota no back (back-end#261), o service avisa INTEGRATION_UNAVAILABLE:
+  // o sino some em vez de mostrar um erro que nenhum "tentar de novo" resolve.
+  it('esconde o sino quando a integração de notificações não existe', async () => {
+    vi.mocked(listNotifications).mockRejectedValue(
+      Object.assign(new Error('indisponível'), { code: 'INTEGRATION_UNAVAILABLE' }),
+    );
+    renderBell();
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('preserva nomes extensos integralmente', async () => {
     const longName =
       'Jaqueta fictícia de coleção especial com bordados e nome extenso para verificar conteúdo acessível';

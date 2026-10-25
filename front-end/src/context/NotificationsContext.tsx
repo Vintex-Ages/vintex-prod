@@ -25,6 +25,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [markingAll, setMarkingAll] = useState(false);
+  // `false` quando o back ainda não tem a rota (back-end#261): o sino some.
+  const [available, setAvailable] = useState(true);
 
   // Limpa antes de renderizar consumidores, sem remontar as páginas do app.
   // A sessão antiga fica inválida mesmo se uma Promise resolver após novo login.
@@ -36,6 +38,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setError(null);
     setPendingIds([]);
     setMarkingAll(false);
+    setAvailable(true);
   }
 
   const load = useCallback(() => {
@@ -56,8 +59,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
         );
       })
-      .catch(() => {
-        if (session.active) setError('Não foi possível carregar as notificações.');
+      .catch((caught: unknown) => {
+        if (!session.active) return;
+        if ((caught as { code?: string } | null)?.code === 'INTEGRATION_UNAVAILABLE') {
+          setAvailable(false);
+          return;
+        }
+        setError('Não foi possível carregar as notificações.');
       })
       .finally(() => {
         session.loadRequest = null;
@@ -135,6 +143,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     <NotificationsContext.Provider
       value={{
         items,
+        available,
         unreadCount: notificationService.countUnread(items),
         loading,
         error,
