@@ -29,6 +29,8 @@ const unavailableItems = [
 
 const actionLabel = 'Adicionar ao carrinho';
 const removeLabel = `Remover ${availableItem.name} do carrinho`;
+// Com `action` a linha serve fora do carrinho (Favoritos, #329): o nome não cita o carrinho.
+const actionRemoveLabel = `Remover ${availableItem.name}`;
 
 function renderRow(options: RowOptions = {}) {
   const onRemove = vi.fn<(productId: string) => void>();
@@ -183,6 +185,13 @@ describe('CartItemRow com action', () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
+  it('o remover não fala em carrinho, porque a linha é reusada em Favoritos', () => {
+    renderRow({ action: { label: actionLabel, onClick: vi.fn() } });
+
+    expect(screen.getByRole('button', { name: actionRemoveLabel })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /do carrinho/ })).not.toBeInTheDocument();
+  });
+
   it('clicar em remover não chama action.onClick nem onOpen', async () => {
     const user = userEvent.setup();
     const onClick = vi.fn();
@@ -190,7 +199,7 @@ describe('CartItemRow com action', () => {
     const { onRemove } = renderRow({ onOpen, action: { label: actionLabel, onClick } });
     expect(screen.getByRole('button', { name: actionLabel })).toBeEnabled();
 
-    await user.click(screen.getByRole('button', { name: removeLabel }));
+    await user.click(screen.getByRole('button', { name: actionRemoveLabel }));
 
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(availableItem.id);
     expect(onClick).not.toHaveBeenCalled();
@@ -203,7 +212,7 @@ describe('CartItemRow com action', () => {
     const { onRemove } = renderRow({ action: { label: actionLabel, onClick, disabled: true } });
     expect(screen.getByRole('button', { name: actionLabel })).toBeDisabled();
 
-    const removeButton = screen.getByRole('button', { name: removeLabel });
+    const removeButton = screen.getByRole('button', { name: actionRemoveLabel });
     expect(removeButton).toBeEnabled();
     await user.click(removeButton);
 
@@ -217,7 +226,7 @@ describe('CartItemRow com action', () => {
     const { onRemove } = renderRow({ item, action: { label: actionLabel, onClick } });
     expect(screen.getByRole('button', { name: actionLabel })).toBeDisabled();
 
-    const removeButton = screen.getByRole('button', { name: removeLabel });
+    const removeButton = screen.getByRole('button', { name: actionRemoveLabel });
     expect(removeButton).toBeEnabled();
     await user.click(removeButton);
 
@@ -268,7 +277,7 @@ describe('CartItemRow com action', () => {
 
     await user.tab();
     expect(button).not.toHaveFocus();
-    expect(screen.getByRole('button', { name: removeLabel })).toHaveFocus();
+    expect(screen.getByRole('button', { name: actionRemoveLabel })).toHaveFocus();
     // Desfoca Remover para que Enter/Espaço não executem outra ação da linha.
     await user.tab();
     await user.keyboard('{Enter} ');

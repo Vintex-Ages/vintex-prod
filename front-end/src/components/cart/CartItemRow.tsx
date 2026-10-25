@@ -133,7 +133,8 @@ function CartItemRow({ item, onRemove, onOpen, action }: CartItemRowProps) {
               <path d="m6 6 12 12M18 6 6 18" />
             </svg>
           }
-          ariaLabel={`Remover ${name} do carrinho`}
+          // Com `action` a linha também serve em Favoritos (#329): sem "do carrinho".
+          ariaLabel={`Remover ${name}`}
           onClick={() => onRemove(id)}
           className="absolute right-0 top-0 border-none bg-transparent"
         />
