@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { AuthProvider } from '@/context/AuthContext';
 import { CartProvider } from '@/context/CartContext';
+import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
 import { useAuth } from '@/context/useAuth';
@@ -121,15 +122,17 @@ function renderIntegratedAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <CartProvider>
-          <ToastProvider>
-            <Header />
-            <Routes>
-              <Route path={paths.product} element={<ProductDetail />} />
-              <Route path={paths.cart} element={<CartDestination />} />
-            </Routes>
-          </ToastProvider>
-        </CartProvider>
+        <NotificationsProvider>
+          <CartProvider>
+            <ToastProvider>
+              <Header />
+              <Routes>
+                <Route path={paths.product} element={<ProductDetail />} />
+                <Route path={paths.cart} element={<CartDestination />} />
+              </Routes>
+            </ToastProvider>
+          </CartProvider>
+        </NotificationsProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
