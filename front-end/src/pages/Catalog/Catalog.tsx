@@ -273,18 +273,23 @@ function Catalog() {
 
   useEffect(run, [run]);
 
+  // Sair do modo imagem por qualquer caminho também tira o aviso da foto.
   function resetImageState() {
     setImage(null);
     setInterpreted(null);
     setImageUnavailable(false);
+    setNotice(null);
   }
 
   function handleImageSelect(file: File) {
     setNotice(null);
     setImage(file);
+    // A rota de imagem não aceita `q`: o termo antigo sai da URL e da barra.
+    setInputValue('');
     setSearchParams(
       (current) => {
         const next = new URLSearchParams(current);
+        next.delete('q');
         next.set('modo', 'imagem');
         return next;
       },

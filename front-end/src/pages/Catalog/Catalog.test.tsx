@@ -536,4 +536,24 @@ describe('Catalog: busca por imagem', () => {
     await waitFor(() => expect(search).toHaveBeenLastCalledWith('a', expect.any(Object)));
     expect(screen.queryByRole('img', { name: 'Foto da busca' })).not.toBeInTheDocument();
   });
+
+  // A rota de imagem não aceita `q`: o termo antigo não pode ficar na barra.
+  it('escolher uma foto limpa o termo de texto', async () => {
+    vi.mocked(searchByImage).mockResolvedValue(imageResult);
+    await enterImageMode('/catalog?q=jaqueta');
+    await screen.findByText('Jaqueta parecida');
+
+    expect(screen.getByRole('searchbox')).toHaveValue('');
+  });
+
+  it('digitar depois do aviso de foto perdida tira o aviso', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+    renderCatalog('/catalog?modo=imagem');
+    await screen.findByText(/Não foi possível recuperar a foto/);
+
+    await user.type(screen.getByRole('searchbox'), 'a');
+
+    expect(screen.queryByText(/Não foi possível recuperar a foto/)).not.toBeInTheDocument();
+  });
 });
