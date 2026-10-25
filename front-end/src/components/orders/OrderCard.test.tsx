@@ -117,6 +117,22 @@ describe('<OrderCard />', () => {
     expect(screen.getByText('Expirado')).toBeInTheDocument();
   });
 
+  // #321: recusado e depois expirado — o Pedido acabou, a recusa ficou para trás.
+  it('com status expirado e comprovante rejeitado mostra "Expirado", não "Comprovante recusado"', () => {
+    render(
+      <OrderCard
+        order={makeOrder({
+          status: 'expirado',
+          payment: { status: 'rejeitado', rejectionReason: 'Valor diferente' },
+        })}
+        onOpen={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Expirado')).toBeInTheDocument();
+    expect(screen.queryByText('Comprovante recusado')).toBeNull();
+  });
+
   it('sem action, não renderiza botão além do principal', () => {
     render(<OrderCard order={makeOrder()} onOpen={vi.fn()} />);
 
