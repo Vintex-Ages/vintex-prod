@@ -19,7 +19,7 @@ export type ReceiptQueueState =
  * (comprador ou loja) e o estado da consulta; a tela só desenha.
  *
  * Usage:
- *   const { state, filter, setFilter, search, retry } = useReceiptQueue();
+ *   const { state, filter, setFilter, search, retry, replaceItem } = useReceiptQueue();
  *   <FilterChip label="Pendentes" active={filter === 'pendente'} onToggle={() => setFilter('pendente')} />
  */
 export function useReceiptQueue() {
@@ -77,5 +77,17 @@ export function useReceiptQueue() {
     setAttempt((current) => current + 1);
   }, []);
 
-  return { state, filter, setFilter, search, retry };
+  /** Troca a linha de um pedido já validado, sem nova consulta (FE-US032-2). */
+  const replaceItem = useCallback((updated: ReceiptReview) => {
+    setState((current) =>
+      current.status === 'ready'
+        ? {
+            status: 'ready',
+            items: current.items.map((item) => (item.orderId === updated.orderId ? updated : item)),
+          }
+        : current,
+    );
+  }, []);
+
+  return { state, filter, setFilter, search, retry, replaceItem };
 }
