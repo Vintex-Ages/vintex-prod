@@ -2,7 +2,7 @@ import { httpClient } from '@/services/httpClient';
 import { getPreferences } from '@/services/preferenceService';
 import { mapFeedItem, toReais, type ApiFeedItem } from '@/services/catalogService';
 import { products as mockProducts } from '@/mocks/products';
-import type { Paginated, Product, ProductDetail } from '@/types/product';
+import type { Paginated, Product, ProductDetail, ProductStatus } from '@/types/product';
 
 /**
  * Service de recomendações pelo perfil de estilo (FE-SVC-recommendations,
@@ -16,20 +16,27 @@ import type { Paginated, Product, ProductDetail } from '@/types/product';
  * consumidor que precisa desses campos a mais -> decisão registrada em
  * comentário na #313.
  *
- * Dinheiro: a rota ainda não existe e o schema dela é desconhecido, então o
- * `price` pode chegar como número ou string (`Decimal` do Pydantic). Mesmo
- * padrão da busca por imagem (#315):
- * `mapFeedItem({ ...item, price: toReais(item.price) })`.
+ * Dinheiro: o `price` pode chegar como número ou string (`Decimal` do
+ * Pydantic), então passa por `toReais` antes do mapeador, mesmo padrão da
+ * busca por imagem (#315): `mapFeedItem({ ...item, price: toReais(item.price) })`.
  *
  * FLAG `VITE_USE_MOCKS` (mesmo padrão dos outros services da S2/S3).
  *
- * API real (quando existir)
+ * API real — contrato fechado pelo back em 05/10 (back-end#253, ajustado no
+ * front pela #355):
  *
- *   Proposta do front — o back ainda não tem nada disso na `develop`
- *   (verificado em 30/09). Confirmar nome, verbo e shape com o par de
- *   back-end antes de ligar o flag.
+ *   `GET /users/me/recommendations?page=` (o `baseURL` do `httpClient` já
+ *   termina em `/api`) → `{ items, personalized, page, page_size, total }`.
+ *   Item no formato do feed: `id`, `name`, `price`, `cover_image_url`,
+ *   `status` e `store { id, name, verified }`. 401 sem sessão.
  *
- *   `GET /users/me/recommendations?page=` → `Page[FeedItem] & { personalized: bool }`
+ *   - Sem preferências NUNCA é erro (RN-38): 200 com `personalized: false` e
+ *     a lista genérica do feed.
+ *   - A lista nunca volta vazia enquanto houver catálogo (RN-61).
+ *
+ * O mock segue o mesmo contrato: sem preferência de estilo, devolve o feed
+ * genérico com o critério do mock do `catalogService` (só `ativo`, mais
+ * recente primeiro), paginado.
  *
  * Usage:
  *   import { getRecommendations } from '@/services/recommendationService';
@@ -75,7 +82,11 @@ async function mockGetRecommendations(page: number): Promise<Recommendations> {
     .map((preference) => preference.value);
 
   if (styleValues.length === 0) {
-    return { items: [], personalized: false, page, pageSize: DEFAULT_PAGE_SIZE, total: 0 };
+    // RN-38/RN-61: feed genérico, mesmo critério do mock do `catalogService`
+    // (só `ativo`, mais recente primeiro).
+    const feed = mockProducts.filter((product) => product.status === 'ativo').reverse();
+    const { items, total } = paginate(feed.map(toRecommendationItem), page, DEFAULT_PAGE_SIZE);
+    return { items, personalized: false, page, pageSize: DEFAULT_PAGE_SIZE, total };
   }
 
   const matches = mockProducts.filter(
@@ -91,11 +102,17 @@ async function mockGetRecommendations(page: number): Promise<Recommendations> {
 }
 
 // ---------------------------------------------------------------------------
-// Modo API real — proposta do front, não confirmada.
+// Modo API real — contrato do back-end#253.
 // ---------------------------------------------------------------------------
 
-/** `price` aceita string porque o schema da rota ainda não existe */
-type ApiRecommendationItem = Omit<ApiFeedItem, 'price'> & { price: number | string };
+/**
+ * Item do feed. `price` aceita string (`Decimal`); `status` vem no contrato,
+ * mas o `Product` do feed não o carrega e `mapFeedItem` o descarta.
+ */
+type ApiRecommendationItem = Omit<ApiFeedItem, 'price'> & {
+  price: number | string;
+  status: ProductStatus;
+};
 
 interface ApiRecommendationsResponse {
   items: ApiRecommendationItem[];
