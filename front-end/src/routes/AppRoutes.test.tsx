@@ -5,6 +5,7 @@ import { AxiosError } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
@@ -89,11 +90,13 @@ function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <CartContext.Provider value={CART_VALUE}>
-          <ToastProvider>
-            <AppRoutes />
-          </ToastProvider>
-        </CartContext.Provider>
+        <NotificationsProvider>
+          <CartContext.Provider value={CART_VALUE}>
+            <ToastProvider>
+              <AppRoutes />
+            </ToastProvider>
+          </CartContext.Provider>
+        </NotificationsProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -140,12 +143,14 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthContext.Provider value={authValue}>
-        <CartContext.Provider value={CART_VALUE}>
-          <ToastProvider>
-            <AppRoutes />
-            <LocationProbe />
-          </ToastProvider>
-        </CartContext.Provider>
+        <NotificationsProvider>
+          <CartContext.Provider value={CART_VALUE}>
+            <ToastProvider>
+              <AppRoutes />
+              <LocationProbe />
+            </ToastProvider>
+          </CartContext.Provider>
+        </NotificationsProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
@@ -476,6 +481,7 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
   let auth: typeof import('@/context/useAuth');
   let cart: typeof import('@/context/useCart');
   let toast: typeof import('@/context/ToastContext');
+  let notifications: typeof import('@/context/NotificationsContext');
   let storeModule: typeof import('@/services/storeService');
   let privateVerified: boolean;
   let publicVerified: boolean;
@@ -620,6 +626,7 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
     auth = await import('@/context/useAuth');
     cart = await import('@/context/useCart');
     toast = await import('@/context/ToastContext');
+    notifications = await import('@/context/NotificationsContext');
     routes = await import('./AppRoutes');
   });
 
@@ -644,11 +651,13 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
             user: authenticated ? SELLER : null,
           })}
         >
-          <cart.CartContext.Provider value={CART_VALUE}>
-            <toast.ToastProvider>
-              <PageRoutes />
-            </toast.ToastProvider>
-          </cart.CartContext.Provider>
+          <notifications.NotificationsProvider>
+            <cart.CartContext.Provider value={CART_VALUE}>
+              <toast.ToastProvider>
+                <PageRoutes />
+              </toast.ToastProvider>
+            </cart.CartContext.Provider>
+          </notifications.NotificationsProvider>
         </auth.AuthContext.Provider>
       </MemoryRouter>,
     );
