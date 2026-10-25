@@ -27,7 +27,9 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * tem "Editar", que volta ao formulário com o foco na seção certa; ao
  * continuar de novo, o mesmo rascunho é regravado e o resumo já vem com a
  * mudança. Os campos que vieram da IA e o vendedor não mexeu mantêm a
- * `AISuggestedTag` (RN-56).
+ * `AISuggestedTag` (RN-56), inclusive a composição lida da etiqueta (#331),
+ * na linha "Composição" logo depois de Marca. A foto da etiqueta não aparece
+ * aqui: ela não faz parte da galeria do anúncio.
  *
  * "Publicar" chama `publishDraft()` do hook: último `update` com as correções
  * sobre a IA e depois `publish`. Sem foto, publicar fica bloqueado com o
@@ -144,6 +146,8 @@ export default function Review() {
     { rotulo: 'Cor', valor: values.color ?? '', campo: 'color' },
     { rotulo: 'Conservação', valor: values.condition ?? '', campo: 'condition' },
     { rotulo: 'Marca', valor: values.brand, campo: 'brand' },
+    // Lida da foto da etiqueta (#331).
+    { rotulo: 'Composição', valor: values.composition, campo: 'composition' },
     // RN-46: peça de brechó é única.
     { rotulo: 'Quantidade', valor: '1 (peça única)' },
   ];

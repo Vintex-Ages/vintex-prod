@@ -38,6 +38,16 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * A IA nunca bloqueia o cadastro (RN-57): falha dela vira aviso, os campos
  * seguem editáveis e o vendedor preenche à mão.
  *
+ * **Foto da etiqueta (#331).** Fica em `labelMedia`, separada de
+ * `values.media`: não entra na galeria pública, não vai em `images` e não conta
+ * como foto da peça para o RN-47. O arquivo vai para `suggestListing` como
+ * `labelImage`, e é o service quem sobe a etiqueta (kind 'label'). Como a
+ * análise precisa de ao menos uma foto da peça, a etiqueta é lida junto com
+ * elas: enviada antes, vai na primeira análise; enviada depois, refaz a análise
+ * com as fotos que já subiram. A IA lê dela a marca e a `composition`;
+ * etiqueta ilegível não preenche nenhuma das duas (RN-59) e o motivo chega nas
+ * notas do service, mostradas como vieram.
+ *
  * **Salvar e publicar são dois passos (#218).** Antes, um `submit()` só
  * gravava e publicava de uma vez. A revisão explícita (RN-50) pede que o
  * formulário apenas grave o rascunho e que só a revisão publique, então
@@ -73,6 +83,8 @@ export interface ProductFormValues {
   color: string | null;
   condition: string | null;
   brand: string;
+  /** Composição do tecido, lida da etiqueta (#331). Opcional. */
+  composition: string;
   description: string;
   /** Centavos, como o `PriceInput` entrega. */
   priceCents: number | null;
@@ -88,16 +100,13 @@ const VALORES_INICIAIS: ProductFormValues = {
   color: null,
   condition: null,
   brand: '',
+  composition: '',
   description: '',
   priceCents: null,
   media: [],
 };
 
-/**
- * Campos do formulário que a IA sabe preencher, no nome que ela usa.
- * `composition` fica de fora até o formulário ter o campo (#331): sugestão sem
- * campo na tela é ignorada.
- */
+/** Campos do formulário que a IA sabe preencher, no nome que ela usa. */
 const CAMPO_POR_SUGESTAO: Partial<Record<ListingSuggestionField, keyof ProductFormValues>> = {
   category: 'category',
   color: 'color',
@@ -105,6 +114,7 @@ const CAMPO_POR_SUGESTAO: Partial<Record<ListingSuggestionField, keyof ProductFo
   condition: 'condition',
   description: 'description',
   brand: 'brand',
+  composition: 'composition',
 };
 
 /**
@@ -203,6 +213,7 @@ function paraValores(peca: SellerProductDetail): ProductFormValues {
     color: peca.color ?? null,
     condition: peca.condition ?? null,
     brand: peca.brand ?? '',
+    composition: peca.composition ?? '',
     description: peca.description ?? '',
     priceCents: paraCentavos(peca.price),
     media: (peca.images ?? []).map((url, indice) => ({
@@ -222,6 +233,7 @@ function paraInput(values: ProductFormValues): Partial<ProductInput> {
     color: values.color ?? undefined,
     condition: values.condition ?? undefined,
     brand: values.brand.trim() || undefined,
+    composition: values.composition.trim() || undefined,
     description: values.description.trim() || undefined,
     price: paraReais(values.priceCents),
     images: values.media.map((item) => item.url),
@@ -251,8 +263,12 @@ export interface UseProductFormResult {
   errors: FieldErrors;
   /** Campos que vieram da IA e o vendedor ainda não mexeu (RN-56). */
   suggested: Set<ListingSuggestionField>;
-  /** Avisos da IA, ex.: marca não identificada (RN-58). */
+  /** Avisos da IA, ex.: marca não identificada (RN-58) ou etiqueta ilegível (RN-59). */
   aiNotes: string[];
+  /** Foto da etiqueta (0 ou 1), fora da galeria e das `images` (#331). */
+  labelMedia: MediaItem[];
+  /** A IA leu a etiqueta e trouxe a composição dela. */
+  labelRead: boolean;
   analyzing: boolean;
   saving: boolean;
   loading: boolean;
@@ -274,6 +290,8 @@ export interface UseProductFormResult {
   productStatus: ProductStatus | undefined;
   setField: <K extends keyof ProductFormValues>(campo: K, valor: ProductFormValues[K]) => void;
   setMedia: (items: MediaItem[]) => void;
+  /** Troca ou remove a foto da etiqueta; com fotos da peça já enviadas, refaz a análise. */
+  setLabelMedia: (items: MediaItem[]) => void;
   /** Grava o rascunho sem publicar. Devolve o id, ou `null` se não passou. */
   saveDraft: () => Promise<string | null>;
   /**
@@ -289,6 +307,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [suggested, setSuggested] = useState<Set<ListingSuggestionField>>(new Set());
   const [corrections, setCorrections] = useState<ListingCorrection[]>([]);
   const [aiNotes, setAiNotes] = useState<string[]>([]);
+  const [labelMedia, setLabelMediaState] = useState<MediaItem[]>([]);
+  const [labelRead, setLabelRead] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(productId));
@@ -311,6 +331,10 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const valuesRef = useRef(values);
   valuesRef.current = values;
 
+  // Mesmo motivo: a análise lê a etiqueta do momento em que roda.
+  const labelRef = useRef<File | undefined>(undefined);
+  labelRef.current = labelMedia[0]?.file;
+
   // Modo edição e entrada direta na revisão: carrega a peça pela rota
   // autenticada do vendedor, inclusive rascunhos e peças despublicadas.
   useEffect(() => {
@@ -324,6 +348,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
       setSuggested(new Set());
       setCorrections([]);
       setAiNotes([]);
+      setLabelMediaState([]);
+      setLabelRead(false);
       setFormError(null);
       setSemFotoNoBack(false);
       setDraftId(undefined);
@@ -346,6 +372,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
         setSuggested(new Set());
         setCorrections([]);
         setAiNotes([]);
+        setLabelMediaState([]);
+        setLabelRead(false);
         setSemFotoNoBack(false);
       })
       .catch(() => {
@@ -397,98 +425,144 @@ export function useProductForm(productId?: string): UseProductFormResult {
   );
 
   /**
+   * Pede a sugestão para fotos que já subiram, com a etiqueta se houver, e
+   * aplica o resultado. Falha da IA vira aviso (RN-57).
+   */
+  const analisar = useCallback(async (urls: string[]) => {
+    const etiqueta = labelRef.current;
+    const resultado = await suggestListing({
+      imageUrls: urls,
+      ...(etiqueta ? { labelImage: etiqueta } : {}),
+    });
+
+    if (!resultado.ok) {
+      setAiNotes([resultado.message]);
+      setLabelRead(false);
+      return;
+    }
+
+    const { fields, suggested: vindos, notes } = resultado.suggestion;
+    // `composition` só sai da etiqueta: se veio, ela foi lida.
+    setLabelRead(Boolean(etiqueta) && vindos.includes('composition'));
+
+    // Campo cuja sugestão não existe na lista da tela não é preenchido nem
+    // marcado: em vez disso, o que a IA leu vira aviso, para o vendedor
+    // escolher sabendo. Marca sobre campo vazio seria mentira na tela.
+    const resolvidos = new Map<ListingSuggestionField, string>();
+    const forasDaLista: string[] = [];
+
+    for (const chave of vindos) {
+      const bruto = fields[chave];
+      if (!bruto) continue;
+
+      const resolvido = resolverOpcao(chave, bruto);
+      if (resolvido === null) {
+        forasDaLista.push(
+          `A Vintex leu ${ROTULO_POR_CAMPO[chave]} como "${bruto}", que não está na lista. Escolha a mais próxima.`,
+        );
+        continue;
+      }
+
+      resolvidos.set(chave, resolvido);
+    }
+
+    setAiNotes([...(notes ?? []), ...forasDaLista]);
+
+    // Só preenche campo ainda vazio: sugestão não sobrescreve o que o
+    // vendedor já escreveu.
+    const atuais = valuesRef.current;
+    const preenchidos = new Set<ListingSuggestionField>();
+    const aPreencher: Partial<ProductFormValues> = {};
+
+    for (const [chave, valor] of resolvidos) {
+      const campo = CAMPO_POR_SUGESTAO[chave];
+      if (!campo) continue;
+      if (atuais[campo] !== null && atuais[campo] !== '') continue;
+
+      (aPreencher[campo] as string) = valor;
+      preenchidos.add(chave);
+    }
+
+    setValues((atual) => ({ ...atual, ...aPreencher }));
+    // Soma às marcas que já estavam: uma segunda análise (a da etiqueta) não
+    // apaga a origem dos campos que a primeira preencheu e o vendedor não mexeu.
+    setSuggested((atual) => new Set([...atual, ...preenchidos]));
+  }, []);
+
+  /**
    * Fotos novas sobem de verdade antes de qualquer coisa: é a URL do servidor
    * que a IA consegue baixar. Sem isso, `suggestListing` receberia um endereço
    * que só existe dentro desta aba.
    */
-  const setMedia = useCallback(async (items: MediaItem[]) => {
-    setValues((atual) => ({ ...atual, media: items }));
-    setErrors((atual) => ({ ...atual, media: undefined }));
-    setSemFotoNoBack(false);
+  const setMedia = useCallback(
+    async (items: MediaItem[]) => {
+      setValues((atual) => ({ ...atual, media: items }));
+      setErrors((atual) => ({ ...atual, media: undefined }));
+      setSemFotoNoBack(false);
 
-    // Sem foto nenhuma, o que a IA disse deixa de fazer sentido: os avisos
-    // falariam de fotos que não estão mais ali. Os campos ficam, porque o
-    // vendedor pode ter ajustado e não deve perder o que escreveu.
-    if (items.length === 0) {
-      setAiNotes([]);
-      setSuggested(new Set());
-      return;
-    }
-
-    const novas = items.filter((item) => item.file);
-    if (novas.length === 0) return;
-
-    setAnalyzing(true);
-    setFormError(null);
-    try {
-      const urls = await uploadMedia(novas.map((item) => item.file as File));
-
-      setValues((atual) => ({
-        ...atual,
-        media: atual.media.map((item) => {
-          const indice = novas.findIndex((nova) => nova.id === item.id);
-          return indice === -1 ? item : { ...item, url: urls[indice], file: undefined };
-        }),
-      }));
-
-      const resultado = await suggestListing({ imageUrls: urls });
-
-      if (!resultado.ok) {
-        setAiNotes([resultado.message]);
+      // Sem foto nenhuma, o que a IA disse deixa de fazer sentido: os avisos
+      // falariam de fotos que não estão mais ali. Os campos ficam, porque o
+      // vendedor pode ter ajustado e não deve perder o que escreveu.
+      if (items.length === 0) {
+        setAiNotes([]);
+        setSuggested(new Set());
+        setLabelRead(false);
         return;
       }
 
-      const { fields, suggested: vindos, notes } = resultado.suggestion;
+      const novas = items.filter((item) => item.file);
+      if (novas.length === 0) return;
 
-      // Campo cuja sugestão não existe na lista da tela não é preenchido nem
-      // marcado: em vez disso, o que a IA leu vira aviso, para o vendedor
-      // escolher sabendo. Marca sobre campo vazio seria mentira na tela.
-      const encaixaram = new Set<ListingSuggestionField>();
-      const resolvidos = new Map<ListingSuggestionField, string>();
-      const forasDaLista: string[] = [];
+      setAnalyzing(true);
+      setFormError(null);
+      try {
+        const urls = await uploadMedia(novas.map((item) => item.file as File));
 
-      for (const chave of vindos) {
-        const bruto = fields[chave];
-        if (!bruto) continue;
+        setValues((atual) => ({
+          ...atual,
+          media: atual.media.map((item) => {
+            const indice = novas.findIndex((nova) => nova.id === item.id);
+            return indice === -1 ? item : { ...item, url: urls[indice], file: undefined };
+          }),
+        }));
 
-        const resolvido = resolverOpcao(chave, bruto);
-        if (resolvido === null) {
-          forasDaLista.push(
-            `A Vintex leu ${ROTULO_POR_CAMPO[chave]} como "${bruto}", que não está na lista. Escolha a mais próxima.`,
-          );
-          continue;
-        }
-
-        resolvidos.set(chave, resolvido);
-        encaixaram.add(chave);
+        await analisar(urls);
+      } catch {
+        // RN-57: falha ao subir ou analisar não trava o cadastro.
+        setAiNotes(['Não foi possível analisar as fotos. Preencha os campos à mão.']);
+      } finally {
+        setAnalyzing(false);
       }
+    },
+    [analisar],
+  );
 
-      setAiNotes([...(notes ?? []), ...forasDaLista]);
+  /**
+   * A etiqueta não sobe aqui: o service sobe, marcada como etiqueta. Sem foto
+   * da peça já enviada, ela só fica guardada para a próxima análise.
+   */
+  const setLabelMedia = useCallback(
+    async (items: MediaItem[]) => {
+      setLabelMediaState(items);
+      labelRef.current = items[0]?.file;
+      setLabelRead(false);
+      if (!items[0]?.file) return;
 
-      // Só preenche campo ainda vazio: sugestão não sobrescreve o que o
-      // vendedor já escreveu.
-      const atuais = valuesRef.current;
-      const preenchidos = new Set<ListingSuggestionField>();
-      const aPreencher: Partial<ProductFormValues> = {};
+      const enviadas = valuesRef.current.media.filter((item) => !item.file).map((item) => item.url);
+      if (enviadas.length === 0) return;
 
-      for (const [chave, valor] of resolvidos) {
-        const campo = CAMPO_POR_SUGESTAO[chave];
-        if (!campo) continue;
-        if (atuais[campo] !== null && atuais[campo] !== '') continue;
-
-        (aPreencher[campo] as string) = valor;
-        preenchidos.add(chave);
+      setAnalyzing(true);
+      setFormError(null);
+      try {
+        await analisar(enviadas);
+      } catch {
+        setAiNotes(['Não foi possível analisar a etiqueta. Preencha os campos à mão.']);
+      } finally {
+        setAnalyzing(false);
       }
-
-      setValues((atual) => ({ ...atual, ...aPreencher }));
-      setSuggested(preenchidos);
-    } catch {
-      // RN-57: falha ao subir ou analisar não trava o cadastro.
-      setAiNotes(['Não foi possível analisar as fotos. Preencha os campos à mão.']);
-    } finally {
-      setAnalyzing(false);
-    }
-  }, []);
+    },
+    [analisar],
+  );
 
   const saveDraft = useCallback(async (): Promise<string | null> => {
     const encontrados = validar(values);
@@ -561,6 +635,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
     errors,
     suggested,
     aiNotes,
+    labelMedia,
+    labelRead,
     analyzing,
     saving,
     loading,
@@ -573,6 +649,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     productStatus,
     setField,
     setMedia,
+    setLabelMedia,
     saveDraft,
     publishDraft,
   };
