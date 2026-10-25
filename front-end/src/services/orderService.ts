@@ -1,5 +1,4 @@
 import { httpClient } from '@/services/httpClient';
-import { removeItem as removeCartItem } from '@/services/cartService';
 import { products as mockProducts } from '@/mocks/products';
 import type {
   DeliveryAddress,
@@ -25,16 +24,19 @@ import type { Paginated } from '@/types/product';
  * #228): o modo mock usa pra isolar pedidos no `sessionStorage`; o modo API
  * ignora — o back identifica o usuário pelo token em `/users/me/*`.
  *
- * API real (quando existir)
+ * API real — contrato fechado pelo back em 05/10 (back-end#243, #247, #248, #249):
  *
- *   Os endpoints abaixo são proposta do front — o back ainda não tem nada
- *   disso na `develop` (verificado em 30/09). Confirmar nome, verbo e shape
- *   com o par de back-end antes de ligar a flag. Divergência vira ajuste
- *   aqui, nunca na tela.
+ *   `POST /users/me/orders` · `GET /users/me/orders` (Page[OrderSummary], loja
+ *   só `{ id, name }`, sem `history`) · `GET /users/me/orders/{id}` (com
+ *   `store.pix_key`, `history` e `expires_at`) ·
+ *   `POST /users/me/orders/{id}/receipt` (multipart `file`, imagem ou PDF até
+ *   8 MiB; 413 tamanho · 415 tipo · 409 Pedido fora de `aguardando_comprovante`;
+ *   resposta PARCIAL `{ id, status, payment, history }`, por isso `submitReceipt`
+ *   relê o detalhe e devolve o Pedido completo).
  *
- *   `POST /users/me/orders` · `GET /users/me/orders` (Page[OrderSummary]) ·
- *   `GET /users/me/orders/{id}` (com `store.pix_key` e `history`) ·
- *   `POST /users/me/orders/{id}/receipt` (multipart).
+ *   O mock reserva as peças ao criar o Pedido e as marca vendidas quando o
+ *   comprovante é aprovado (back-end#251). Não mexe no carrinho: o checkout
+ *   recarrega e mostra o que o service devolver.
  *
  * Usage:
  *   import { createOrder, listMyOrders, getOrder, submitReceipt } from '@/services/orderService';
@@ -52,10 +54,19 @@ const DEFAULT_PAGE_SIZE = 20;
 /** RN-11. */
 const PLATFORM_FEE_RATE = 0.09;
 
+/** Prazo para o comprovante ser aprovado, a contar da criação (back-end#243). */
+const ORDER_EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
+
+function expiresAtFrom(createdAt: string): string {
+  return new Date(new Date(createdAt).getTime() + ORDER_EXPIRY_MS).toISOString();
+}
+
 /**
  * Erro de Pedido com `code` tipado — o mesmo formato em mock e API real.
  * Códigos usados pelo mock: `EMPTY_ORDER`, `PIECE_UNAVAILABLE`,
  * `MIXED_STORES`, `STORE_WITHOUT_PIX`, `ORDER_NOT_FOUND`.
+ * Do envio de comprovante na API real (por status HTTP): `RECEIPT_TOO_LARGE`
+ * (413), `RECEIPT_INVALID_TYPE` (415), `ORDER_NOT_AWAITING_RECEIPT` (409).
  */
 export class OrderError extends Error {
   constructor(
@@ -79,7 +90,15 @@ function paginate<T>(items: T[], page: number, pageSize: number): Paginated<T> {
 
 function toSummary(order: Order): OrderSummary {
   const { id, store, items, totalAmount, status, payment, createdAt } = order;
-  return { id, store, items, totalAmount, status, payment, createdAt };
+  return {
+    id,
+    store: { id: store.id, name: store.name },
+    items,
+    totalAmount,
+    status,
+    payment,
+    createdAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,10 +134,10 @@ function writeStoredOrders(userId: string, orders: Order[]): void {
 }
 
 /**
- * Um Pedido de exemplo em cada um dos 6 status, mais um demonstrando
- * rejeição de comprovante (RN-23) — pra timeline/lista ficarem
- * demonstráveis sem precisar clicar o fluxo inteiro (RN-82, status
- * simulado). Dados estáticos, compartilhados entre usuários do mock — não
+ * Um Pedido de exemplo em cada um dos 6 status da linha do tempo, mais um
+ * demonstrando rejeição de comprovante (RN-23) e um `expirado` (back-end#243) —
+ * pra timeline/lista ficarem demonstráveis sem precisar clicar o fluxo
+ * inteiro (RN-82, status simulado). Dados estáticos, compartilhados entre usuários do mock — não
  * vivem no `sessionStorage` (ver doc do arquivo): só os Pedidos de verdade,
  * criados por `createOrder`, ficam isolados por usuário.
  */
@@ -129,7 +148,10 @@ function buildHistory(
   const start = new Date(startedAt).getTime();
   return statuses.map((status, index) => ({
     status,
-    at: new Date(start + index * 86_400_000).toISOString(),
+    // `expirado` acontece no prazo (`expiresAt`), não um dia depois da etapa anterior.
+    at: new Date(
+      start + (status === 'expirado' ? ORDER_EXPIRY_MS : index * 86_400_000),
+    ).toISOString(),
   }));
 }
 
@@ -154,15 +176,16 @@ function exampleOrder(partial: {
     status: partial.statuses[partial.statuses.length - 1],
     history,
     deliveryAddress: {
-      cep: '90010-000',
+      zipCode: '90010-000',
       street: 'Rua dos Andradas',
       number: '500',
-      district: 'Centro Histórico',
+      neighborhood: 'Centro Histórico',
       city: 'Porto Alegre',
       state: 'RS',
     },
     payment: partial.payment,
     createdAt: history[0].at,
+    expiresAt: expiresAtFrom(history[0].at),
   };
 }
 
@@ -244,7 +267,26 @@ const EXAMPLE_ORDERS: Order[] = [
       rejectionReason: 'Comprovante ilegível — reenvie uma foto nítida do Pix.',
     },
   }),
+  // Saída negativa da linha do tempo: sem comprovante em 3 dias, o Pedido
+  // expira (as peças voltam a `ativo`; o exemplo é só snapshot).
+  exampleOrder({
+    id: 'example-expirado',
+    item: {
+      productId: '9',
+      name: 'Vestido chemise azul-marinho',
+      price: 139.9,
+      coverImageUrl: null,
+    },
+    store: { id: '1', name: 'Brechó Mercado Público', pixKey: MOCK_STORE_PIX_KEYS['1'] },
+    statuses: ['aguardando_comprovante', 'expirado'],
+    payment: null,
+  }),
 ];
+
+/** Peça do mock por id — o array compartilhado de `mocks/products.ts`. */
+function findMockProduct(productId: string) {
+  return mockProducts.find((product) => product.id === productId);
+}
 
 async function mockCreateOrder(
   userId: string,
@@ -304,16 +346,16 @@ async function mockCreateOrder(
     deliveryAddress: input.deliveryAddress,
     payment: null,
     createdAt: now,
+    expiresAt: expiresAtFrom(now),
   };
 
-  // Peça é única (RN-46): marca vendida já na criação do Pedido (decisão
-  // aceita no planejamento de 30/09 — "Pendências de contrato" no corpo da
-  // issue). Mutação direta no array compartilhado de `mocks/products.ts`.
+  // Peça é única (RN-46): fica `reservado` na criação do Pedido e só vira
+  // `vendido` quando a administradora aprova o comprovante (back-end#247/#251).
+  // Mutação direta no array compartilhado de `mocks/products.ts`. O carrinho
+  // não é tocado: o checkout recarrega e mostra o que o service devolver.
   for (const product of products) {
-    product.status = 'vendido';
+    product.status = 'reservado';
   }
-
-  await Promise.all(input.productIds.map((productId) => removeCartItem(userId, productId)));
 
   writeStoredOrders(userId, [order, ...readStoredOrders(userId)]);
   return order;
@@ -379,6 +421,12 @@ export function approveReceipt(userId: string, orderId: string): Promise<Order> 
     return Promise.reject(new OrderError('ORDER_NOT_FOUND', `Pedido ${orderId} não encontrado.`));
   }
 
+  // Aprovação (back-end#251): as peças do Pedido passam de reservado a vendido.
+  for (const item of orders[index].items) {
+    const product = findMockProduct(item.productId);
+    if (product) product.status = 'vendido';
+  }
+
   const now = new Date().toISOString();
   const updated: Order = {
     ...orders[index],
@@ -439,12 +487,13 @@ interface ApiOrderStore {
   pix_key: string | null;
 }
 
+/** Nomes do banco (back-end#247). */
 interface ApiDeliveryAddress {
-  cep: string;
+  zip_code: string;
   street: string;
   number: string;
   complement?: string;
-  district: string;
+  neighborhood: string;
   city: string;
   state: string;
 }
@@ -468,12 +517,14 @@ interface ApiOrder {
   delivery_address: ApiDeliveryAddress;
   payment: ApiOrderPayment | null;
   created_at: string;
+  expires_at: string;
 }
 
+/** Item da lista (back-end#248): loja só `{ id, name }`, sem `history`. */
 type ApiOrderSummary = Pick<
   ApiOrder,
-  'id' | 'store' | 'items' | 'total_amount' | 'status' | 'payment' | 'created_at'
->;
+  'id' | 'items' | 'total_amount' | 'status' | 'payment' | 'created_at'
+> & { store: { id: number | string; name: string } };
 
 interface ApiPage<T> {
   items: T[];
@@ -484,18 +535,26 @@ interface ApiPage<T> {
 
 function mapApiDeliveryAddress(address: ApiDeliveryAddress): DeliveryAddress {
   return {
-    cep: address.cep,
+    zipCode: address.zip_code,
     street: address.street,
     number: address.number,
     complement: address.complement,
-    district: address.district,
+    neighborhood: address.neighborhood,
     city: address.city,
     state: address.state,
   };
 }
 
 function toApiDeliveryAddress(address: DeliveryAddress): ApiDeliveryAddress {
-  return address;
+  return {
+    zip_code: address.zipCode,
+    street: address.street,
+    number: address.number,
+    complement: address.complement,
+    neighborhood: address.neighborhood,
+    city: address.city,
+    state: address.state,
+  };
 }
 
 function mapApiOrderItem(item: ApiOrderItem): OrderItem {
@@ -534,17 +593,14 @@ function mapApiOrder(data: ApiOrder): Order {
     deliveryAddress: mapApiDeliveryAddress(data.delivery_address),
     payment: mapApiPayment(data.payment),
     createdAt: data.created_at,
+    expiresAt: data.expires_at,
   };
 }
 
 function mapApiOrderSummary(data: ApiOrderSummary): OrderSummary {
   return {
     id: String(data.id),
-    store: {
-      id: String(data.store.id),
-      name: data.store.name,
-      pixKey: data.store.pix_key,
-    },
+    store: { id: String(data.store.id), name: data.store.name },
     items: data.items.map(mapApiOrderItem),
     totalAmount: toMoney(data.total_amount),
     status: data.status,
@@ -569,6 +625,26 @@ function toOrderError(error: unknown): OrderError {
     return new OrderError(data.error.code, data.error.message ?? 'Erro ao processar o Pedido.');
   }
   return new OrderError('INTERNAL_ERROR', 'Erro ao processar o Pedido.');
+}
+
+/**
+ * Erros do envio de comprovante (back-end#249): 413, 415 e 409 viram erros
+ * tipados distintos pelo status HTTP (mesmo critério do `FORBIDDEN` do admin),
+ * antes de olhar o envelope. Qualquer outro erro segue o `toOrderError` normal.
+ */
+const RECEIPT_ERRORS: Record<number, { code: string; message: string }> = {
+  413: { code: 'RECEIPT_TOO_LARGE', message: 'O comprovante passa de 8 MiB.' },
+  415: { code: 'RECEIPT_INVALID_TYPE', message: 'O comprovante deve ser uma imagem ou um PDF.' },
+  409: {
+    code: 'ORDER_NOT_AWAITING_RECEIPT',
+    message: 'Este Pedido não está aguardando comprovante.',
+  },
+};
+
+function toReceiptError(error: unknown): OrderError {
+  const status = (error as { response?: { status?: number } }).response?.status;
+  const known = status === undefined ? undefined : RECEIPT_ERRORS[status];
+  return known ? new OrderError(known.code, known.message) : toOrderError(error);
 }
 
 async function apiCreateOrder(input: {
@@ -606,19 +682,23 @@ async function apiGetOrder(id: string): Promise<Order> {
   }
 }
 
+/**
+ * A resposta do envio é PARCIAL (`{ id, status, payment, history }`,
+ * back-end#249): mapeá-la como Pedido deixaria a tela sem loja, peças e
+ * valores. Por isso o corpo é descartado e o detalhe é relido — o Pedido
+ * devolvido é sempre completo.
+ */
 async function apiSubmitReceipt(orderId: string, file: File): Promise<Order> {
   try {
     const formData = new FormData();
     formData.append('file', file);
-    const { data } = await httpClient.post<ApiOrder>(
-      `/users/me/orders/${orderId}/receipt`,
-      formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
-    );
-    return mapApiOrder(data);
+    await httpClient.post(`/users/me/orders/${orderId}/receipt`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   } catch (error) {
-    throw toOrderError(error);
+    throw toReceiptError(error);
   }
+  return apiGetOrder(orderId);
 }
 
 /**

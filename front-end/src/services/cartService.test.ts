@@ -72,6 +72,27 @@ describe('cartService (mock)', () => {
     expect(cart.groups[0].subtotalCents).toBe(0);
   });
 
+  it('depois de criar o Pedido, a peca aparece indisponivel (pausado) no carrinho e fora do subtotal', async () => {
+    const orderService = await import('./orderService');
+    await cartService.addItem(USER_ID, '1'); // Jaqueta jeans, loja '1'
+    await orderService.createOrder(USER_ID, {
+      productIds: ['1'],
+      deliveryAddress: {
+        zipCode: '90010-000',
+        street: 'Rua dos Andradas',
+        number: '500',
+        neighborhood: 'Centro Histórico',
+        city: 'Porto Alegre',
+        state: 'RS',
+      },
+    });
+
+    const cart = await cartService.getCart(USER_ID);
+
+    expect(cart.groups[0].items[0].unavailable).toBe('pausado');
+    expect(cart.groups[0].subtotalCents).toBe(0);
+  });
+
   it('removeItem remove a peca do carrinho', async () => {
     await cartService.addItem(USER_ID, '1');
     const cart = await cartService.removeItem(USER_ID, '1');

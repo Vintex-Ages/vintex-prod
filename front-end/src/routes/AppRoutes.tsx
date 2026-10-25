@@ -18,6 +18,7 @@ import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
+import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
@@ -33,6 +34,8 @@ import { paths } from './paths';
  *   dentro do Layout a página ganharia dois `banner` e o campo de mensagem
  *   cairia abaixo da dobra.
  * - `/style-guide`: documentação interna, não é tela de produto.
+ * - `/admin/receipts`: a fila de comprovantes (FE-US032-1) tem o cabeçalho da
+ *   área administrativa e não usa o rodapé do app.
  */
 function WithLayout() {
   const { pathname } = useLocation();
@@ -55,9 +58,10 @@ function WithLayout() {
  * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
  *
- * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; comprovantes
- * exigem papel admin; `/stores` é pública. Entram dentro do `WithLayout`,
- * com placeholder mínimo até a task de tela correspondente substituir o `element`.
+ * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; `/stores` é
+ * pública. Entram dentro do `WithLayout`, com placeholder mínimo até a task de
+ * tela correspondente substituir o `element`. Comprovantes exigem papel admin e
+ * já têm tela (fila, FE-US032-1), fora do `WithLayout`.
  */
 function AppRoutes() {
   return (
@@ -180,19 +184,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path={paths.adminReceipts}
-          element={
-            <RequireRole role="admin">
-              <Container as="main" className="flex flex-col gap-6 py-10">
-                <h1 className="font-display text-h2 text-tinta">Painel admin</h1>
-                <p className="font-ui text-body text-texto-auxiliar">
-                  Essa tela ainda não foi implementada.
-                </p>
-              </Container>
-            </RequireRole>
-          }
-        />
-        <Route
           path={paths.stores}
           element={
             <Container as="main" className="flex flex-col gap-6 py-10">
@@ -209,6 +200,14 @@ function AppRoutes() {
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
+      <Route
+        path={paths.adminReceipts}
+        element={
+          <RequireRole role="admin">
+            <ReceiptQueue />
+          </RequireRole>
+        }
+      />
       {/*
         O 404 fica DENTRO do esqueleto: a página é só um título, e sem
         cabeçalho quem erra a URL não tem nenhum caminho de volta.

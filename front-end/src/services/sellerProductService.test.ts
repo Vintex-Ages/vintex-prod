@@ -170,6 +170,39 @@ describe('sellerProductService', () => {
     expect(urls).toHaveLength(2);
     urls.forEach((url) => expect(typeof url).toBe('string'));
   });
+
+  // #318: a foto da etiqueta sobe pelo mesmo uploadMedia, marcada como etiqueta.
+  it('uploadMedia aceita o kind da etiqueta e devolve a URL do mesmo jeito', async () => {
+    const urls = await uploadMedia(
+      [new File(['e'], 'etiqueta.jpg', { type: 'image/jpeg' })],
+      'label',
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(typeof urls[0]).toBe('string');
+  });
+
+  // #318: composição lida da etiqueta, guardada como qualquer outro campo do formulário.
+  it('composition passa pelo ciclo criar/editar e não aparece na listagem', async () => {
+    const draft = await createDraft({
+      name: 'Camisa de Linho',
+      price: 89.9,
+      composition: '100% linho',
+    });
+    expect(draft.composition).toBe('100% linho');
+    expect((await getById(draft.id)).composition).toBe('100% linho');
+
+    const updated = await update(draft.id, { composition: '55% linho, 45% algodão' });
+    expect(updated.composition).toBe('55% linho, 45% algodão');
+    expect((await getById(draft.id)).composition).toBe('55% linho, 45% algodão');
+
+    const untouched = await update(draft.id, { price: 79.9 });
+    expect(untouched.composition).toBe('55% linho, 45% algodão');
+
+    const listed = (await getMine()).items.find((item) => item.id === draft.id);
+    expect(listed).toBeDefined();
+    expect(listed).not.toHaveProperty('composition');
+  });
 });
 
 describe('sellerProductService com a API real', () => {
@@ -226,8 +259,102 @@ describe('sellerProductService com a API real', () => {
     });
   });
 
-  // docs/adr/0002 (#297): sem a rota do vendedor, cai no detalhe público.
-  describe('sem a rota do vendedor (back-end#234)', () => {
+  /** `ProductDraftResponse` completo, como o back devolve (sem campo faltando). */
+  function draftResponse(composition: string | null) {
+    return {
+      id: 9,
+      name: 'Camisa de Linho',
+      description: null,
+      category: 'Roupas',
+      style: null,
+      brand: 'Zara',
+      color: 'Branco',
+      size: 'M',
+      condition: 'Seminovo',
+      composition,
+      price: '89.90',
+      quantity: 1,
+      status: 'rascunho',
+      store: { id: 3, name: 'Brechó da Ana', city: 'Porto Alegre' },
+      images: [],
+      ai_corrections: [],
+    };
+  }
+
+  // #318: `composition` só existe no detalhe; `null` vira campo ausente, nunca inventado.
+  it('mapeia composition do ProductDraftResponse: string fica, null some', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getById: apiGetById } = await import('./sellerProductService');
+    let composition: string | null = '100% linho';
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: draftResponse(composition),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    expect((await apiGetById('9')).composition).toBe('100% linho');
+
+    composition = null;
+    expect((await apiGetById('9')).composition).toBeUndefined();
+  });
+
+  it('createDraft e update mandam composition no corpo, sem código novo', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { createDraft: apiCreateDraft, update: apiUpdate } =
+      await import('./sellerProductService');
+    const bodies: unknown[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      bodies.push(JSON.parse(config.data as string));
+      return Promise.resolve({
+        data: draftResponse('100% linho'),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    await apiCreateDraft({ name: 'Camisa de Linho', price: 89.9, composition: '100% linho' });
+    await apiUpdate('9', { composition: '100% linho' });
+
+    expect(bodies[0]).toMatchObject({ composition: '100% linho' });
+    expect(bodies[1]).toEqual({ composition: '100% linho', ai_corrections: [] });
+  });
+
+  // #318: o `kind` era fixo em `photo`; a etiqueta sobe com o dela.
+  it('uploadMedia manda kind photo por padrão e kind label para a etiqueta', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { uploadMedia: apiUploadMedia } = await import('./sellerProductService');
+    const kinds: unknown[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      kinds.push((config.data as FormData).get('kind'));
+      return Promise.resolve({
+        data: {
+          items: [
+            { key: 'k', url: 'https://api.test/m/1.jpg', content_type: 'image/jpeg', size: 1 },
+          ],
+        },
+        status: 201,
+        statusText: 'Created',
+        headers: {},
+        config,
+      });
+    };
+
+    const file = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
+    expect(await apiUploadMedia([file])).toEqual(['https://api.test/m/1.jpg']);
+    expect(await apiUploadMedia([file], 'label')).toEqual(['https://api.test/m/1.jpg']);
+    expect(kinds).toEqual(['photo', 'label']);
+  });
+
+  // #339: o detalhe do vendedor usa exclusivamente a rota autenticada.
+  describe('detalhe do vendedor sem fallback público', () => {
     type Resposta = { status: number; data: unknown };
 
     /** Responde por URL; status >= 400 rejeita como o axios, com o envelope do back. */
@@ -255,68 +382,35 @@ describe('sellerProductService com a API real', () => {
       return { status, data: { error: { code, message: code } } };
     }
 
-    /** `ProductDetailResponse` do back: vazio vem como `""`, fotos em `media`. */
-    const detalhePublico = {
-      id: 7,
-      name: 'Jaqueta jeans',
-      description: '',
-      category: 'Roupas',
-      style: '',
-      brand: '',
-      color: 'Azul',
-      size: 'M',
-      condition: 'Seminovo',
-      price: '120.00',
-      status: 'ativo',
-      city: 'Porto Alegre',
-      state: 'RS',
-      media: [
-        { type: 'image', url: 'https://api.test/2.jpg', position: 1 },
-        { type: 'image', url: 'https://api.test/1.jpg', position: 0 },
-      ],
-      store: { id: 3, name: 'Brechó da Ana', verified: false, logo_url: null },
-    };
-
-    it('405 da rota do vendedor cai no detalhe público e mapeia para o formulário', async () => {
+    it('405 na rota do vendedor não consulta o detalhe público', async () => {
       const urls = await responderPorUrl({
         '/users/me/products/7': erro(405, 'METHOD_NOT_ALLOWED'),
-        '/products/7': { status: 200, data: detalhePublico },
       });
       const { getById: apiGetById } = await import('./sellerProductService');
 
-      const peca = await apiGetById('7');
-
-      expect(urls).toEqual(['get /users/me/products/7', 'get /products/7']);
-      expect(peca).toEqual({
-        id: '7',
-        name: 'Jaqueta jeans',
-        price: 120,
-        status: 'ativo',
-        description: undefined,
-        category: 'Roupas',
-        size: 'M',
-        color: 'Azul',
-        brand: undefined,
-        condition: 'Seminovo',
-        style: undefined,
-        images: ['https://api.test/1.jpg', 'https://api.test/2.jpg'],
-        quantity: 1,
-        store: { id: '3', name: 'Brechó da Ana', city: 'Porto Alegre' },
-        aiCorrections: [],
-      });
+      await expect(apiGetById('7')).rejects.toMatchObject({ code: 'METHOD_NOT_ALLOWED' });
+      expect(urls).toEqual(['get /users/me/products/7']);
     });
 
-    it('peça pausada (PRODUCT_NOT_FOUND no público) vira NOT_AVAILABLE_YET', async () => {
-      await responderPorUrl({
-        '/users/me/products/7': erro(405, 'METHOD_NOT_ALLOWED'),
-        '/products/7': erro(404, 'PRODUCT_NOT_FOUND'),
-      });
-      const { getById: apiGetById } = await import('./sellerProductService');
+    it.each(['rascunho', 'ativo', 'vendido', 'despublicado'] as const)(
+      'getById carrega peça %s pela rota do vendedor, sem consultar o detalhe público',
+      async (status) => {
+        const urls = await responderPorUrl({
+          '/users/me/products/7': {
+            status: 200,
+            data: { ...draftResponse(null), id: 7, status },
+          },
+          '/products/7': erro(404, 'PRODUCT_NOT_FOUND'),
+        });
+        const { getById: apiGetById } = await import('./sellerProductService');
 
-      await expect(apiGetById('7')).rejects.toMatchObject({ code: 'NOT_AVAILABLE_YET' });
-    });
+        const peca = await apiGetById('7');
+        expect(peca).toMatchObject({ id: '7', status, name: 'Camisa de Linho' });
+        expect(urls).toEqual(['get /users/me/products/7']);
+      },
+    );
 
-    it('erro de verdade da rota do vendedor não cai no fallback', async () => {
+    it('404 de peça de outro vendedor não consulta o detalhe público', async () => {
       const urls = await responderPorUrl({
         '/users/me/products/7': erro(404, 'PRODUCT_NOT_FOUND'),
       });
