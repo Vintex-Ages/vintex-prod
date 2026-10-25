@@ -14,7 +14,8 @@ import type { OrderStatus } from '@/types/order';
  *
  * Marcadores (Figma Meus pedidos T11, node 1001:1421): concluída com check em
  * `verde-rs`; atual em `dourado` e futuras em `papel-profundo`, ambas com o
- * número da etapa (1 a 6, posição nas seis, não na lista filtrada). O aviso de
+ * número da etapa (1 a 6, posição nas seis, não na lista filtrada). O número
+ * da atual fica em `tinta`: branco sobre `dourado` dá ~3:1, abaixo do AA. O aviso de
  * expirado tem borda `vermelho-escuro`, para não parecer a etapa atual.
  *
  * `expirado` não é etapa: é a saída negativa. Nesse caso aparecem só as etapas
@@ -76,7 +77,7 @@ function StepMarker({ state, number }: { state: StepState; number: number }) {
       className={clsx(
         'relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-body-sm font-semibold',
         state === 'completed' && 'border-verde-rs bg-verde-rs text-branco-quente',
-        state === 'current' && 'border-dourado bg-dourado text-branco-quente',
+        state === 'current' && 'border-dourado bg-dourado text-tinta',
         state === 'upcoming' && 'border-linha bg-papel-profundo text-texto-auxiliar',
       )}
     >

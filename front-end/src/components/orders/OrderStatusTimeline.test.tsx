@@ -143,12 +143,12 @@ describe('<OrderStatusTimeline />', () => {
   });
 
   describe('marcadores (Figma Meus pedidos T11, node 1001:1421)', () => {
-    it('pinta a etapa atual de dourado, com o número em branco-quente', () => {
+    it('pinta a etapa atual de dourado, com o número em tinta (contraste AA)', () => {
       render(<OrderStatusTimeline current="confirmado" history={history} />);
 
       const marker = getMarker(getSteps()[2]);
       expect(marker).toHaveAttribute('aria-hidden', 'true');
-      expect(marker).toHaveClass('bg-dourado', 'border-dourado', 'text-branco-quente');
+      expect(marker).toHaveClass('bg-dourado', 'border-dourado', 'text-tinta');
       expect(marker).not.toHaveClass('bg-vermelho-escuro', 'border-vermelho-escuro');
       expect(marker).toHaveTextContent(/^3$/);
     });
