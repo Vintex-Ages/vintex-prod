@@ -153,4 +153,46 @@ describe('useReceiptQueue', () => {
     act(() => result.current.setFilter('todos'));
     expect(result.current.state.status).toBe('ready');
   });
+  it('descarta o erro de uma consulta que ficou velha', async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    vi.mocked(listReceipts)
+      .mockReturnValueOnce(new Promise((_, reject) => (rejectFirst = reject)))
+      .mockResolvedValueOnce(page([review({ orderId: 'novo' })]));
+    const { result } = renderHook(() => useReceiptQueue());
+
+    act(() => result.current.setFilter('aprovado'));
+    await waitFor(() => expect(result.current.state.status).toBe('ready'));
+    await act(async () => rejectFirst(new Error('velho')));
+
+    expect(result.current.state.status).toBe('ready');
+  });
+
+  // FE-US032-2: depois de aprovar/rejeitar, a linha da fila muda sem nova consulta.
+  describe('replaceItem', () => {
+    it('troca só a linha do pedido atualizado, sem nova consulta', async () => {
+      vi.mocked(listReceipts).mockResolvedValue(
+        page([review({ orderId: '1' }), review({ orderId: '2' })]),
+      );
+      const { result } = renderHook(() => useReceiptQueue());
+      await waitFor(() => expect(result.current.state.status).toBe('ready'));
+
+      const approved = review({ orderId: '2', payment: { status: 'aprovado' } });
+      act(() => result.current.replaceItem(approved));
+
+      expect(result.current.state).toEqual({
+        status: 'ready',
+        items: [review({ orderId: '1' }), approved],
+      });
+      expect(listReceipts).toHaveBeenCalledTimes(1);
+    });
+
+    it('não faz nada enquanto a fila não está pronta', () => {
+      vi.mocked(listReceipts).mockReturnValue(new Promise(() => {}));
+      const { result } = renderHook(() => useReceiptQueue());
+
+      act(() => result.current.replaceItem(review()));
+
+      expect(result.current.state).toEqual({ status: 'loading' });
+    });
+  });
 });

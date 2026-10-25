@@ -7,6 +7,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import type { ApiError } from '@/types/auth';
 import type { Cart as CartModel, CartGroup, CartItem, UnavailableReason } from '@/types/cart';
+import type { Store } from '@/types/product';
 import CartPage from './Cart';
 
 const ANA = { id: 'loja-ana', name: 'Brechó da Ana' };
@@ -26,7 +27,7 @@ function item(
 }
 
 /** Grupo como o service devolve: subtotal só das disponíveis, em centavos. */
-function group(store: typeof ANA, items: CartItem[]): CartGroup {
+function group(store: Store, items: CartItem[]): CartGroup {
   return {
     store,
     items,
@@ -82,12 +83,13 @@ function FakeCartProvider({
         current
           ? {
               groups: current.groups
-                .map((entry) =>
-                  group(
+                .map((entry) => ({
+                  ...entry,
+                  ...group(
                     entry.store,
                     entry.items.filter((cartItem) => cartItem.product.id !== productId),
                   ),
-                )
+                }))
                 .filter((entry) => entry.items.length > 0),
             }
           : current,
@@ -232,7 +234,12 @@ describe('<Cart />', () => {
   });
 
   it('Finalizar compra fica desabilitado com a nota de em breve', async () => {
-    renderCart({ initial: { groups: [group(ANA, [item('1', 'Vestido floral', 100)])] } });
+    // Isola o bloqueio do placeholder: esta loja tem Pix, mas o checkout ainda não existe.
+    renderCart({
+      initial: {
+        groups: [{ ...group(ANA, [item('1', 'Vestido floral', 100)]), pixKey: 'ana@pix.test' }],
+      },
+    });
 
     const finalizar = await screen.findByRole('button', { name: 'Finalizar compra' });
     expect(finalizar).toBeDisabled();
@@ -275,5 +282,164 @@ describe('<Cart />', () => {
     await user.click(await screen.findByRole('button', { name: 'Vestido floral' }));
 
     expect(screen.getByRole('heading', { name: 'Detalhe da peça' })).toBeInTheDocument();
+  });
+});
+
+describe('#359 — dados Pix por loja no carrinho', () => {
+  const NO_PIX = 'Este brechó ainda não cadastrou a chave Pix';
+  const COMING_SOON = 'Em breve: pagamento por Pix direto ao brechó.';
+  const aurora: Store = {
+    id: '11',
+    name: 'Brechó Aurora',
+    verified: true,
+    city: 'Porto Alegre',
+    logoUrl: 'https://cdn.test/aurora.png',
+  };
+  const brisa: Store = {
+    id: '22',
+    name: 'Brechó Brisa',
+    verified: false,
+    city: 'Pelotas',
+    logoUrl: 'https://cdn.test/brisa.png',
+  };
+
+  function pixGroup(
+    store: Store = aurora,
+    pixKey: string | undefined = 'aurora@pix.test',
+  ): CartGroup {
+    return {
+      ...group(store, [item(`${store.id}-1`, 'Jaqueta jeans', 89.9, store)]),
+      pixKey,
+    };
+  }
+
+  async function region(name = aurora.name) {
+    return within(await screen.findByRole('region', { name }));
+  }
+
+  it('preserva nome, peça e subtotal do grupo com Pix', async () => {
+    renderCart({ initial: { groups: [pixGroup()] } });
+
+    const store = await region();
+    expect(store.getByRole('heading', { name: aurora.name })).toBeInTheDocument();
+    expect(store.getByText('Jaqueta jeans')).toBeInTheDocument();
+    expect(store.getByTestId('subtotal-11')).toHaveTextContent('R$ 89,90');
+  });
+
+  it('mostra a cidade da loja no próprio grupo', async () => {
+    renderCart({ initial: { groups: [pixGroup()] } });
+
+    expect((await region()).getByText('Porto Alegre')).toBeInTheDocument();
+  });
+
+  it('mostra a chave Pix integralmente', async () => {
+    renderCart({ initial: { groups: [pixGroup()] } });
+
+    expect((await region()).getByText('aurora@pix.test', { exact: true })).toBeInTheDocument();
+  });
+
+  it('mostra a logo identificada com o nome da loja', async () => {
+    renderCart({ initial: { groups: [pixGroup()] } });
+
+    expect((await region()).getByRole('img', { name: aurora.name })).toHaveAttribute(
+      'src',
+      aurora.logoUrl,
+    );
+  });
+
+  it('sem logo apresenta fallback acessível, sem imagem com URL ausente', async () => {
+    renderCart({ initial: { groups: [pixGroup({ ...aurora, logoUrl: undefined })] } });
+
+    const fallback = (await region()).getByRole('img', { name: aurora.name });
+    expect(fallback).toBeVisible();
+    // Aceita iniciais, SVG ou imagem de fallback com URL válida, sem impor a estrutura.
+    if (fallback.tagName === 'IMG') {
+      expect(fallback.getAttribute('src')?.trim()).toBeTruthy();
+    }
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['campo ausente', undefined],
+    ['string vazia', ''],
+    ['somente espaços', '   '],
+  ] as const)('sem chave (%s) mostra o aviso exato e o motivo acessível', async (kind, pixKey) => {
+    const source = pixGroup();
+    // O service normaliza null para undefined. Também exercitamos null em runtime
+    // para cobrir consumidores/fixtures legados sem ampliar o contrato de produção.
+    const received = { ...source, pixKey } as CartGroup;
+    if (kind === 'campo ausente') delete received.pixKey;
+    renderCart({ initial: { groups: [received] } });
+
+    const store = await region();
+    expect(store.getByText(NO_PIX, { exact: true })).toBeVisible();
+    expect(store.queryByText('aurora@pix.test')).not.toBeInTheDocument();
+    const checkout = store.getByRole('button', { name: 'Finalizar compra' });
+    expect(checkout).toBeDisabled();
+    expect(checkout).toHaveAccessibleDescription(expect.stringContaining(NO_PIX));
+    expect(store.getByText(COMING_SOON, { exact: true })).toBeVisible();
+    expect(checkout).toHaveAccessibleDescription(expect.stringContaining(COMING_SOON));
+  });
+
+  it('mantém Pix, cidade, logo e aviso isolados entre duas lojas', async () => {
+    const withoutPix = pixGroup(brisa);
+    delete withoutPix.pixKey;
+    renderCart({ initial: { groups: [pixGroup(), withoutPix] } });
+
+    const first = await region();
+    const second = await region(brisa.name);
+    expect(first.getByText('aurora@pix.test')).toBeInTheDocument();
+    expect(first.getByText('Porto Alegre')).toBeInTheDocument();
+    expect(first.getByRole('img', { name: aurora.name })).toHaveAttribute('src', aurora.logoUrl);
+    expect(first.queryByText(NO_PIX)).not.toBeInTheDocument();
+    expect(second.queryByText('aurora@pix.test')).not.toBeInTheDocument();
+    expect(second.getByText('Pelotas')).toBeInTheDocument();
+    expect(second.getByRole('img', { name: brisa.name })).toHaveAttribute('src', brisa.logoUrl);
+    expect(second.getByText(NO_PIX, { exact: true })).toBeInTheDocument();
+    expect(first.getByRole('button', { name: 'Finalizar compra' })).toBeDisabled();
+    expect(second.getByRole('button', { name: 'Finalizar compra' })).toBeDisabled();
+    expect(first.getByRole('button', { name: 'Finalizar compra' })).not.toHaveAccessibleDescription(
+      expect.stringContaining(NO_PIX),
+    );
+    expect(second.getByRole('button', { name: 'Finalizar compra' })).toHaveAccessibleDescription(
+      expect.stringContaining(NO_PIX),
+    );
+  });
+
+  it('com Pix mantém o checkout desabilitado e o aviso de em breve', async () => {
+    renderCart({ initial: { groups: [pixGroup()] } });
+
+    const store = await region();
+    const checkout = store.getByRole('button', { name: 'Finalizar compra' });
+    expect(checkout).toBeDisabled();
+    expect(store.getByText(COMING_SOON, { exact: true })).toBeVisible();
+    expect(checkout).toHaveAccessibleDescription(COMING_SOON);
+    expect(store.queryByText(NO_PIX)).not.toBeInTheDocument();
+  });
+
+  it('preserva os metadados do grupo após remover uma peça', async () => {
+    const user = userEvent.setup();
+    const source = pixGroup();
+    source.items.push(item('11-2', 'Saia midi', 30, aurora));
+    source.subtotalCents = 11990;
+    renderCart({ initial: { groups: [source] } });
+
+    await user.click(await screen.findByRole('button', { name: 'Remover Saia midi do carrinho' }));
+
+    const store = await region();
+    expect(store.queryByText('Saia midi')).not.toBeInTheDocument();
+    expect(store.getByText('aurora@pix.test')).toBeInTheDocument();
+    expect(store.getByText('Porto Alegre')).toBeInTheDocument();
+    expect(store.getByRole('img', { name: aurora.name })).toHaveAttribute('src', aurora.logoUrl);
+    expect(store.getByTestId('subtotal-11')).toHaveTextContent('R$ 89,90');
+  });
+
+  it('preserva todo o conteúdo de uma chave longa, sem abreviar o texto', async () => {
+    const longKey = `${'chave-pix-completa-'.repeat(12)}@brecho.test`;
+    renderCart({ initial: { groups: [pixGroup(aurora, longKey)] } });
+
+    expect((await region()).getByText(longKey, { exact: true }).textContent).toBe(longKey);
+    // JSDOM não calcula layout: quebra visual e overflow serão verificados no navegador.
   });
 });
