@@ -497,9 +497,8 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
  * entidade, e por isso dois mapeadores.
  *
  * Usar o mapeador público aqui derrubava a tela com `TypeError`, porque ele lê
- * `metrics.created_at` e esta resposta não tem `metrics`. A guarda de vendedor
- * só precisa saber se a loja existe; cidade, selo e métricas continuam vindo
- * do retrato público, que é quem os tem.
+ * `metrics.created_at` e esta resposta não tem `metrics`. O selo passa a
+ * vir na própria loja com o back-end#259, sem consultar o perfil público.
  */
 interface ApiMyStore {
   id: number | string;
@@ -509,6 +508,8 @@ interface ApiMyStore {
   logo_url: string | null;
   /** Desde o `back-end#216`. Dado do vendedor: não sai no retrato público. */
   pix_key: string | null;
+  /** Opcional para compatibilidade com respostas anteriores ao back-end#259. */
+  verified?: boolean;
   document_type: string;
   document_value: string;
   terms_version: string | null;
@@ -528,16 +529,15 @@ function mapMyStore(store: ApiMyStore): StoreProfile {
     // linha em vez de quebrar.
     city: store.address?.city ?? '',
     state: store.address?.state ?? '',
-    // `verified` não vem nesta rota: mora no retrato público (`StoreDetailResponse`).
-    verification: 'pendente',
+    verification: store.verified === true ? 'confiavel' : 'pendente',
     createdAt: store.terms_accepted_at ?? '',
   };
 }
 
-async function apiGetMyStore(): Promise<StoreProfile | null> {
+async function apiReadMyStore(): Promise<ApiMyStore | null> {
   try {
     const { data } = await httpClient.get<ApiMyStore>('/users/me/store');
-    return mapMyStore(data);
+    return data;
   } catch (error) {
     const status = (error as { response?: { status?: number } }).response?.status;
     if (status === 404) {
@@ -547,31 +547,16 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
   }
 }
 
+async function apiGetMyStore(): Promise<StoreProfile | null> {
+  const store = await apiReadMyStore();
+  return store === null ? null : mapMyStore(store);
+}
+
 /**
- * `POST /api/users/me/store/verification` ainda nao existe na `develop`, e o
- * `back-end#195` a declara devolvendo `SellerVerificationResponse`, que e
- * `{ verified: boolean }` — uma terceira forma, sem nome, logo nem endereco.
- * Nao da para montar um `StoreProfile` com isso, e nenhuma das outras duas
- * rotas devolve `verified` junto dos dados da loja do proprio vendedor.
- *
- * Enquanto isso nao se resolve, falhar dizendo o motivo. Antes daqui o codigo
- * chamava o mapeador publico, que le `metrics.created_at`: dava
- * `"Erro ao consultar loja."`, mensagem que manda procurar no lugar errado.
- * Quem fizer a `front-end#224` decide o contrato junto com o back.
- */
-/**
- * `POST /api/users/me/store/verification` devolve `{ verified: boolean }` — só
- * isso, nem nome nem endereço (`SellerVerificationResponse`, `back-end#195`).
- *
- * Duas correções de uma vez. Antes do `#274` isto chamava o mapeador público,
- * que lê `metrics.created_at`, e produzia "Erro ao consultar loja." — mensagem
- * que manda procurar no lugar errado. O `#274` trocou por um erro fixo com o
- * comentário "a rota ainda não existe na develop", que **estava errado**: o
- * `#195` mergeou depois, e a rota responde 200.
- *
- * Como o `{ verified }` não dá para virar `StoreProfile` sozinho, o perfil sai
- * de `getMyStore` e só o selo vem da resposta. São duas requisições, e é o que
- * existe: nenhuma rota devolve `verified` junto dos dados da própria loja.
+ * Ação explícita: o POST devolve `{ verified: boolean }`, sem perfil.
+ * Mantém a leitura privada após a ação para obter o restante da loja;
+ * o selo segue o boolean autoritativo da operação, inclusive quando false.
+ * Essa leitura não faz parte do carregamento inicial do painel (#359).
  */
 async function apiRequestVerification(): Promise<StoreProfile> {
   try {
@@ -580,7 +565,7 @@ async function apiRequestVerification(): Promise<StoreProfile> {
     if (loja === null) {
       throw storeNotCreated();
     }
-    return { ...loja, verification: data.verified ? 'confiavel' : 'pendente' };
+    return { ...loja, verification: data.verified === true ? 'confiavel' : 'pendente' };
   } catch (error) {
     if (error instanceof StoreError) {
       throw error;
@@ -648,17 +633,19 @@ export async function getMyStore(): Promise<StoreProfile | null> {
 
 /**
  * Situação do selo Confiável da loja do vendedor logado (FE-US007-1, #224),
- * ou `null` sem loja. Na API real são duas idas: `GET /users/me/store` não
- * traz `verified`, então o selo sai do retrato público `GET /stores/{id}`.
- * PENDENTE NO BACK: incluir `verified` na rota privada tira a segunda ida.
+ * ou `null` sem loja. Mantida para consumidores sem a loja carregada.
+ * Com back-end#259, lê o selo na resposta privada. Somente o contrato
+ * legado sem `verified` ainda consulta o perfil público. O painel recebe
+ * a loja da guarda e não usa esta consulta no carregamento inicial (#359).
  */
 export async function getMyVerification(): Promise<StoreVerification | null> {
   if (useMocks) {
     return (await mockGetMyStore())?.verification ?? null;
   }
-  const loja = await apiGetMyStore();
+  const loja = await apiReadMyStore();
   if (loja === null) return null;
-  return (await apiGetStore(loja.id)).verification;
+  if (typeof loja.verified === 'boolean') return mapMyStore(loja).verification;
+  return (await apiGetStore(String(loja.id))).verification;
 }
 
 export async function requestVerification(): Promise<StoreProfile> {

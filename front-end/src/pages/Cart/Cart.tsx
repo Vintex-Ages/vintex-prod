@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Avatar from '@/components/common/Avatar';
 import CartItemRow from '@/components/cart/CartItemRow';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -176,15 +177,38 @@ function Cart() {
 
       {visibleGroups.map((group) => {
         const headingId = `carrinho-loja-${group.store.id}`;
+        const hasPix = Boolean(group.pixKey?.trim());
+        const noPixId = `${headingId}-sem-pix`;
         return (
           <section
             key={group.store.id}
             aria-labelledby={headingId}
-            className="flex flex-col gap-3 border-t border-linha pt-4"
+            className="flex min-w-0 flex-col gap-3 border-t border-linha pt-4"
           >
-            <h2 id={headingId} className="font-display text-h4 text-tinta">
-              {group.store.name}
-            </h2>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="shrink-0">
+                <Avatar name={group.store.name} src={group.store.logoUrl} />
+              </div>
+              <div className="min-w-0 break-words">
+                <h2 id={headingId} className="font-display text-h4 text-tinta">
+                  {group.store.name}
+                </h2>
+                {group.store.city && (
+                  <p className="font-ui text-body-sm text-texto-auxiliar">{group.store.city}</p>
+                )}
+              </div>
+            </div>
+
+            {hasPix ? (
+              <p className="min-w-0 break-all font-ui text-body-sm text-tinta">
+                <span className="font-semibold">Chave Pix: </span>
+                <span className="select-text">{group.pixKey}</span>
+              </p>
+            ) : (
+              <p id={noPixId} className="font-ui text-body-sm text-texto-auxiliar">
+                Este brechó ainda não cadastrou a chave Pix
+              </p>
+            )}
 
             <ul className="flex flex-col gap-3">
               {group.items.map((item) => (
@@ -207,7 +231,12 @@ function Cart() {
                 </strong>
               </p>
               <div className="flex flex-col items-start gap-1 tablet:items-end">
-                <Button disabled aria-describedby={`${headingId}-em-breve`}>
+                <Button
+                  disabled
+                  aria-describedby={
+                    hasPix ? `${headingId}-em-breve` : `${noPixId} ${headingId}-em-breve`
+                  }
+                >
                   Finalizar compra
                 </Button>
                 <span
