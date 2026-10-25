@@ -19,6 +19,7 @@ import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
+import OrderDetail from '@/pages/Orders/OrderDetail';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
@@ -148,12 +149,7 @@ function AppRoutes() {
           path={paths.orderDetail}
           element={
             <RequireAuth>
-              <Container as="main" className="flex flex-col gap-6 py-10">
-                <h1 className="font-display text-h2 text-tinta">Detalhe do pedido</h1>
-                <p className="font-ui text-body text-texto-auxiliar">
-                  Essa tela ainda não foi implementada.
-                </p>
-              </Container>
+              <OrderDetail />
             </RequireAuth>
           }
         />
