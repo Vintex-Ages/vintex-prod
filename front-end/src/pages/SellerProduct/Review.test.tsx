@@ -257,6 +257,48 @@ describe('Review', () => {
     expect(marcasDeSugerido()).toHaveLength(0);
   });
 
+  // #331: a composição lida da etiqueta aparece ao lado de Marca/Tamanho.
+  it('mostra a composição gravada na peça', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({
+      ...PECA,
+      composition: '100% algodão',
+    });
+    renderFluxo('/seller/products/7/review');
+    await screen.findByText('Jaqueta de couro');
+
+    expect(within(linha('Composição')).getByText('100% algodão')).toBeInTheDocument();
+    expect(marcasDeSugerido()).toHaveLength(0);
+  });
+
+  it('composição sugerida pela IA e não revisada aparece com a marca de sugestão', async () => {
+    vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+      ok: true,
+      suggestion: {
+        fields: {
+          category: 'Roupas',
+          color: 'Preto',
+          size: 'M',
+          condition: 'Seminovo',
+          composition: '100% algodão',
+        },
+        suggested: ['category', 'color', 'size', 'condition', 'composition'],
+      },
+    });
+
+    await irParaRevisao();
+
+    const composicao = linha('Composição');
+    expect(within(composicao).getByText('100% algodão')).toBeInTheDocument();
+    expect(within(composicao).getByRole('img', { name: 'Sugerido pela IA' })).toBeInTheDocument();
+  });
+
+  it('sem composição, a linha aparece como "Não informado"', async () => {
+    renderFluxo('/seller/products/7/review');
+    await screen.findByText('Jaqueta de couro');
+
+    expect(within(linha('Composição')).getByText('Não informado')).toBeInTheDocument();
+  });
+
   it('campo opcional vazio aparece como "Não informado"', async () => {
     vi.mocked(sellerProductService.getById).mockResolvedValue({
       ...PECA,

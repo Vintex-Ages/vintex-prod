@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import SellerProductFlow from './SellerProductFlow';
 import SellerProductForm from './SellerProductForm';
@@ -57,6 +57,26 @@ async function subirFoto(nome = 'frente.jpg') {
     target: { files: [foto(nome)] },
   });
   await waitFor(() => expect(vi.mocked(sellerProductService.uploadMedia)).toHaveBeenCalled());
+}
+
+const ROTULO_COMPOSICAO = 'Composição da etiqueta (opcional)';
+const NOTA_COMPOSICAO = 'Extraído somente porque a etiqueta está legível.';
+
+function subirEtiqueta(nome: string) {
+  fireEvent.change(screen.getByLabelText('Foto da etiqueta (opcional)'), {
+    target: { files: [foto(nome)] },
+  });
+}
+
+/**
+ * A `AISuggestedTag` ao lado do rótulo de um campo, ou `null` se ele não está
+ * marcado. O adorno é irmão do `<label>`, dentro da mesma linha.
+ */
+function marcaDoCampo(rotulo: string) {
+  const linhaDoRotulo = screen.getByText(rotulo, { selector: 'label' }).parentElement;
+  return linhaDoRotulo
+    ? within(linhaDoRotulo).queryByRole('img', { name: 'Sugerido pela IA' })
+    : null;
 }
 
 function preencherObrigatorios() {
@@ -172,8 +192,8 @@ describe('SellerProductForm', () => {
     expect(screen.getByLabelText('Conservação')).toHaveValue('Seminovo');
   });
 
-  // #318: a IA já sabe sugerir composição, mas o campo só chega na tela na #331.
-  it('composição sugerida é ignorada enquanto o formulário não tem o campo', async () => {
+  // #331: antes a composição sugerida era ignorada, porque não havia campo.
+  it('composição sugerida preenche o campo "Composição da etiqueta" com a marca de IA', async () => {
     vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
       ok: true,
       suggestion: {
@@ -185,9 +205,165 @@ describe('SellerProductForm', () => {
 
     await subirFoto();
 
-    await waitFor(() => expect(screen.getByLabelText('Cor')).toHaveValue('Preto'));
-    expect(screen.getAllByRole('img', { name: 'Sugerido pela IA' })).toHaveLength(1);
-    expect(screen.queryByText(/composição/i)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText(ROTULO_COMPOSICAO)).toHaveValue('100% algodão'),
+    );
+    expect(marcaDoCampo(ROTULO_COMPOSICAO)).not.toBeNull();
+    expect(screen.getByText(NOTA_COMPOSICAO)).toBeInTheDocument();
+  });
+
+  it('editar a composição apaga a etiqueta de sugestão dela', async () => {
+    vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+      ok: true,
+      suggestion: {
+        fields: { color: 'Preto', composition: '100% algodão' },
+        suggested: ['color', 'composition'],
+      },
+    });
+    renderForm();
+    await subirFoto();
+    await waitFor(() => expect(marcaDoCampo(ROTULO_COMPOSICAO)).not.toBeNull());
+
+    fireEvent.change(screen.getByLabelText(ROTULO_COMPOSICAO), {
+      target: { value: '95% algodão, 5% elastano' },
+    });
+
+    await waitFor(() => expect(marcaDoCampo(ROTULO_COMPOSICAO)).toBeNull());
+    expect(screen.getByLabelText(ROTULO_COMPOSICAO)).toHaveValue('95% algodão, 5% elastano');
+    // A marca da cor não tem nada com isso.
+    expect(marcaDoCampo('Cor')).not.toBeNull();
+  });
+
+  describe('foto da etiqueta (#331, VS-015)', () => {
+    // Objetivo declarado 1 (VS-015 cenário 1), pelo mock real do service.
+    it('etiqueta legível preenche marca e composição com a marca de IA e avisa', async () => {
+      vi.mocked(vintexAiService.suggestListing).mockRestore();
+      renderForm();
+
+      await subirFoto();
+      subirEtiqueta('etiqueta.jpg');
+
+      await waitFor(
+        () => expect(screen.getByLabelText(ROTULO_COMPOSICAO)).toHaveValue('100% algodão'),
+        { timeout: 4000 },
+      );
+      expect(screen.getByLabelText('Marca (opcional)')).toHaveValue('Zara');
+      expect(marcaDoCampo(ROTULO_COMPOSICAO)).not.toBeNull();
+      expect(marcaDoCampo('Marca (opcional)')).not.toBeNull();
+      expect(
+        screen.getByText(
+          /Etiqueta processada: a IA encontrou marca, tamanho e composição\. Confira os valores/,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    // Objetivo declarado 2 (VS-015 cenário 2, RN-59): o motivo é o texto do service.
+    it('etiqueta ilegível não preenche marca nem composição e mostra o motivo', async () => {
+      vi.mocked(vintexAiService.suggestListing).mockRestore();
+      renderForm();
+
+      subirEtiqueta('etiqueta-ilegivel.jpg');
+      await subirFoto();
+
+      await waitFor(
+        () => expect(screen.getByText(/a foto da etiqueta está ilegível/i)).toBeInTheDocument(),
+        { timeout: 4000 },
+      );
+      expect(screen.getByLabelText(ROTULO_COMPOSICAO)).toHaveValue('');
+      expect(screen.getByLabelText('Marca (opcional)')).toHaveValue('');
+      expect(marcaDoCampo(ROTULO_COMPOSICAO)).toBeNull();
+      expect(screen.queryByText(/Etiqueta processada/)).not.toBeInTheDocument();
+      expect(screen.queryByText(NOTA_COMPOSICAO)).not.toBeInTheDocument();
+    });
+
+    it('etiqueta enviada antes das fotos vai junto na análise, como arquivo separado', async () => {
+      renderForm();
+
+      subirEtiqueta('etiqueta.jpg');
+      // Sem foto da peça não há análise: o service exige ao menos uma.
+      expect(vi.mocked(vintexAiService.suggestListing)).not.toHaveBeenCalled();
+      await subirFoto();
+
+      await waitFor(() =>
+        expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenCalledWith({
+          imageUrls: ['https://api.test/api/media/products/photos/abc'],
+          labelImage: expect.objectContaining({ name: 'etiqueta.jpg' }),
+        }),
+      );
+      // Quem sobe a etiqueta é o service (kind 'label'); a galeria só sobe a foto.
+      const [arquivos] = vi.mocked(sellerProductService.uploadMedia).mock.calls[0];
+      expect(arquivos.map((arquivo) => arquivo.name)).toEqual(['frente.jpg']);
+    });
+
+    it('etiqueta enviada depois das fotos refaz a análise com as fotos já enviadas', async () => {
+      renderForm();
+      await subirFoto();
+      await waitFor(() =>
+        expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenCalledTimes(1),
+      );
+
+      subirEtiqueta('etiqueta.jpg');
+
+      await waitFor(() =>
+        expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenLastCalledWith({
+          imageUrls: ['https://api.test/api/media/products/photos/abc'],
+          labelImage: expect.objectContaining({ name: 'etiqueta.jpg' }),
+        }),
+      );
+      expect(vi.mocked(sellerProductService.uploadMedia)).toHaveBeenCalledTimes(1);
+    });
+
+    it('a foto da etiqueta não entra na galeria nem nas imagens salvas', async () => {
+      renderForm();
+      await subirFoto();
+      subirEtiqueta('etiqueta.jpg');
+      await waitFor(() =>
+        expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenCalledTimes(2),
+      );
+      preencherObrigatorios();
+
+      // Uma mídia em cada área, não duas na galeria.
+      expect(
+        within(document.getElementById('secao-fotos') as HTMLElement).getAllByRole('button', {
+          name: /Remover mídia/,
+        }),
+      ).toHaveLength(1);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+
+      await waitFor(() => expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalled());
+      const [input] = vi.mocked(sellerProductService.createDraft).mock.calls[0];
+      expect(input.images).toEqual(['https://api.test/api/media/products/photos/abc']);
+    });
+
+    it('só com a foto da etiqueta, sem foto da peça, continua sem poder seguir (RN-47)', () => {
+      renderForm();
+      preencherObrigatorios();
+
+      subirEtiqueta('etiqueta.jpg');
+
+      expect(screen.getByRole('button', { name: 'Continuar para revisão' })).toBeDisabled();
+      expect(vi.mocked(sellerProductService.uploadMedia)).not.toHaveBeenCalled();
+    });
+
+    it('a composição vai junto no rascunho salvo', async () => {
+      vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+        ok: true,
+        suggestion: { fields: { composition: '100% algodão' }, suggested: ['composition'] },
+      });
+      renderForm();
+      await subirFoto();
+      await waitFor(() =>
+        expect(screen.getByLabelText(ROTULO_COMPOSICAO)).toHaveValue('100% algodão'),
+      );
+      preencherObrigatorios();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+
+      await waitFor(() => expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalled());
+      const [input] = vi.mocked(sellerProductService.createDraft).mock.calls[0];
+      expect(input.composition).toBe('100% algodão');
+    });
   });
 
   it('marca não identificada aparece como aviso, sem preencher o campo (RN-58)', async () => {
