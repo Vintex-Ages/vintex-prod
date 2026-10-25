@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AxiosError } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
@@ -477,5 +479,336 @@ describe('<AppRoutes />', () => {
     expect(
       await screen.findByRole('heading', { name: 'Brechó Mercado Público' }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
+  let client: (typeof import('@/services/httpClient'))['httpClient'];
+  let originalAdapter: typeof client.defaults.adapter;
+  let routes: typeof import('./AppRoutes');
+  let auth: typeof import('@/context/useAuth');
+  let cart: typeof import('@/context/useCart');
+  let toast: typeof import('@/context/ToastContext');
+  let storeModule: typeof import('@/services/storeService');
+  let privateVerified: boolean;
+  let publicVerified: boolean;
+  let validationResult: boolean;
+  let privateFailures: number;
+  let validationFails: boolean;
+  let privateGate: ReturnType<typeof controlledPromise> | undefined;
+  let validationGate: ReturnType<typeof controlledPromise> | undefined;
+  const calls: string[] = [];
+  const unexpectedCalls: string[] = [];
+
+  function controlledPromise() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  // Fixture local de StoreResponse do PR #279. O perfil público abaixo tem
+  // shape próprio e pode discordar, para detectar uso indevido dessa consulta.
+  function privateResponse() {
+    return {
+      id: 11,
+      seller_id: 7,
+      name: 'Brechó Aurora',
+      description: 'Peças selecionadas.',
+      logo_url: null,
+      pix_key: 'aurora@pix.test',
+      verified: privateVerified,
+      document_type: 'CPF',
+      document_value: '52998224725',
+      terms_version: '2026-09',
+      terms_accepted_at: '2026-09-01T12:00:00Z',
+      address: null,
+    };
+  }
+
+  function privateReads() {
+    return calls.filter((call) => call === 'get /users/me/store');
+  }
+
+  function publicReads() {
+    return calls.filter((call) => call === 'get /stores/11');
+  }
+
+  function validationPosts() {
+    return calls.filter((call) => call === 'post /users/me/store/verification');
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    privateVerified = false;
+    publicVerified = false;
+    validationResult = true;
+    privateFailures = 0;
+    validationFails = false;
+    privateGate = undefined;
+    validationGate = undefined;
+    calls.length = 0;
+    unexpectedCalls.length = 0;
+
+    client = (await import('@/services/httpClient')).httpClient;
+    originalAdapter = client.defaults.adapter;
+
+    // Os testes antigos deste arquivo mockam getMyStore. Neste grupo, as
+    // exportações delegam ao service real com a flag atual; o transporte é local.
+    const actual =
+      await vi.importActual<typeof import('@/services/storeService')>('@/services/storeService');
+    storeModule = await import('@/services/storeService');
+    vi.mocked(storeModule.getMyStore).mockImplementation(actual.getMyStore);
+    vi.spyOn(storeModule, 'getMyVerification').mockImplementation(actual.getMyVerification);
+    vi.spyOn(storeModule, 'requestVerification').mockImplementation(actual.requestVerification);
+
+    client.defaults.adapter = async (config) => {
+      const call = `${config.method} ${config.url}`;
+      calls.push(call);
+      let data: unknown;
+      let status = 200;
+
+      if (call === 'get /users/me/store') {
+        if (privateReads().length === 1 && privateGate) await privateGate.promise;
+        if (privateFailures > 0) {
+          privateFailures -= 1;
+          status = 500;
+          data = { error: { code: 'INTERNAL_ERROR', message: 'Falha temporária.' } };
+        } else {
+          data = privateResponse();
+        }
+      } else if (call === 'get /stores/11') {
+        data = {
+          id: 11,
+          name: 'Brechó Aurora',
+          description: 'Peças selecionadas.',
+          logo_url: null,
+          verified: publicVerified,
+          address: null,
+          metrics: { created_at: '2026-09-01T12:00:00Z', products_listed: 0, products_sold: 0 },
+        };
+      } else if (call === 'post /users/me/store/verification') {
+        if (validationGate) await validationGate.promise;
+        if (validationFails) {
+          status = 500;
+          data = { error: { code: 'INTERNAL_ERROR', message: 'Não foi possível validar.' } };
+        } else {
+          // SellerVerificationResponse já devolve verified. HTTP 200 sozinho
+          // não concede selo: usamos o boolean autoritativo da fixture.
+          privateVerified = validationResult;
+          publicVerified = validationResult;
+          data = { verified: validationResult };
+        }
+      } else if (call === 'get /users/me/products') {
+        data = { items: [], page: 1, page_size: 100, total: 0 };
+      } else if (call === 'get /users/me/sales/summary') {
+        data = { period: 'month', sold_count: 0, gross: 0, commission: 0, net: 0 };
+      } else {
+        unexpectedCalls.push(call);
+        throw new Error(`Chamada sem fixture local: ${call}`);
+      }
+
+      const response = {
+        data,
+        status,
+        statusText: status === 200 ? 'OK' : 'Error',
+        headers: {},
+        config,
+      };
+      if (status >= 400) {
+        throw new AxiosError(
+          'Falha HTTP simulada.',
+          'ERR_BAD_RESPONSE',
+          config,
+          undefined,
+          response,
+        );
+      }
+      return response;
+    };
+
+    // Contexts e árvore importados do mesmo conjunto de módulos após reset.
+    auth = await import('@/context/useAuth');
+    cart = await import('@/context/useCart');
+    toast = await import('@/context/ToastContext');
+    routes = await import('./AppRoutes');
+  });
+
+  afterEach(() => {
+    cleanup();
+    privateGate?.resolve();
+    validationGate?.resolve();
+    client.defaults.adapter = originalAdapter;
+    vi.mocked(storeModule.getMyStore).mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    expect(unexpectedCalls).toEqual([]);
+  });
+
+  function renderPanel(authenticated = true) {
+    const PageRoutes = routes.default;
+    return render(
+      <MemoryRouter initialEntries={[paths.seller]}>
+        <auth.AuthContext.Provider
+          value={makeAuthValue({
+            isAuthenticated: authenticated,
+            user: authenticated ? SELLER : null,
+          })}
+        >
+          <cart.CartContext.Provider value={CART_VALUE}>
+            <toast.ToastProvider>
+              <PageRoutes />
+            </toast.ToastProvider>
+          </cart.CartContext.Provider>
+        </auth.AuthContext.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  async function sealCard() {
+    const card = within(await screen.findByRole('region', { name: 'Selo Confiável' }));
+    // Espera o estado inicial estabilizar, inclusive no fluxo redundante atual.
+    await card.findByRole('img', { name: /^(Confiável|Pendente)$/ });
+    return card;
+  }
+
+  it('exibe Confiável vindo da loja privada, mesmo se o retrato público discordar', async () => {
+    privateVerified = true;
+    publicVerified = false;
+    renderPanel();
+
+    expect((await sealCard()).getByRole('img', { name: 'Confiável' })).toBeInTheDocument();
+  });
+
+  it('exibe Pendente vindo da loja privada, mesmo se o retrato público discordar', async () => {
+    privateVerified = false;
+    publicVerified = true;
+    renderPanel();
+
+    expect((await sealCard()).getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
+  });
+
+  it('faz somente uma consulta privada para carregar a loja no fluxo inicial normal', async () => {
+    renderPanel();
+    await sealCard();
+
+    expect(privateReads()).toEqual(['get /users/me/store']);
+  });
+
+  it('não consulta GET /stores/{id} para descobrir o selo no painel', async () => {
+    renderPanel();
+    await sealCard();
+
+    expect(publicReads()).toEqual([]);
+  });
+
+  it('não dispara POST de validação automaticamente ao carregar o painel', async () => {
+    renderPanel();
+    const card = await sealCard();
+
+    expect(card.getByRole('button', { name: 'Validar meus dados' })).toBeEnabled();
+    expect(validationPosts()).toEqual([]);
+  });
+
+  it('preserva loading da guarda enquanto a resposta privada está pendente', async () => {
+    privateGate = controlledPromise();
+    renderPanel();
+
+    expect(await screen.findByText('Verificando sua loja…')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    expect(publicReads()).toEqual([]);
+    expect(validationPosts()).toEqual([]);
+
+    await act(async () => privateGate?.resolve());
+    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    await sealCard();
+  });
+
+  it('preserva erro inicial e retry da consulta privada', async () => {
+    const user = userEvent.setup();
+    privateFailures = 1;
+    renderPanel();
+
+    expect(await screen.findByText('Não foi possível verificar sua loja.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    await sealCard();
+  });
+
+  it('preserva a barreira de login sem consultar loja ou validar dados para anônimos', async () => {
+    renderPanel(false);
+
+    expect(await screen.findByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+    expect(privateReads()).toEqual([]);
+    expect(publicReads()).toEqual([]);
+    expect(validationPosts()).toEqual([]);
+  });
+
+  it.each([true, false])(
+    'ação explícita reflete verified=%s retornado pelo backend após validação',
+    async (verified) => {
+      const user = userEvent.setup();
+      validationResult = verified;
+      validationGate = controlledPromise();
+      renderPanel();
+      const card = await sealCard();
+      expect(validationPosts()).toEqual([]);
+
+      await user.click(card.getByRole('button', { name: 'Validar meus dados' }));
+      expect(card.getByRole('button', { name: 'Validando…' })).toBeDisabled();
+      expect(card.getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
+
+      await act(async () => validationGate?.resolve());
+
+      await waitFor(() => {
+        expect(card.queryByRole('button', { name: 'Validando…' })).not.toBeInTheDocument();
+      });
+      expect(
+        card.getByRole('img', { name: verified ? 'Confiável' : 'Pendente' }),
+      ).toBeInTheDocument();
+      expect(validationPosts()).toEqual(['post /users/me/store/verification']);
+      if (!verified) {
+        expect(card.queryByRole('img', { name: 'Confiável' })).not.toBeInTheDocument();
+        expect(card.getByRole('button', { name: 'Validar meus dados' })).toBeEnabled();
+      }
+    },
+  );
+
+  it('loading da validação impede POST repetido em cliques adicionais', async () => {
+    const user = userEvent.setup();
+    validationGate = controlledPromise();
+    renderPanel();
+    const card = await sealCard();
+
+    await user.click(card.getByRole('button', { name: 'Validar meus dados' }));
+    const pending = card.getByRole('button', { name: 'Validando…' });
+    expect(pending).toBeDisabled();
+    await user.click(pending);
+    await user.click(pending);
+    expect(validationPosts()).toEqual(['post /users/me/store/verification']);
+
+    await act(async () => validationGate?.resolve());
+    expect(await card.findByRole('img', { name: 'Confiável' })).toBeInTheDocument();
+  });
+
+  it('falha no POST mantém o selo anterior e permite nova tentativa', async () => {
+    const user = userEvent.setup();
+    validationFails = true;
+    renderPanel();
+    const card = await sealCard();
+
+    await user.click(card.getByRole('button', { name: 'Validar meus dados' }));
+
+    expect(
+      await screen.findByText('Não foi possível validar seus dados agora. Tente de novo.'),
+    ).toBeInTheDocument();
+    expect(card.getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
+    expect(card.queryByRole('img', { name: 'Confiável' })).not.toBeInTheDocument();
+    expect(card.getByRole('button', { name: 'Validar meus dados' })).toBeEnabled();
+    expect(validationPosts()).toEqual(['post /users/me/store/verification']);
   });
 });

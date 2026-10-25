@@ -8,6 +8,7 @@ import SellerProductRow, { type RowAction } from '@/components/seller/SellerProd
 import StatCard from '@/components/seller/StatCard';
 import { useToast } from '@/context/useToast';
 import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts';
+import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
 import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
@@ -48,7 +49,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function SellerAdmin() {
+function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct } =
@@ -102,7 +103,7 @@ function SellerAdmin() {
         <Button onClick={anunciar}>Anunciar peça</Button>
       </div>
 
-      <TrustSealCard />
+      <TrustSealCard storeSource={storeSource} />
 
       {state.status === 'loading' && (
         <>

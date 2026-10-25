@@ -83,7 +83,7 @@ function AppRoutes() {
           path={paths.seller}
           element={
             <RequireStore>
-              <SellerAdmin />
+              {(store, onStoreUpdated) => <SellerAdmin storeSource={{ store, onStoreUpdated }} />}
             </RequireStore>
           }
         />
