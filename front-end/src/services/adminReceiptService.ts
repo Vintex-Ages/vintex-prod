@@ -18,20 +18,22 @@ import type { Paginated } from '@/types/product';
  *   - `'false'` → API real via `httpClient`.
  *
  * API real — contrato fechado pelo back em 05/10 (back-end#250, #251):
- *   `GET  /admin/payments?status=&q=&page=`  → Page[ReceiptReviewResponse]; `q`
- *        casa nome do comprador ou da loja (não o número do Pedido) (#250)
+ *   `GET  /admin/payments?status=&q=&page=`  → Page[ReceiptReviewResponse], do
+ *        comprovante mais antigo para o mais recente; `q` casa nome do comprador
+ *        ou da loja (não o número do Pedido) (#250)
  *   `POST /admin/payments/{order_id}/approve` → resposta PARCIAL (#251)
  *   `POST /admin/payments/{order_id}/reject` { reason } → resposta PARCIAL (#251)
  *   `GET  /admin/payments/{order_id}/receipt` (arquivo; vira `receiptUrl`)
  *   `GET  /admin/payments/{order_id}` → ReceiptReviewResponse (relê um item;
- *        rota PROPOSTA, não confirmada no contrato: usada só quando o item
- *        não está guardado)
+ *        rota PROPOSTA, não confirmada no contrato: usada no 409 e quando o
+ *        item não está guardado)
  *
  * Resposta parcial de aprovar/rejeitar: `{ order_id, status, payment {
  * status, validated_by, validated_at[, rejection_reason] } }`. Sem comprador,
  * loja, peças, valores nem `receiptUrl`. Por isso o service mescla `payment` da
- * resposta no item que já carregou (`listReceipts`; se não tiver, relê o
- * item) e devolve o `ReceiptReview` COMPLETO: a tela nunca recebe campo vazio.
+ * resposta no item que já carregou (`listReceipts`/`getReceiptReview`; se não
+ * tiver, relê o item) e devolve o `ReceiptReview` COMPLETO: a tela nunca recebe
+ * campo vazio.
  *
  * O back responde 403 a quem não é admin: vira `FORBIDDEN`; 409 (Pedido fora de
  * `em_analise`: outra pessoa já validou, inclusive a segunda ação) vira
@@ -44,6 +46,11 @@ import type { Paginated } from '@/types/product';
  *   const { items } = await listReceipts({ status: 'pendente', q: 'ana' });
  *   await approveReceipt(items[0].orderId);
  *   await rejectReceipt(orderId, 'Comprovante ilegível.');
+ *
+ *   // O arquivo só baixa com o token: o `httpClient` baixa como Blob e a tela
+ *   // mostra por `URL.createObjectURL(blob)` (abrir a rota crua não funciona).
+ *   const blob = await downloadReceipt(orderId);
+ *   const fresh = await getReceiptReview(orderId);
  */
 
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
@@ -232,6 +239,34 @@ async function mockRejectReceipt(orderId: string, reason: string): Promise<Recei
   return toReview(findPaidOrder(orderId), readValidations());
 }
 
+function mockGetReceiptReview(orderId: string): ReceiptReview {
+  return toReview(findPaidOrder(orderId), readValidations());
+}
+
+/**
+ * Arquivos de exemplo do mock (só existem com `VITE_USE_MOCKS`; com a API real
+ * o comprovante é o arquivo enviado pelo comprador): um desenho em SVG, com o
+ * visual do espaço do comprovante no Figma, e um PDF mínimo.
+ */
+const MOCK_RECEIPT_IMAGE =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="340" viewBox="0 0 400 340">' +
+  '<text x="200" y="165" text-anchor="middle" font-family="sans-serif" font-size="44">🧾</text>' +
+  '<text x="200" y="205" text-anchor="middle" font-family="sans-serif" font-size="12.5" fill="#655e57">Comprovante Pix anexado pelo comprador</text>' +
+  '</svg>';
+
+const MOCK_RECEIPT_PDF =
+  '%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
+  '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+  '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n' +
+  'trailer<</Root 1 0 R>>\n%%EOF';
+
+function mockDownloadReceipt(orderId: string): Blob {
+  const { payment } = findPaidOrder(orderId);
+  return receiptTypeFromName(payment.receiptName) === 'pdf'
+    ? new Blob([MOCK_RECEIPT_PDF], { type: 'application/pdf' })
+    : new Blob([MOCK_RECEIPT_IMAGE], { type: 'image/svg+xml' });
+}
+
 // Modo API REAL — proposta do front, não confirmada (ver doc do arquivo).
 // Dinheiro: `decimal(10,2)` pode vir como string ou número.
 
@@ -333,7 +368,8 @@ function mapApiReview(data: ApiReceiptReview): ReceiptReview {
 }
 
 /**
- * Último item de cada Pedido que a fila carregou (`listReceipts`): base da mescla com a resposta parcial de aprovar/rejeitar.
+ * Último item de cada Pedido que a fila carregou (`listReceipts` /
+ * `getReceiptReview`): base da mescla com a resposta parcial de aprovar/rejeitar.
  */
 const loadedReviews = new Map<string, ReceiptReview>();
 
@@ -443,6 +479,18 @@ async function apiGetReceiptReview(orderId: string): Promise<ReceiptReview> {
   }
 }
 
+/** O token vai pelo `httpClient`; `responseType: 'blob'` devolve o arquivo cru. */
+async function apiDownloadReceipt(orderId: string): Promise<Blob> {
+  try {
+    const { data } = await httpClient.get<Blob>(`/admin/payments/${orderId}/receipt`, {
+      responseType: 'blob',
+    });
+    return data;
+  } catch (error) {
+    throw toAdminError(error);
+  }
+}
+
 // Seleção do modo.
 
 /** Fila de comprovantes, com filtro por situação (`status`) e busca (`q`). */
@@ -459,4 +507,21 @@ export function approveReceipt(orderId: string): Promise<ReceiptReview> {
 export async function rejectReceipt(orderId: string, reason: string): Promise<ReceiptReview> {
   const normalized = normalizeReason(reason);
   return useMocks ? mockRejectReceipt(orderId, normalized) : apiRejectReceipt(orderId, normalized);
+}
+
+/** Relê um item da fila (ex.: depois de um 409, para mostrar quem validou). */
+export function getReceiptReview(orderId: string): Promise<ReceiptReview> {
+  return useMocks
+    ? Promise.resolve().then(() => mockGetReceiptReview(orderId))
+    : apiGetReceiptReview(orderId);
+}
+
+/**
+ * Baixa o comprovante (imagem ou PDF) como Blob, pela rota autenticada. Quem
+ * chama mostra por `URL.createObjectURL`; a URL crua não serve (vai sem token).
+ */
+export function downloadReceipt(orderId: string): Promise<Blob> {
+  return useMocks
+    ? Promise.resolve().then(() => mockDownloadReceipt(orderId))
+    : apiDownloadReceipt(orderId);
 }

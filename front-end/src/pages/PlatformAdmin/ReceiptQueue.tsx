@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { AdminHeader } from '@/components/admin/AdminHeader';
 import { ReceiptList } from '@/components/admin/ReceiptList';
 import { ReceiptListSkeleton } from '@/components/admin/ReceiptListSkeleton';
@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import { useReceiptQueue, type ReceiptFilter } from '@/hooks/useReceiptQueue';
 import type { ReceiptReview } from '@/types/admin';
+import ReceiptReviewPanel from './ReceiptReviewPanel';
 
 /**
  * Fila de comprovantes da administradora (FE-US032-1, rota `/admin/receipts`).
@@ -17,18 +18,13 @@ import type { ReceiptReview } from '@/types/admin';
  *
  * Lista, filtra (Todos · Pendentes · Aprovados · Rejeitados) e busca por
  * comprador ou loja; o termo e o filtro vão ao service (`useReceiptQueue`).
- * "Ver comprovante" guarda o item escolhido e entrega o detalhe a
- * `renderDetail` — o detalhe (FE-US032-2, #324) entra por aí, sem sair da fila.
+ * "Ver comprovante" abre o painel de conferência (`ReceiptReviewPanel`,
+ * FE-US032-2) abaixo da fila; aprovar ou rejeitar atualiza a linha da fila e o
+ * painel sem nova consulta. Precisa estar dentro do `ToastProvider`.
  *
  * Usage:
  *   <Route path={paths.adminReceipts} element={<RequireRole role="admin"><ReceiptQueue /></RequireRole>} />
- *   <ReceiptQueue renderDetail={(item, onClose) => <ReceiptDetail item={item} onClose={onClose} />} />
  */
-type ReceiptQueueProps = {
-  /** Detalhe do comprovante (FE-US032-2). Chamado enquanto houver um item aberto. */
-  renderDetail?: (item: ReceiptReview, onClose: () => void) => ReactNode;
-};
-
 const FILTERS: { value: ReceiptFilter; label: string }[] = [
   { value: 'todos', label: 'Todos' },
   { value: 'pendente', label: 'Pendentes' },
@@ -36,8 +32,8 @@ const FILTERS: { value: ReceiptFilter; label: string }[] = [
   { value: 'rejeitado', label: 'Rejeitados' },
 ];
 
-function ReceiptQueue({ renderDetail }: ReceiptQueueProps) {
-  const { state, filter, setFilter, search, retry } = useReceiptQueue();
+function ReceiptQueue() {
+  const { state, filter, setFilter, search, retry, replaceItem } = useReceiptQueue();
   const [draft, setDraft] = useState('');
   const [selected, setSelected] = useState<ReceiptReview | null>(null);
 
@@ -108,7 +104,16 @@ function ReceiptQueue({ renderDetail }: ReceiptQueueProps) {
             <ReceiptList items={state.items} onViewReceipt={setSelected} />
           ))}
 
-        {selected && renderDetail?.(selected, () => setSelected(null))}
+        {selected && (
+          <ReceiptReviewPanel
+            key={selected.orderId}
+            item={selected}
+            onUpdated={(updated) => {
+              setSelected(updated);
+              replaceItem(updated);
+            }}
+          />
+        )}
       </main>
     </div>
   );
