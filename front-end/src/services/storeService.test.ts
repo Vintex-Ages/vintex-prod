@@ -26,6 +26,106 @@ const input: StoreInput = {
   pixKey: 'ceci@vintex.com',
 };
 
+describe('#359 — storeService: selo na resposta da própria loja', () => {
+  let client: (typeof import('./httpClient'))['httpClient'];
+  let originalAdapter: typeof client.defaults.adapter;
+  let service: typeof import('./storeService');
+  const calls: string[] = [];
+
+  // StoreResponse previsto no PR backend #279, incluindo verified.
+  const privateStore = {
+    id: 11,
+    seller_id: 7,
+    name: 'Brechó Aurora',
+    description: 'Peças selecionadas.',
+    logo_url: 'https://cdn.test/aurora.png',
+    pix_key: 'aurora@pix.test',
+    verified: true,
+    document_type: 'CPF',
+    document_value: '52998224725',
+    terms_version: '2026-09',
+    terms_accepted_at: '2026-09-01T12:00:00Z',
+    address: {
+      street: 'Rua dos Andradas',
+      number: '100',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90020000',
+    },
+  };
+
+  function respondWith(data: unknown) {
+    client.defaults.adapter = async (config) => {
+      calls.push(`${config.method} ${config.url}`);
+      return { data, status: 200, statusText: 'OK', headers: {}, config };
+    };
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    client = (await import('./httpClient')).httpClient;
+    originalAdapter = client.defaults.adapter;
+    service = await import('./storeService');
+    calls.length = 0;
+  });
+
+  afterEach(() => {
+    client.defaults.adapter = originalAdapter;
+    vi.unstubAllEnvs();
+  });
+
+  it('verified true na rota privada vira confiavel', async () => {
+    respondWith(privateStore);
+
+    expect((await service.getMyStore())?.verification).toBe('confiavel');
+  });
+
+  it('verified false na rota privada vira pendente', async () => {
+    respondWith({ ...privateStore, verified: false });
+
+    expect((await service.getMyStore())?.verification).toBe('pendente');
+  });
+
+  it('verified ausente na fixture antiga mantém fallback pendente', async () => {
+    const legacy: Partial<typeof privateStore> = { ...privateStore };
+    delete legacy.verified;
+    respondWith(legacy);
+
+    expect((await service.getMyStore())?.verification).toBe('pendente');
+    expect(calls).toEqual(['get /users/me/store']);
+  });
+
+  it('preserva os demais dados da loja privada', async () => {
+    respondWith(privateStore);
+
+    const store = await service.getMyStore();
+
+    expect(store).toMatchObject({
+      id: '11',
+      name: 'Brechó Aurora',
+      description: 'Peças selecionadas.',
+      logoUrl: 'https://cdn.test/aurora.png',
+      city: 'Porto Alegre',
+      state: 'RS',
+      createdAt: '2026-09-01T12:00:00Z',
+    });
+  });
+
+  it.each([true, false])(
+    'lê a loja com verified=%s sem buscar o perfil público',
+    async (verified) => {
+      respondWith({ ...privateStore, verified });
+
+      await service.getMyStore();
+
+      expect(calls).toEqual(['get /users/me/store']);
+    },
+  );
+});
+
 /** O mock de auth vive em memória entre os testes: cada cadastro precisa de e-mail novo. */
 let userSeq = 0;
 
