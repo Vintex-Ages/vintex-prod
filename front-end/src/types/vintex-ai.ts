@@ -75,7 +75,11 @@ export type ChatChunk =
   | { type: 'products'; products: Product[] }
   | { type: 'interpreted'; interpreted: InterpretedQuery }
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  /**
+   * `reason: 'quota'` = cota do dia do chat esgotada (FE-US027-5): não adianta
+   * tentar de novo. `retryAt` (ISO 8601) é quando ela volta, se o back mandar.
+   */
+  | { type: 'error'; reason?: 'quota'; message: string; retryAt?: string };
 
 export interface ChatRequest {
   messages: Pick<ChatMessage, 'role' | 'text'>[];
@@ -84,8 +88,9 @@ export interface ChatRequest {
 
 /**
  * Campos que a IA sabe sugerir a partir das fotos, e só eles: é exatamente o
- * que o `ImageAnalysisResult` do back devolve (`back-end#150`). Todos os seis
- * são chaves de `ProductInput` (`FE-SVC-seller-products`, #202), então a lista
+ * que o `ImageAnalysisResult` do back devolve (`back-end#150`), mais a
+ * `composition` lida da foto da etiqueta (#318, back-end#257). Todos são
+ * chaves de `ProductInput` (`FE-SVC-seller-products`, #202), então a lista
  * que o formulário recebe em `suggested` encaixa direto nos campos dele.
  *
  * Declarado aqui como união própria em vez de `keyof ProductInput` por dois
@@ -96,7 +101,7 @@ export interface ChatRequest {
  * (`SPIKE-01`), e `name`, que o vendedor sempre escreve.
  */
 export type ListingSuggestionField =
-  'category' | 'color' | 'size' | 'condition' | 'description' | 'brand';
+  'category' | 'color' | 'size' | 'condition' | 'description' | 'brand' | 'composition';
 
 export interface ListingSuggestion {
   /** Só os campos que a IA conseguiu preencher. */
@@ -116,3 +121,22 @@ export interface ListingSuggestion {
 export type ListingSuggestionResult =
   | { ok: true; suggestion: ListingSuggestion }
   | { ok: false; reason: 'timeout' | 'unavailable' | 'invalid-image'; message: string };
+
+/** Dados para comparar a peça com o catálogo; productId não integra o body HTTP. */
+export interface PriceSuggestionInput {
+  productId?: string;
+  name: string;
+  category?: string;
+  brand?: string;
+  condition?: string;
+  size?: string;
+  description?: string;
+}
+
+export interface PriceSuggestion {
+  /** Reais; null indica ausência de comparáveis suficientes. */
+  min: number | null;
+  max: number | null;
+  justification: string;
+  basedOn: number;
+}

@@ -1,15 +1,17 @@
-﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
+import { listReceipts } from '@/services/adminReceiptService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
 import AppRoutes from './AppRoutes';
+import * as routePaths from './paths';
 import {
   paths,
   productDetail,
@@ -21,6 +23,11 @@ import {
 vi.mock('@/services/storeService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/storeService')>()),
   getMyStore: vi.fn(),
+}));
+
+vi.mock('@/services/adminReceiptService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminReceiptService')>()),
+  listReceipts: vi.fn(),
 }));
 
 const STORE: StoreProfile = {
@@ -37,6 +44,9 @@ const STORE: StoreProfile = {
 beforeEach(() => {
   // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
   vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
+  vi.mocked(listReceipts)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
 });
 
 afterEach(cleanup);
@@ -96,6 +106,19 @@ const BUYER: AuthUser = {
 };
 
 const SELLER: AuthUser = { ...BUYER, id: 'u_2', is_seller: true };
+const ADMIN: AuthUser = { ...BUYER, id: 'u_3', is_admin: true };
+
+function LocationProbe() {
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+
+  return (
+    <>
+      <span data-testid="route-path">{location.pathname}</span>
+      <span data-testid="route-from">{from ?? ''}</span>
+    </>
+  );
+}
 
 function makeAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue {
   return {
@@ -118,6 +141,7 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
         <CartContext.Provider value={CART_VALUE}>
           <ToastProvider>
             <AppRoutes />
+            <LocationProbe />
           </ToastProvider>
         </CartContext.Provider>
       </AuthContext.Provider>
@@ -126,6 +150,97 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 }
 
 describe('<AppRoutes />', () => {
+  describe('FE-FND-6: rotas da Sprint 3', () => {
+    it.each([
+      ['/checkout', 'Checkout', BUYER],
+      ['/profile/orders', 'Meus pedidos', BUYER],
+      ['/profile/orders/123', 'Detalhe do pedido', BUYER],
+      ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
+      ['/profile/favorites', 'Meus favoritos', BUYER],
+      ['/stores', 'Brechós', null],
+    ] as const)(
+      'reconhece %s e renderiza seu placeholder no Layout',
+      async (path, heading, user) => {
+        renderAtWithAuth(path, makeAuthValue({ isAuthenticated: user !== null, user }));
+
+        expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
+        expect(screen.getByTestId('route-path').textContent).toBe(path);
+        expect(screen.getByRole('banner')).toBeInTheDocument();
+        expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+      },
+    );
+
+    it.each([
+      ['/profile/orders', 'Meus pedidos'],
+      ['/profile/orders?status=pending', 'Meus pedidos'],
+      ['/checkout', 'Checkout'],
+      ['/profile/orders/123', 'Detalhe do pedido'],
+      ['/profile/orders/123/payment', 'Pagamento do pedido'],
+      ['/profile/favorites', 'Meus favoritos'],
+      ['/admin/receipts', 'Repasses de pagamentos Pix'],
+    ])('anônimo em %s vai para login e preserva pathname + search', async (path, heading) => {
+      renderAtWithAuth(path, makeAuthValue({}));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/login'));
+      expect(screen.getByTestId('route-from').textContent).toBe(path);
+      expect(screen.getByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['comprador', BUYER],
+      ['vendedor', SELLER],
+    ] as const)('%s sem is_admin em /admin/receipts volta para home', async (_role, user) => {
+      renderAtWithAuth('/admin/receipts', makeAuthValue({ isAuthenticated: true, user }));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/'));
+      expect(
+        screen.queryByRole('heading', { name: 'Repasses de pagamentos Pix' }),
+      ).not.toBeInTheDocument();
+      // RN-24: quem não é admin nem dispara a consulta da fila.
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
+
+    it('admin em /admin/receipts vê a fila de comprovantes, com cabeçalho próprio e sem rodapé', async () => {
+      renderAtWithAuth('/admin/receipts', makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Repasses de pagamentos Pix' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe('/admin/receipts');
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.getByRole('link', { name: 'Comprovantes' })).toBeInTheDocument();
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      await waitFor(() => expect(listReceipts).toHaveBeenCalled());
+    });
+
+    // Os helpers são chamados dentro dos testes: sua ausência na fase RED
+    // não deve impedir a coleta e a execução dos testes das rotas existentes.
+    it('orderDetailPath monta /profile/orders/123 e abre o detalhe do pedido', async () => {
+      const path = routePaths.orderDetailPath('123');
+      expect(path).toBe('/profile/orders/123');
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Detalhe do pedido' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(path);
+    });
+
+    it('orderPaymentPath monta /profile/orders/123/payment e abre o pagamento', async () => {
+      const path = routePaths.orderPaymentPath('123');
+      expect(path).toBe('/profile/orders/123/payment');
+
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Pagamento do pedido' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(path);
+    });
+  });
+
   it.each([
     [paths.home, 'Feed de achados'],
     [paths.catalog, 'Catálogo'],

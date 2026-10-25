@@ -56,6 +56,7 @@ describe('<SellerProductRow />', () => {
     const expectedLabels: Record<SellerProduct['status'], string> = {
       rascunho: 'Rascunho',
       ativo: 'Anunciada',
+      reservado: 'Reservada',
       vendido: 'Já vendida',
       despublicado: 'Pausada',
     };

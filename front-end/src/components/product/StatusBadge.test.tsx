@@ -6,6 +6,7 @@ describe('StatusBadge', () => {
   it.each([
     ['rascunho', 'Rascunho', 'bg-papel-profundo'],
     ['ativo', 'Anunciada', 'bg-branco-quente'],
+    ['reservado', 'Reservada', 'text-verde-rs'],
     ['vendido', 'Já vendida', 'border-verde-rs'],
     ['despublicado', 'Pausada', 'border-dourado'],
   ] as const)('traduz o status %s para o rótulo e a cor esperados', (status, label, colorClass) => {

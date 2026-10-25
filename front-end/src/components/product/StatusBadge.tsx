@@ -11,6 +11,7 @@ export type StatusBadgeProps = {
 const defaultLabels: Record<ProductStatus, string> = {
   rascunho: 'Rascunho',
   ativo: 'Anunciada',
+  reservado: 'Reservada',
   vendido: 'Já vendida',
   despublicado: 'Pausada',
 };
@@ -36,6 +37,7 @@ function StatusBadge({ status, size = 'md', label }: StatusBadgeProps) {
         'px-3 py-1 text-label': size === 'md',
         'border-linha bg-papel-profundo text-texto-auxiliar': status === 'rascunho',
         'border-linha bg-branco-quente text-tinta': status === 'ativo',
+        'border-verde-rs bg-branco-quente text-verde-rs': status === 'reservado',
         'border-verde-rs bg-verde-rs text-branco-quente': status === 'vendido',
         'border-dourado bg-branco-quente text-dourado': status === 'despublicado',
       })}

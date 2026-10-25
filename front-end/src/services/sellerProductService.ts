@@ -67,11 +67,7 @@ function noImage(): SellerProductError {
   return new SellerProductError('NO_IMAGE', 'Adicione ao menos uma foto antes de publicar.');
 }
 
-/**
- * Código só do front: a operação depende de rota que o back ainda não tem
- * (`docs/adr/0002`). A tela mostra "ainda não disponível", sem "Tentar de
- * novo" — tentar de novo não muda nada até o back entregar.
- */
+/** Código usado pelo resumo financeiro enquanto sua rota não está disponível. */
 export const NOT_AVAILABLE_YET = 'NOT_AVAILABLE_YET';
 
 function notAvailableYet(message: string): SellerProductError {
@@ -350,7 +346,10 @@ async function mockGetSalesSummary(period: SalesPeriod): Promise<SalesSummary> {
   return { period, soldCount: sold.length, gross, commission: roundMoney(gross - net), net };
 }
 
-/** ObjectURLs no lugar das URLs remotas que a rota de upload vai devolver. */
+/**
+ * ObjectURLs no lugar das URLs remotas que a rota de upload vai devolver. Não
+ * recebe o `kind`: no mock não há galeria pública da qual esconder a etiqueta.
+ */
 function mockUploadMedia(files: File[]): string[] {
   return files.map((file) => URL.createObjectURL(file));
 }
@@ -359,8 +358,7 @@ function mockUploadMedia(files: File[]): string[] {
 // Rotas e schemas lidos dos PRs `back-end#157` e `back-end#159` (ver tabela
 // "API real" da #202). Prefixo `/users/me/products` (ADR 0001 §4), mesmo que
 // alguns endpoints ainda estejam em `/products/{id}` nos PRs — o combinado é
-// mover. `getById` usa a rota declarada na back-end#234, que o back ainda
-// não entregou (ver `apiGetById`).
+// mover. `getById` usa a rota autenticada de detalhes do vendedor.
 
 interface ApiCorrection {
   field: string;
@@ -387,6 +385,8 @@ interface ApiSellerProduct {
 
 /** `ProductDraftResponse` (back-end#159). */
 interface ApiSellerProductDetail extends ApiSellerProduct {
+  /** Só no detalhe, não na listagem (#318, back-end#257). */
+  composition: string | null;
   store: { id: number | string; name: string; city: string | null };
   images: string[];
   ai_corrections: ApiCorrection[];
@@ -435,6 +435,7 @@ function mapSellerProduct(item: ApiSellerProduct): SellerProduct {
 function mapSellerProductDetail(item: ApiSellerProductDetail): SellerProductDetail {
   return {
     ...mapSellerProduct(item),
+    composition: optional(item.composition),
     images: item.images,
     quantity: 1,
     store: { id: String(item.store.id), name: item.store.name, city: item.store.city },
@@ -520,84 +521,13 @@ async function apiTransition(
   }
 }
 
-/** `ProductDetailResponse` do detalhe público: vazio chega como `""`, não `null`. */
-interface ApiPublicProductDetail {
-  id: number | string;
-  name: string;
-  description: string;
-  category: string;
-  style: string;
-  brand: string;
-  color: string;
-  size: string;
-  condition: string;
-  price: number | string;
-  status: ProductStatus;
-  city: string;
-  media: { url: string; position: number }[];
-  store: { id: number | string; name: string };
-}
-
-function blankToUndefined(value: string): string | undefined {
-  return value === '' ? undefined : value;
-}
-
-function mapPublicDetail(item: ApiPublicProductDetail): SellerProductDetail {
-  return {
-    id: String(item.id),
-    name: item.name,
-    price: Number(item.price),
-    status: item.status,
-    description: blankToUndefined(item.description),
-    category: blankToUndefined(item.category),
-    size: blankToUndefined(item.size),
-    color: blankToUndefined(item.color),
-    brand: blankToUndefined(item.brand),
-    condition: blankToUndefined(item.condition),
-    style: blankToUndefined(item.style),
-    images: [...item.media].sort((a, b) => a.position - b.position).map((media) => media.url),
-    quantity: 1,
-    store: { id: String(item.store.id), name: item.store.name, city: item.city || null },
-    // O back acumula as correções no `PATCH`; o formulário só manda as novas.
-    aiCorrections: [],
-  };
-}
-
-/**
- * Fallback provisório (`docs/adr/0002`, #297) até a back-end#234: o detalhe
- * público traz todos os campos do formulário, mas responde
- * `PRODUCT_NOT_FOUND` para peça `despublicado`.
- */
-async function apiGetPublicDetail(id: string): Promise<SellerProductDetail> {
-  try {
-    const { data } = await httpClient.get<ApiPublicProductDetail>(`/products/${id}`);
-    return mapPublicDetail(data);
-  } catch (error) {
-    const normalized = toSellerProductError(error);
-    if (normalized.code === 'PRODUCT_NOT_FOUND') {
-      throw notAvailableYet(
-        'Editar peça pausada ainda não está disponível. Republique a peça para editá-la.',
-      );
-    }
-    throw normalized;
-  }
-}
-
-/**
- * `GET /users/me/products/{id}` — pedida na #202 e registrada como
- * back-end#234; ainda não existe na `develop` do back (29/09). O contrato
- * esperado é o mesmo `ProductDraftResponse` das transições, em qualquer
- * status. Enquanto a rota não chega, cai no detalhe público
- * (`docs/adr/0002`); remover o fallback quando a #234 entrar.
- */
+/** Busca o detalhe da peça pela rota autenticada, em qualquer status (#339). */
 async function apiGetById(id: string): Promise<SellerProductDetail> {
   try {
     const { data } = await httpClient.get<ApiSellerProductDetail>(`/users/me/products/${id}`);
     return mapSellerProductDetail(data);
   } catch (error) {
-    const normalized = toSellerProductError(error);
-    if (isMissingRoute(normalized)) return apiGetPublicDetail(id);
-    throw normalized;
+    throw toSellerProductError(error);
   }
 }
 
@@ -657,8 +587,8 @@ export async function createDraft(
 
 /**
  * Peça do vendedor em qualquer status, pro formulário de edição (#216/#221) —
- * o detalhe público não serve: responde 404 pra `despublicado` e não traz
- * rascunho. A rota real é a back-end#234 (ver `apiGetById`).
+ * o detalhe público não serve: responde 404 para rascunhos e peças
+ * despublicadas. A rota autenticada atende o dono em qualquer status (#339).
  */
 export async function getById(id: string): Promise<SellerProductDetail> {
   return useMocks ? mockGetById(id) : apiGetById(id);
@@ -697,17 +627,27 @@ interface ApiMediaItem {
 }
 
 /**
+ * `photo` entra na galeria pública da peça; `label` é a foto da etiqueta
+ * (#318), que só serve para a IA ler marca e composição.
+ *
+ * PALPITE: o back ainda não fixou como a etiqueta é marcada no upload
+ * (back-end#257). `kind: 'label'` é a melhor aposta; ajustar aqui (e nos
+ * testes) quando ele fechar.
+ */
+export type MediaKind = 'photo' | 'label';
+
+/**
  * `POST /api/users/me/media` (back-end#73). A URL que volta é absoluta e
  * aponta para a própria API, porque quem baixa a foto depois é o servidor,
  * ao gerar a sugestão do anúncio: URL relativa ou `blob:` do navegador não
  * serve para ele.
  */
-async function apiUploadMedia(files: File[]): Promise<string[]> {
+async function apiUploadMedia(files: File[], kind: MediaKind): Promise<string[]> {
   const formData = new FormData();
   for (const file of files) {
     formData.append('files', file);
   }
-  formData.append('kind', 'photo');
+  formData.append('kind', kind);
 
   try {
     const { data } = await httpClient.post<{ items: ApiMediaItem[] }>('/users/me/media', formData);
@@ -718,6 +658,6 @@ async function apiUploadMedia(files: File[]): Promise<string[]> {
 }
 
 /** Envia as fotos e devolve as URLs, na mesma ordem dos arquivos. */
-export async function uploadMedia(files: File[]): Promise<string[]> {
-  return useMocks ? mockUploadMedia(files) : apiUploadMedia(files);
+export async function uploadMedia(files: File[], kind: MediaKind = 'photo'): Promise<string[]> {
+  return useMocks ? mockUploadMedia(files) : apiUploadMedia(files, kind);
 }

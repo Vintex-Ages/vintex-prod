@@ -137,6 +137,7 @@ describe('<Register />', () => {
         is_admin: false,
       },
       access_token: 'tok-abc',
+      refresh_token: 'refresh-tok-abc',
     });
     const user = userEvent.setup();
     renderRegister();
@@ -166,6 +167,7 @@ describe('<Register />', () => {
         is_admin: false,
       },
       access_token: 'tok-abc',
+      refresh_token: 'refresh-tok-abc',
     });
     const user = userEvent.setup();
     renderRegister({ pathname: '/register', state: { from: '/catalog?category=roupas' } });
@@ -188,6 +190,7 @@ describe('<Register />', () => {
         is_admin: false,
       },
       access_token: 'tok-abc',
+      refresh_token: 'refresh-tok-abc',
     });
     const user = userEvent.setup();
     renderRegister();
@@ -292,6 +295,7 @@ describe('<Register />', () => {
     mockedRegister.mockResolvedValueOnce({
       user: { id: 'u_1', name: 'Ana', email: 'ana@exemplo.com', is_seller: false, is_admin: false },
       access_token: 'tok',
+      refresh_token: 'refresh-tok',
     });
     const user = userEvent.setup();
     renderRegister();
