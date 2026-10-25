@@ -12,6 +12,11 @@ import type { OrderStatus } from '@/types/order';
  * data do `history` (a última entrada do status, se houver repetição); futuras
  * nunca mostram data, mesmo que o `history` traga uma.
  *
+ * Marcadores (Figma Meus pedidos T11, node 1001:1421): concluída com check em
+ * `verde-rs`; atual em `dourado` e futuras em `papel-profundo`, ambas com o
+ * número da etapa (1 a 6, posição nas seis, não na lista filtrada). O aviso de
+ * expirado tem borda `vermelho-escuro`, para não parecer a etapa atual.
+ *
  * `expirado` não é etapa: é a saída negativa. Nesse caso aparecem só as etapas
  * com entrada no `history` e, no lugar das futuras, o aviso "Pedido expirado",
  * sem etapa atual.
@@ -63,15 +68,16 @@ function formatDate(iso: string): string | null {
   return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}`;
 }
 
-function StepMarker({ state }: { state: StepState }) {
+/** `number` é a posição (1 a 6) nas seis etapas, mostrada nas não concluídas. */
+function StepMarker({ state, number }: { state: StepState; number: number }) {
   return (
     <span
       aria-hidden="true"
       className={clsx(
-        'relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+        'relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-body-sm font-semibold',
         state === 'completed' && 'border-verde-rs bg-verde-rs text-branco-quente',
-        state === 'current' && 'border-vermelho-escuro bg-vermelho-escuro text-branco-quente',
-        state === 'upcoming' && 'border-linha bg-papel',
+        state === 'current' && 'border-dourado bg-dourado text-branco-quente',
+        state === 'upcoming' && 'border-linha bg-papel-profundo text-texto-auxiliar',
       )}
     >
       {state === 'completed' ? (
@@ -85,7 +91,9 @@ function StepMarker({ state }: { state: StepState }) {
             strokeLinejoin="round"
           />
         </svg>
-      ) : null}
+      ) : (
+        number
+      )}
     </span>
   );
 }
@@ -134,7 +142,7 @@ function OrderStatusTimeline({ current, history }: OrderStatusTimelineProps) {
             className={clsx('relative flex gap-3', hasNext && 'pb-6')}
           >
             {hasNext ? <Connector done={state === 'completed'} /> : null}
-            <StepMarker state={state} />
+            <StepMarker state={state} number={STEPS.indexOf(step) + 1} />
             <div className="flex min-h-8 flex-col justify-center">
               <span
                 className={clsx(
@@ -159,7 +167,7 @@ function OrderStatusTimeline({ current, history }: OrderStatusTimelineProps) {
         <li data-state="expired" className="relative flex gap-3">
           <span
             aria-hidden="true"
-            className="relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dourado bg-papel"
+            className="relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-vermelho-escuro bg-papel"
           />
           <div className="flex min-h-8 flex-col justify-center">
             <span className="text-body-sm font-semibold text-tinta">Pedido expirado</span>

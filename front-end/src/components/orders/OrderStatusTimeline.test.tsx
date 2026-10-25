@@ -16,6 +16,11 @@ function getSteps() {
   return within(screen.getByRole('list')).getAllByRole('listitem');
 }
 
+// O conector também é aria-hidden; o marcador é o círculo.
+function getMarker(step: HTMLElement) {
+  return step.querySelector<HTMLElement>(':scope > [aria-hidden="true"].rounded-full');
+}
+
 describe('<OrderStatusTimeline />', () => {
   // Objetivo: etapas até a atual com data (dd/mm/aaaa hh:mm em São Paulo), demais futuras.
   it('com current = confirmado, mostra as três primeiras com data e as três últimas futuras', () => {
@@ -135,6 +140,54 @@ describe('<OrderStatusTimeline />', () => {
     expect(within(first).getByText('Aguardando comprovante')).toBeInTheDocument();
     expect(first.querySelector('time')).toBeNull();
     expect(within(second).getByText('02/10/2026 09:05')).toBeInTheDocument();
+  });
+
+  describe('marcadores (Figma Meus pedidos T11, node 1001:1421)', () => {
+    it('pinta a etapa atual de dourado, com o número em branco-quente', () => {
+      render(<OrderStatusTimeline current="confirmado" history={history} />);
+
+      const marker = getMarker(getSteps()[2]);
+      expect(marker).toHaveAttribute('aria-hidden', 'true');
+      expect(marker).toHaveClass('bg-dourado', 'border-dourado', 'text-branco-quente');
+      expect(marker).not.toHaveClass('bg-vermelho-escuro', 'border-vermelho-escuro');
+      expect(marker).toHaveTextContent(/^3$/);
+    });
+
+    it('numera as futuras pela posição nas seis etapas, em texto-auxiliar sobre papel-profundo', () => {
+      render(<OrderStatusTimeline current="preparando" history={history} />);
+
+      const steps = getSteps();
+      expect(getMarker(steps[3])).toHaveTextContent(/^4$/);
+      [5, 6].forEach((number) => {
+        const marker = getMarker(steps[number - 1]);
+        expect(marker).toHaveAttribute('aria-hidden', 'true');
+        expect(marker).toHaveTextContent(new RegExp(`^${number}$`));
+        expect(marker).toHaveClass('text-texto-auxiliar', 'bg-papel-profundo', 'border-linha');
+      });
+    });
+
+    it('mantém o check verde, sem número, nas concluídas', () => {
+      render(<OrderStatusTimeline current="confirmado" history={history} />);
+
+      const marker = getMarker(getSteps()[0]);
+      expect(marker).toHaveClass('bg-verde-rs');
+      expect(marker?.querySelector('svg')).not.toBeNull();
+      expect(marker).toHaveTextContent(/^$/);
+    });
+
+    it('usa borda vermelho-escuro no aviso de expirado, não dourado', () => {
+      render(
+        <OrderStatusTimeline
+          current="expirado"
+          history={[{ status: 'aguardando_comprovante', at: '2026-10-01T17:30:00Z' }]}
+        />,
+      );
+
+      const notice = screen.getByText('Pedido expirado').closest('li') as HTMLElement;
+      const marker = getMarker(notice);
+      expect(marker).toHaveClass('border-vermelho-escuro');
+      expect(marker).not.toHaveClass('border-dourado', 'bg-dourado');
+    });
   });
 
   // RN-83: sem prazo de entrega nem rastreio de transportadora.
