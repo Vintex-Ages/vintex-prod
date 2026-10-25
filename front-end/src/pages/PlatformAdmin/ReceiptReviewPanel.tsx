@@ -38,14 +38,15 @@ type OpenDialog = 'approve' | 'reject' | null;
 const brl = (reais: number) => formatCentsToBRL(Math.round(reais * 100));
 
 /**
- * Tamanho dos botões de ação no Figma (texto de 11.5px, padding 15.2 × 11.2).
+ * Botões de ação mais compactos, como no Figma (texto de 11.5px), mas com os
+ * tokens mais próximos (`label`, `px-4`) e a altura de toque do `Button`.
  * Só aqui: o `Button` compartilhado não muda. O `!` (important) é o que faz
  * valer sobre as classes de tamanho do próprio `Button`.
  */
-const ACTION_BUTTON = '!min-h-0 !px-[15px] !py-[11px] !text-[11.5px] !font-bold';
+const ACTION_BUTTON = '!px-4 !text-label !font-bold';
 
 const rowClass =
-  'flex min-h-[30px] items-center justify-between gap-4 border-b border-linha py-1 font-ui text-[13px] last:border-b-0';
+  'flex min-h-8 items-center justify-between gap-4 border-b border-linha py-1 font-ui text-body-sm last:border-b-0';
 
 function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -109,10 +110,8 @@ function ReceiptReviewPanel({ item, onUpdated }: ReceiptReviewPanelProps) {
     >
       <div className="flex flex-col gap-3 tablet:flex-row tablet:items-start tablet:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="font-display text-[30px] leading-tight tracking-[-0.6px] text-tinta">
-            Pedido #{item.orderId}
-          </h2>
-          <p className="font-ui text-[12.5px] text-texto-auxiliar">
+          <h2 className="font-display text-h3 text-tinta">Pedido #{item.orderId}</h2>
+          <p className="font-ui text-label text-texto-auxiliar">
             Comprovante anexado {formatTimeAgo(payment.submittedAt)} (
             {formatClock(payment.submittedAt)}) · Comprador: {item.buyer.name}
           </p>
@@ -125,7 +124,7 @@ function ReceiptReviewPanel({ item, onUpdated }: ReceiptReviewPanelProps) {
       <hr className="border-linha" />
 
       <div className="flex flex-col gap-6 web:flex-row web:gap-10">
-        <div className="flex h-[340px] flex-1 flex-col items-center justify-center gap-3 border border-dashed border-linha bg-papel-profundo p-4 web:basis-0">
+        <div className="flex h-80 flex-1 flex-col items-center justify-center gap-3 border border-dashed border-linha bg-papel-profundo p-4 web:basis-0">
           {file.status === 'loading' && (
             <p className="font-ui text-body-sm text-texto-auxiliar">Carregando comprovante…</p>
           )}
