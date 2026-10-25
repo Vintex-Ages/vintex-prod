@@ -46,7 +46,8 @@ export function useAddressLookup(
 
         setCepStatus('resolved');
 
-        onChange('street', address.street);
+        // CEP geral de cidade vem sem logradouro: mantém a rua já digitada.
+        if (address.street) onChange('street', address.street);
         onChange('district', address.neighborhood);
         onChange('city', address.city);
         onChange('state', address.state);

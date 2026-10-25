@@ -41,6 +41,27 @@ describe('useAddressLookup', () => {
     expect(onChange).toHaveBeenCalledWith('state', 'RS');
   });
 
+  // CEP geral de cidade: o ViaCEP devolve `logradouro` vazio.
+  it('não apaga a rua quando o CEP resolvido vem sem logradouro', async () => {
+    vi.mocked(lookupAddress).mockResolvedValue({
+      street: '',
+      neighborhood: '',
+      city: 'Gramado',
+      state: 'RS',
+    });
+
+    const onChange = vi.fn();
+
+    const { result } = renderHook(() => useAddressLookup('95670-000', onChange));
+
+    await waitFor(() => {
+      expect(result.current.cepStatus).toBe('resolved');
+    });
+
+    expect(onChange).not.toHaveBeenCalledWith('street', expect.anything());
+    expect(onChange).toHaveBeenCalledWith('city', 'Gramado');
+  });
+
   it('fica como not_found quando o CEP não existe', async () => {
     vi.mocked(lookupAddress).mockResolvedValue(null);
 
