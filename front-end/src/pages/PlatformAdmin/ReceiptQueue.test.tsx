@@ -3,7 +3,13 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
-import { AdminReceiptError, listReceipts } from '@/services/adminReceiptService';
+import { ToastProvider } from '@/context/ToastContext';
+import {
+  AdminReceiptError,
+  approveReceipt,
+  downloadReceipt,
+  listReceipts,
+} from '@/services/adminReceiptService';
 import ReceiptQueue from './ReceiptQueue';
 import type { ReceiptReview } from '@/types/admin';
 
@@ -46,6 +52,8 @@ function review(
 vi.mock('@/services/adminReceiptService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/adminReceiptService')>()),
   listReceipts: vi.fn(),
+  approveReceipt: vi.fn(),
+  downloadReceipt: vi.fn(),
 }));
 
 const page = (items = [review()]) => ({
@@ -71,11 +79,13 @@ const AUTH: AuthContextValue = {
   refreshUser: async () => {},
 };
 
-function renderPage(props: Parameters<typeof ReceiptQueue>[0] = {}) {
+function renderPage() {
   return render(
     <MemoryRouter>
       <AuthContext.Provider value={AUTH}>
-        <ReceiptQueue {...props} />
+        <ToastProvider>
+          <ReceiptQueue />
+        </ToastProvider>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
@@ -83,6 +93,12 @@ function renderPage(props: Parameters<typeof ReceiptQueue>[0] = {}) {
 
 beforeEach(() => {
   vi.mocked(listReceipts).mockReset().mockResolvedValue(page());
+  vi.mocked(downloadReceipt)
+    .mockReset()
+    .mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
+  vi.mocked(approveReceipt).mockReset();
+  URL.createObjectURL = vi.fn(() => 'blob:recibo');
+  URL.revokeObjectURL = vi.fn();
 });
 
 afterEach(cleanup);
@@ -179,25 +195,56 @@ describe('<ReceiptQueue />', () => {
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).toBeNull();
   });
 
-  it('"Ver comprovante" abre o detalhe sem sair da fila', async () => {
-    renderPage({
-      renderDetail: (item, onClose) => (
-        <div role="dialog" aria-label={`Detalhe ${item.orderId}`}>
-          <button onClick={onClose}>Fechar</button>
-        </div>
-      ),
-    });
+  it('"Ver comprovante" abre o painel do pedido sem sair da fila', async () => {
+    renderPage();
+    expect(screen.queryByRole('region', { name: /Conferência do pedido/ })).toBeNull();
 
     await userEvent.click(
-      await screen.findByRole('button', {
-        name: 'Ver comprovante do pedido #8921',
-      }),
+      await screen.findByRole('button', { name: 'Ver comprovante do pedido #8921' }),
     );
 
-    expect(screen.getByRole('dialog', { name: 'Detalhe 8921' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Conferência do pedido #8921' })).toBeInTheDocument();
+    expect(downloadReceipt).toHaveBeenCalledWith('8921');
     expect(screen.getByText('#8921')).toBeInTheDocument(); // a fila continua
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Fechar' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+  it('escolher outro pedido troca o painel', async () => {
+    vi.mocked(listReceipts).mockResolvedValue(
+      page([review({ orderId: '1' }), review({ orderId: '2' })]),
+    );
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Ver comprovante do pedido #1' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Ver comprovante do pedido #2' }));
+
+    expect(screen.getByRole('region', { name: 'Conferência do pedido #2' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Conferência do pedido #1' })).toBeNull();
+  });
+
+  it('aprovar atualiza a linha da fila e o painel', async () => {
+    vi.mocked(approveReceipt).mockResolvedValue(
+      review({
+        payment: {
+          status: 'aprovado',
+          validatedBy: { id: 'u_3', name: 'Eva Vieira' },
+          validatedAt: '2026-10-01T14:32:00.000Z',
+        },
+      }),
+    );
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Ver comprovante do pedido #8921' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Aprovar pagamento/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar aprovação' }));
+
+    expect(await screen.findByText(/Validado por Eva Vieira em/)).toBeInTheDocument();
+    // selo na linha da fila + selo no painel
+    expect(screen.getAllByText('Aprovado')).toHaveLength(2);
+    expect(screen.queryByText('Pendente de validação')).toBeNull();
+    expect(listReceipts).toHaveBeenCalledTimes(1);
   });
 });

@@ -117,4 +117,41 @@ describe('SearchBar', () => {
       expect(button).toHaveTextContent('Buscar');
     });
   });
+
+  describe('busca por foto (onImageSelect)', () => {
+    it('não mostra o botão de câmera sem onImageSelect', () => {
+      render(<SearchBar value="" onChange={() => {}} onSubmit={() => {}} />);
+
+      expect(screen.queryByLabelText('Buscar por foto')).not.toBeInTheDocument();
+    });
+
+    it('abre a câmera no celular e aceita só imagem', () => {
+      render(
+        <SearchBar value="" onChange={() => {}} onSubmit={() => {}} onImageSelect={() => {}} />,
+      );
+
+      const input = screen.getByLabelText('Buscar por foto');
+      expect(input).toHaveAttribute('type', 'file');
+      expect(input).toHaveAttribute('accept', 'image/*');
+      expect(input).toHaveAttribute('capture', 'environment');
+    });
+
+    it('entrega a foto escolhida em onImageSelect', async () => {
+      const onImageSelect = vi.fn();
+      const user = userEvent.setup();
+      const file = new File(['x'], 'look.jpg', { type: 'image/jpeg' });
+
+      render(
+        <SearchBar
+          value=""
+          onChange={() => {}}
+          onSubmit={() => {}}
+          onImageSelect={onImageSelect}
+        />,
+      );
+      await user.upload(screen.getByLabelText('Buscar por foto'), file);
+
+      expect(onImageSelect).toHaveBeenCalledWith(file);
+    });
+  });
 });
