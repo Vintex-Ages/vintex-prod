@@ -235,6 +235,19 @@ describe('<AppRoutes />', () => {
       expect(screen.getByTestId('route-path').textContent).toBe(path);
     });
 
+    // #322: o detalhe deixou de ser placeholder.
+    it('/profile/orders/:id monta o OrderDetail de verdade, não o texto provisório', async () => {
+      renderAtWithAuth(
+        '/profile/orders/123',
+        makeAuthValue({ isAuthenticated: true, user: BUYER }),
+      );
+
+      expect(
+        await screen.findByRole('link', { name: /Voltar para Meus pedidos/ }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Essa tela ainda não foi implementada.')).not.toBeInTheDocument();
+    });
+
     it('orderPaymentPath monta /profile/orders/123/payment e abre o pagamento', async () => {
       const path = routePaths.orderPaymentPath('123');
       expect(path).toBe('/profile/orders/123/payment');
