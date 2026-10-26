@@ -11,6 +11,7 @@ import { CATEGORIES } from '@/components/catalog/categories';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import FilterToggle from '@/components/catalog/FilterToggle';
 import { useAuth } from '@/context/useAuth';
+import { useFavorites } from '@/context/useFavorites';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
 import { useHomeFeed } from '@/hooks/useHomeFeed';
@@ -60,8 +61,9 @@ function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
-  // ponytail: Home favorites are page-local toggles until a shared favorites service exists.
-  const [favorites, setFavorites] = useState<string[]>([]);
+  // Favoritos vêm do contexto compartilhado (#328): o mesmo id marcado aqui
+  // aparece marcado no detalhe da peça, e vice-versa.
+  const { ids: favoriteIds, toggle: toggleFavorite } = useFavorites();
   const {
     feed,
     loading,
@@ -76,7 +78,6 @@ function Home() {
   useEffect(() => {
     if (!isAuthenticated) {
       setPreferenceLabels([]);
-      setFavorites([]);
       return;
     }
 
@@ -100,10 +101,16 @@ function Home() {
     };
   }, [isAuthenticated]);
 
-  function toggleFavorite(id: string) {
-    setFavorites((current) =>
-      current.includes(id) ? current.filter((favorite) => favorite !== id) : [...current, id],
-    );
+  /**
+   * Coração do card (FE-US013-1, #328). `toggle` é otimista e já desfaz o
+   * coração quando a API falha — inclusive no `404` de peça que deixou de
+   * existir. Por isso o erro morre aqui: a tela não mente nem mostra um erro
+   * genérico, o coração só volta ao que era.
+   */
+  function handleToggleFavorite(id: string) {
+    void toggleFavorite(id).catch(() => {
+      // Silencioso de propósito: o `FavoritesContext` desfez o coração.
+    });
   }
 
   function searchCatalog(term: string) {
@@ -351,8 +358,8 @@ function Home() {
               loading={loading}
               productPath={productDetail}
               compactCards={isAuthenticated}
-              onToggleFavorite={isAuthenticated ? toggleFavorite : undefined}
-              isFavorite={isAuthenticated ? (id) => favorites.includes(id) : undefined}
+              onToggleFavorite={isAuthenticated ? handleToggleFavorite : undefined}
+              isFavorite={isAuthenticated ? (id) => favoriteIds.has(id) : undefined}
               // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
               // aqui também empilharia duas entradas no histórico e o "voltar" não
               // sairia da peça; `onOpen` fica como ponto de telemetria.
