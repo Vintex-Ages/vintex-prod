@@ -1,5 +1,9 @@
 import Button from '@/components/common/Button';
-import { averagePrice, priceRangePosition } from '@/utils/priceSuggestion';
+import {
+  averagePrice,
+  PRICE_OUT_OF_RANGE_MESSAGE,
+  priceRangePosition,
+} from '@/utils/priceSuggestion';
 import { formatCentsToBRL, formatPieceCount } from '@/utils/format';
 
 /**
@@ -24,11 +28,6 @@ export type PriceSuggestionProps = {
   /** Recebe o valor sugerido (média da faixa), em reais. */
   onUse: (value: number) => void;
 };
-
-const OUT_OF_RANGE_MESSAGE = {
-  below: 'Seu preço está abaixo da faixa sugerida. Você pode mantê-lo se preferir.',
-  above: 'Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.',
-} as const;
 
 /** `formatCentsToBRL` trabalha em centavos; o componente trabalha em reais. */
 function formatReais(value: number): string {
@@ -81,7 +80,7 @@ function PriceSuggestion({
     ready && ready.min !== null && ready.max !== null ? { min: ready.min, max: ready.max } : null;
   const position = range ? priceRangePosition(currentPrice, range) : 'none';
   const outOfRangeMessage =
-    position === 'below' || position === 'above' ? OUT_OF_RANGE_MESSAGE[position] : null;
+    position === 'below' || position === 'above' ? PRICE_OUT_OF_RANGE_MESSAGE[position] : null;
 
   return (
     <div className="flex flex-col gap-3" aria-busy={isLoading}>
