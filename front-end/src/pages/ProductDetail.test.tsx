@@ -3,12 +3,15 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from '@/components/layout/Header';
+import { ProductGrid } from '@/components/product/ProductGrid';
 import { AuthProvider } from '@/context/AuthContext';
 import { CartProvider } from '@/context/CartContext';
+import { FavoritesProvider } from '@/context/FavoritesContext';
 import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
 import { useAuth } from '@/context/useAuth';
+import { useFavorites } from '@/context/useFavorites';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { PENDING_ACTION_STORAGE_KEY } from '@/hooks/useProtectedAction';
 import { paths } from '@/routes/paths';
@@ -22,11 +25,28 @@ vi.mock('@/services/cartService', () => ({
   removeItem: vi.fn(),
 }));
 
+/**
+ * Favoritos (#328): os wrappers continuam chamando o mock real do service
+ * (`sessionStorage` por usuário); só assim cada teste pode forçar uma falha
+ * pontual — o `404` de peça que deixou de existir — sem perder o resto.
+ */
+vi.mock('@/services/favoriteService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/favoriteService')>();
+  return {
+    ...actual,
+    listFavoriteIds: vi.fn(actual.listFavoriteIds),
+    addFavorite: vi.fn(actual.addFavorite),
+    removeFavorite: vi.fn(actual.removeFavorite),
+  };
+});
+
 import { addItem, getCart, removeItem } from '@/services/cartService';
+import { addFavorite } from '@/services/favoriteService';
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedAddItem = vi.mocked(addItem);
 const mockedRemoveItem = vi.mocked(removeItem);
+const mockedAddFavorite = vi.mocked(addFavorite);
 
 afterEach(() => {
   cleanup();
@@ -100,9 +120,40 @@ function CheckoutDestination() {
   );
 }
 
+/** O mesmo produto da página, no formato do card do catálogo. */
+const CARD_PRODUCT = {
+  id: '1',
+  name: 'Jaqueta jeans vintage clara',
+  price: 159.9,
+  coverImageUrl: null,
+  store: { id: '1', name: 'Brechó Mercado Público' },
+};
+
+/**
+ * Card de verdade ao lado do detalhe (#328): a grade é a mesma da Home, só
+ * que aqui ela divide o `FavoritesProvider` com a página do produto. É o que
+ * prova que favoritar num lado aparece no outro.
+ */
+function CardProbe() {
+  const { ids, toggle } = useFavorites();
+
+  return (
+    <section aria-label="Grade de favoritos">
+      <ProductGrid
+        products={[CARD_PRODUCT]}
+        onOpen={() => {}}
+        isFavorite={(id) => ids.has(id)}
+        onToggleFavorite={(id) => {
+          void toggle(id).catch(() => undefined);
+        }}
+      />
+    </section>
+  );
+}
+
 function renderAt(
   path: string,
-  options?: { authenticated?: boolean; cartValue?: CartContextValue },
+  options?: { authenticated?: boolean; cartValue?: CartContextValue; withCard?: boolean },
 ) {
   if (options?.authenticated) {
     window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
@@ -114,16 +165,30 @@ function renderAt(
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <CartContext.Provider value={cartValue}>
-          <ToastProvider>
-            <Routes>
-              <Route path={paths.product} element={<ProductDetail />} />
-              <Route path={paths.login} element={<LoginProbe />} />
-              <Route path={paths.cart} element={<CartDestination />} />
-              <Route path={paths.checkout} element={<CheckoutDestination />} />
-            </Routes>
-          </ToastProvider>
-        </CartContext.Provider>
+        <FavoritesProvider>
+          <CartContext.Provider value={cartValue}>
+            <ToastProvider>
+              <Routes>
+                <Route
+                  path={paths.product}
+                  element={
+                    options?.withCard ? (
+                      <>
+                        <ProductDetail />
+                        <CardProbe />
+                      </>
+                    ) : (
+                      <ProductDetail />
+                    )
+                  }
+                />
+                <Route path={paths.login} element={<LoginProbe />} />
+                <Route path={paths.cart} element={<CartDestination />} />
+                <Route path={paths.checkout} element={<CheckoutDestination />} />
+              </Routes>
+            </ToastProvider>
+          </CartContext.Provider>
+        </FavoritesProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -138,13 +203,15 @@ function renderIntegratedAt(path: string) {
       <AuthProvider>
         <NotificationsProvider>
           <CartProvider>
-            <ToastProvider>
-              <Header />
-              <Routes>
-                <Route path={paths.product} element={<ProductDetail />} />
-                <Route path={paths.cart} element={<CartDestination />} />
-              </Routes>
-            </ToastProvider>
+            <FavoritesProvider>
+              <ToastProvider>
+                <Header />
+                <Routes>
+                  <Route path={paths.product} element={<ProductDetail />} />
+                  <Route path={paths.cart} element={<CartDestination />} />
+                </Routes>
+              </ToastProvider>
+            </FavoritesProvider>
           </CartProvider>
         </NotificationsProvider>
       </AuthProvider>
@@ -415,6 +482,71 @@ describe('<ProductDetail />', () => {
 
       const storeLink = screen.getByRole('link', { name: /Ver loja/ });
       expect(storeLink.getAttribute('href')).toMatch(/^\/store\//);
+    });
+  });
+
+  describe('favoritar de verdade (FE-US013-1, #328)', () => {
+    // Objetivo declarado do ticket: estado compartilhado entre detalhe e card.
+    it('favoritar no detalhe reflete no card', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1', { authenticated: true, withCard: true });
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+
+      const card = screen.getByRole('region', { name: 'Grade de favoritos' });
+      expect(within(card).getByRole('button', { name: 'Adicionar aos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+
+      const detailHeart = screen
+        .getAllByRole('button', { name: 'Adicionar aos favoritos' })
+        .find((button) => !card.contains(button));
+      expect(detailHeart).toBeDefined();
+
+      await user.click(detailHeart!);
+
+      expect(within(card).getByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+
+    it('deslogado: depois do login, a peça fica favoritada', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+      await screen.findByRole('dialog');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      expect(await screen.findByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(mockedAddFavorite).toHaveBeenCalledWith('u_1', '1');
+    });
+
+    // Objetivo declarado do ticket: falha da API desfaz o coração, sem erro genérico.
+    it('404 no PUT desfaz o coração sem erro genérico', async () => {
+      const user = userEvent.setup();
+      mockedAddFavorite.mockRejectedValueOnce({
+        code: 'PRODUCT_NOT_FOUND',
+        message: 'Peça não encontrada.',
+      });
+      renderAt('/product/1', { authenticated: true });
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toHaveAttribute(
+          'aria-pressed',
+          'false',
+        ),
+      );
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
 
