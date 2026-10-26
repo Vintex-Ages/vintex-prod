@@ -7,6 +7,7 @@ import type { Product } from '@/types/product';
 const store: StoreSummary = {
   id: '7',
   name: 'Brechó Aurora',
+  description: null,
   logoUrl: null,
   city: 'Porto Alegre',
   state: 'RS',
