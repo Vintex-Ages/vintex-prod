@@ -168,18 +168,16 @@ describe('<AppRoutes />', () => {
       // saíram daqui: viraram páginas reais.
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
-      ['/stores', 'Brechós', null],
-    ] as const)(
-      'reconhece %s e renderiza seu placeholder no Layout',
-      async (path, heading, user) => {
-        renderAtWithAuth(path, makeAuthValue({ isAuthenticated: user !== null, user }));
+      // `/stores` deixou de ser placeholder na #330: é a página real de brechós.
+      ['/stores', 'Brechós do RS', null],
+    ] as const)('reconhece %s e renderiza a tela no Layout', async (path, heading, user) => {
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: user !== null, user }));
 
-        expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
-        expect(screen.getByTestId('route-path').textContent).toBe(path);
-        expect(screen.getByRole('banner')).toBeInTheDocument();
-        expect(screen.getByRole('contentinfo')).toBeInTheDocument();
-      },
-    );
+      expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(path);
+      expect(screen.getByRole('banner')).toBeInTheDocument();
+      expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    });
 
     // #319: o checkout recebe as peças pela navegação; sem elas, volta ao carrinho.
     it('comprador em /checkout sem peças escolhidas volta ao carrinho', async () => {

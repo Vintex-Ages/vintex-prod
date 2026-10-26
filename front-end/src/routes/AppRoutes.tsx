@@ -1,6 +1,5 @@
 import { matchPath, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import Container from '@/components/layout/Container';
 import Home from '@/pages/Home';
 import Catalog from '@/pages/Catalog/Catalog';
 import ProductDetail from '@/pages/ProductDetail';
@@ -18,6 +17,7 @@ import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
+import Stores from '@/pages/Stores/Stores';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import Favorites from '@/pages/Profile/Favorites';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
@@ -65,10 +65,10 @@ function WithLayout() {
  * (perfil da loja é vitrine, não área do vendedor).
  *
  * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; `/stores` é
- * pública. Entram dentro do `WithLayout`; `/profile/favorites` já tem tela
- * (FE-US013-2, #329) e os placeholders que restam (pagamento do pedido e
- * `/stores`) serão trocados pela task correspondente. Comprovantes exigem papel
- * admin e já têm tela (fila, FE-US032-1), fora do `WithLayout`.
+ * pública. Entram dentro do `WithLayout` e todas já têm tela: favoritos
+ * (FE-US013-2, #329), pagamento do pedido (FE-US022-2, #320) e brechós
+ * (FE-US011-1, #330). Comprovantes exigem papel admin e já têm tela (fila,
+ * FE-US032-1), fora do `WithLayout`.
  */
 function AppRoutes() {
   return (
@@ -172,17 +172,7 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
-        <Route
-          path={paths.stores}
-          element={
-            <Container as="main" className="flex flex-col gap-6 py-10">
-              <h1 className="font-display text-h2 text-tinta">Brechós</h1>
-              <p className="font-ui text-body text-texto-auxiliar">
-                Essa tela ainda não foi implementada.
-              </p>
-            </Container>
-          }
-        />
+        <Route path={paths.stores} element={<Stores />} />
       </Route>
       <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path={paths.vintex} element={<VintexAI />} />
