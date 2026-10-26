@@ -18,6 +18,7 @@ import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
+import Stores from '@/pages/Stores/Stores';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
@@ -179,17 +180,7 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
-        <Route
-          path={paths.stores}
-          element={
-            <Container as="main" className="flex flex-col gap-6 py-10">
-              <h1 className="font-display text-h2 text-tinta">Brechós</h1>
-              <p className="font-ui text-body text-texto-auxiliar">
-                Essa tela ainda não foi implementada.
-              </p>
-            </Container>
-          }
-        />
+        <Route path={paths.stores} element={<Stores />} />
       </Route>
       <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path={paths.vintex} element={<VintexAI />} />
