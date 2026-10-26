@@ -4,13 +4,16 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { getFeedWithDetails } from '@/services/catalogService';
-import { getRecommendations, type Recommendations } from '@/services/recommendationService';
+import {
+  getRecommendationsWithDetails,
+  type RecommendationsWithDetails,
+} from '@/services/recommendationService';
 import type { AuthUser } from '@/types/auth';
-import type { Paginated, Product, ProductDetail } from '@/types/product';
+import type { Paginated, ProductDetail } from '@/types/product';
 import Home from './Home';
 
 vi.mock('@/services/catalogService', () => ({ getFeedWithDetails: vi.fn() }));
-vi.mock('@/services/recommendationService', () => ({ getRecommendations: vi.fn() }));
+vi.mock('@/services/recommendationService', () => ({ getRecommendationsWithDetails: vi.fn() }));
 
 const feed: Paginated<ProductDetail> = {
   items: [
@@ -69,21 +72,34 @@ const BUYER: AuthUser = {
   is_admin: false,
 };
 
-/** Recomendações (FE-US029-1, #325): itens no formato do feed, sem os detalhes. */
-function recommendation(id: string, name: string): Product {
+/** Recomendações (FE-US029-1, #325), já com o detalhe que o card mostra. */
+function recommendation(
+  id: string,
+  name: string,
+  detail: Partial<ProductDetail> = {},
+): ProductDetail {
   return {
     id,
     name,
     price: 150,
     coverImageUrl: null,
     store: { id: 'loja-3', name: 'Brechó Cris' },
+    category: 'Roupas',
+    size: 'M',
+    color: 'Preto',
+    brand: 'Vintage',
+    condition: 'Usado',
+    description: '',
+    status: 'ativo',
+    media: [],
+    ...detail,
   };
 }
 
 function recommendations(
-  items: Product[],
-  overrides: Partial<Recommendations> = {},
-): Recommendations {
+  items: ProductDetail[],
+  overrides: Partial<RecommendationsWithDetails> = {},
+): RecommendationsWithDetails {
   return { items, personalized: true, page: 1, pageSize: 20, total: items.length, ...overrides };
 }
 
@@ -122,7 +138,9 @@ function renderHome(user: AuthUser | null = null) {
 beforeEach(() => {
   vi.mocked(getFeedWithDetails).mockReset();
   // Logado, a grade vem das recomendações; por padrão, os mesmos itens do feed.
-  vi.mocked(getRecommendations).mockReset().mockResolvedValue(recommendations(feed.items));
+  vi.mocked(getRecommendationsWithDetails)
+    .mockReset()
+    .mockResolvedValue(recommendations(feed.items));
 });
 afterEach(cleanup);
 
@@ -275,8 +293,8 @@ describe('<Home />', () => {
 
   describe('"Garimpados para Você" vem das recomendações (FE-US029-1, #325)', () => {
     // Objetivo declarado (RN-64).
-    it('logado e sem categoria usa getRecommendations e mostra os itens dela', async () => {
-      vi.mocked(getRecommendations).mockResolvedValue(
+    it('logado e sem categoria usa getRecommendationsWithDetails e mostra os itens dela', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
         recommendations([
           recommendation('7', 'Blazer de alfaiataria'),
           recommendation('8', 'Camisa social branca'),
@@ -292,13 +310,37 @@ describe('<Home />', () => {
         'href',
         '/product/8',
       );
-      expect(getRecommendations).toHaveBeenCalledWith(1);
+      expect(getRecommendationsWithDetails).toHaveBeenCalledWith(1);
       expect(getFeedWithDetails).not.toHaveBeenCalled();
     });
 
+    // Pedido na revisão do PR: o card do Figma (Home Logada T06) mostra
+    // categoria e tamanho, que a resposta de recomendações não traz.
+    it('o cartão recomendado mostra categoria e tamanho', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
+        recommendations([
+          recommendation('9', 'Bota de couro', {
+            category: 'Calçados',
+            size: '38',
+            condition: 'Seminovo',
+          }),
+        ]),
+      );
+      renderHome(BUYER);
+
+      const region = screen.getByRole('region', { name: 'Garimpados para Você' });
+      await within(region).findByRole('link', { name: 'Bota de couro' });
+      // Os chips de categoria da Home também dizem "Calçados": conta só o do card.
+      const categoriaNoCard = within(region)
+        .getAllByText('Calçados')
+        .filter((element) => !element.closest('[aria-label="Categorias de peças"]'));
+      expect(categoriaNoCard).toHaveLength(1);
+      expect(within(region).getByText('38 · Seminovo')).toBeInTheDocument();
+    });
+
     // Objetivo declarado (RN-38): recomendação não vira erro para o usuário.
-    it('getRecommendations rejeitando mostra o feed, sem ErrorState', async () => {
-      vi.mocked(getRecommendations).mockRejectedValue(new Error('500'));
+    it('getRecommendationsWithDetails rejeitando mostra o feed, sem ErrorState', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
       vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
       renderHome(BUYER);
 
@@ -309,7 +351,7 @@ describe('<Home />', () => {
     });
 
     it('ErrorState só aparece se recomendações e feed falharem', async () => {
-      vi.mocked(getRecommendations).mockRejectedValue(new Error('500'));
+      vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
       vi.mocked(getFeedWithDetails).mockRejectedValue(new Error('500'));
       renderHome(BUYER);
 
@@ -343,7 +385,7 @@ describe('<Home />', () => {
         expect(vi.mocked(getFeedWithDetails).mock.calls.length).toBeGreaterThan(chamadasAntes),
       );
       expect(getFeedWithDetails).toHaveBeenLastCalledWith({ category: 'Acessórios' });
-      expect(getRecommendations).not.toHaveBeenCalled();
+      expect(getRecommendationsWithDetails).not.toHaveBeenCalled();
     });
 
     it('logado, os chips de categoria levam ao catálogo e não trocam a fonte da grade', async () => {
@@ -361,13 +403,13 @@ describe('<Home />', () => {
     // `personalized: false` = o back não tinha preferências e mandou o genérico (RN-38).
     it('personalized: false mostra os itens que vieram, sem aviso nenhum', async () => {
       const itens = [recommendation('7', 'Blazer de alfaiataria')];
-      vi.mocked(getRecommendations).mockResolvedValue(recommendations(itens));
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(recommendations(itens));
       const personalizado = renderHome(BUYER);
       await screen.findByRole('link', { name: 'Blazer de alfaiataria' });
       const textoPersonalizado = personalizado.container.textContent;
       cleanup();
 
-      vi.mocked(getRecommendations).mockResolvedValue(
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
         recommendations(itens, { personalized: false }),
       );
       const generico = renderHome(BUYER);
@@ -379,9 +421,9 @@ describe('<Home />', () => {
       expect(generico.container.textContent).toBe(textoPersonalizado);
     });
 
-    it('"Carregar mais" no modo recomendação pede getRecommendations(2) e concatena', async () => {
+    it('"Carregar mais" no modo recomendação pede getRecommendationsWithDetails(2) e concatena', async () => {
       const user = userEvent.setup();
-      vi.mocked(getRecommendations)
+      vi.mocked(getRecommendationsWithDetails)
         .mockResolvedValueOnce(
           recommendations([recommendation('7', 'Blazer de alfaiataria')], { total: 2 }),
         )
@@ -394,7 +436,7 @@ describe('<Home />', () => {
 
       expect(await screen.findByRole('link', { name: 'Camisa social branca' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Blazer de alfaiataria' })).toBeInTheDocument();
-      expect(getRecommendations).toHaveBeenLastCalledWith(2);
+      expect(getRecommendationsWithDetails).toHaveBeenLastCalledWith(2);
       expect(getFeedWithDetails).not.toHaveBeenCalled();
       expect(
         screen.queryByRole('button', { name: 'Carregar mais achados' }),

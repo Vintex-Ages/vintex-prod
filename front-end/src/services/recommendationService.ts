@@ -1,6 +1,6 @@
 import { httpClient } from '@/services/httpClient';
 import { getPreferences } from '@/services/preferenceService';
-import { mapFeedItem, toReais, type ApiFeedItem } from '@/services/catalogService';
+import { getProduct, mapFeedItem, toReais, type ApiFeedItem } from '@/services/catalogService';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, ProductDetail, ProductStatus } from '@/types/product';
 
@@ -38,6 +38,10 @@ import type { Paginated, Product, ProductDetail, ProductStatus } from '@/types/p
  * genérico com o critério do mock do `catalogService` (só `ativo`, mais
  * recente primeiro), paginado.
  *
+ * O card da Home logada (Figma, Home Logada T06) mostra categoria e tamanho,
+ * que a resposta não traz: `getRecommendationsWithDetails` completa cada item
+ * com o detalhe, como o `getFeedWithDetails` do `catalogService`.
+ *
  * Usage:
  *   import { getRecommendations } from '@/services/recommendationService';
  *
@@ -51,6 +55,11 @@ export interface Recommendations {
   page: number;
   pageSize: number;
   total: number;
+}
+
+/** `Recommendations` com o detalhe de cada peça (categoria, tamanho...), para o card. */
+export interface RecommendationsWithDetails extends Omit<Recommendations, 'items'> {
+  items: ProductDetail[];
 }
 
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
@@ -142,4 +151,36 @@ async function apiGetRecommendations(page: number): Promise<Recommendations> {
 
 export function getRecommendations(page = 1): Promise<Recommendations> {
   return useMocks ? mockGetRecommendations(page) : apiGetRecommendations(page);
+}
+
+/**
+ * Recomendações com o detalhe de cada peça, para o card da Home logada, no
+ * mesmo padrão do `getFeedWithDetails`: 1 request de recomendações + N de
+ * detalhe. Item cujo detalhe falhar é descartado da página (não derruba os
+ * demais); `personalized` e a paginação vêm da recomendação.
+ *
+ * Usage:
+ *   const { items } = await getRecommendationsWithDetails();
+ *   items[0].category; // 'Roupas'
+ */
+export async function getRecommendationsWithDetails(page = 1): Promise<RecommendationsWithDetails> {
+  const recommendations = await getRecommendations(page);
+  const settled = await Promise.allSettled(
+    recommendations.items.map((item) => getProduct(item.id)),
+  );
+
+  const items = settled
+    .filter(
+      (result): result is PromiseFulfilledResult<ProductDetail> => result.status === 'fulfilled',
+    )
+    .map((result) => result.value);
+
+  const failed = settled.length - items.length;
+  if (failed > 0) {
+    console.warn(
+      `[recommendationService] ${failed} recomendação(ões) sem detalhe disponível — descartada(s) da página.`,
+    );
+  }
+
+  return { ...recommendations, items };
 }

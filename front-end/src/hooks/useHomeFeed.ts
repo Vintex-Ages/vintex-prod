@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getFeedWithDetails } from '@/services/catalogService';
-import { getRecommendations, type Recommendations } from '@/services/recommendationService';
-import type { Paginated, Product } from '@/types/product';
+import {
+  getRecommendationsWithDetails,
+  type RecommendationsWithDetails,
+} from '@/services/recommendationService';
+import type { Paginated, ProductDetail } from '@/types/product';
 
 /** De onde veio a primeira página: o "carregar mais" continua na mesma fonte. */
 type FeedSource = 'recommendations' | 'feed';
 
 /** `Recommendations` no formato da grade. `personalized` não muda o que se mostra. */
-function toPage({ items, page, pageSize, total }: Recommendations): Paginated<Product> {
+function toPage({
+  items,
+  page,
+  pageSize,
+  total,
+}: RecommendationsWithDetails): Paginated<ProductDetail> {
   return { items, page, pageSize, total };
 }
 
@@ -15,8 +23,9 @@ function toPage({ items, page, pageSize, total }: Recommendations): Paginated<Pr
  * Grade da Home (FE-US029-1, #325): decide a fonte, carrega a primeira página
  * e o "carregar mais". A página só desenha.
  *
- * - **Logado e sem categoria**: `getRecommendations` ("Garimpados para Você",
- *   RN-64). `personalized: false` é o feed genérico que o back já devolve
+ * - **Logado e sem categoria**: `getRecommendationsWithDetails` ("Garimpados
+ *   para Você", RN-64), com o detalhe de cada peça para o card mostrar
+ *   categoria e tamanho. `personalized: false` é o feed genérico que o back já devolve
  *   (RN-38), mostrado igual. Se a recomendação falhar, cai em
  *   `getFeedWithDetails()` sem erro (RN-38); erro só se o feed também falhar.
  * - **Com categoria ou deslogado**: `getFeedWithDetails`, como antes.
@@ -33,7 +42,7 @@ function toPage({ items, page, pageSize, total }: Recommendations): Paginated<Pr
  *     useHomeFeed(isAuthenticated, selectedCategory);
  */
 export function useHomeFeed(isAuthenticated: boolean, selectedCategory: string | undefined) {
-  const [feed, setFeed] = useState<Paginated<Product> | null>(null);
+  const [feed, setFeed] = useState<Paginated<ProductDetail> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
@@ -51,7 +60,7 @@ export function useHomeFeed(isAuthenticated: boolean, selectedCategory: string |
     async function run() {
       if (isAuthenticated && !selectedCategory) {
         try {
-          const page = toPage(await getRecommendations(1));
+          const page = toPage(await getRecommendationsWithDetails(1));
           if (!isCurrent()) return;
           source.current = 'recommendations';
           setFeed(page);
@@ -90,7 +99,7 @@ export function useHomeFeed(isAuthenticated: boolean, selectedCategory: string |
     try {
       const next =
         source.current === 'recommendations'
-          ? toPage(await getRecommendations(nextPage))
+          ? toPage(await getRecommendationsWithDetails(nextPage))
           : await getFeedWithDetails({
               page: nextPage,
               ...(selectedCategory ? { category: selectedCategory } : {}),

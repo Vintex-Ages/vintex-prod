@@ -1,12 +1,15 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFeedWithDetails } from '@/services/catalogService';
-import { getRecommendations, type Recommendations } from '@/services/recommendationService';
+import {
+  getRecommendationsWithDetails,
+  type RecommendationsWithDetails,
+} from '@/services/recommendationService';
 import type { Paginated, Product, ProductDetail } from '@/types/product';
 import { useHomeFeed } from './useHomeFeed';
 
 vi.mock('@/services/catalogService', () => ({ getFeedWithDetails: vi.fn() }));
-vi.mock('@/services/recommendationService', () => ({ getRecommendations: vi.fn() }));
+vi.mock('@/services/recommendationService', () => ({ getRecommendationsWithDetails: vi.fn() }));
 
 function produto(id: string): Product {
   return {
@@ -36,8 +39,13 @@ function feedPage(ids: string[], page = 1, total = ids.length): Paginated<Produc
   return { items: ids.map(detalhe), page, pageSize: 20, total };
 }
 
-function recs(ids: string[], page = 1, total = ids.length, personalized = true): Recommendations {
-  return { items: ids.map(produto), personalized, page, pageSize: 20, total };
+function recs(
+  ids: string[],
+  page = 1,
+  total = ids.length,
+  personalized = true,
+): RecommendationsWithDetails {
+  return { items: ids.map(detalhe), personalized, page, pageSize: 20, total };
 }
 
 /** Promise controlada de fora, para decidir a ordem em que as respostas voltam. */
@@ -52,7 +60,7 @@ const ids = (feed: Paginated<Product> | null) => feed?.items.map((item) => item.
 describe('useHomeFeed', () => {
   beforeEach(() => {
     vi.mocked(getFeedWithDetails).mockReset();
-    vi.mocked(getRecommendations).mockReset();
+    vi.mocked(getRecommendationsWithDetails).mockReset();
   });
 
   it('deslogado usa o feed, sem chamar recomendações', async () => {
@@ -62,21 +70,21 @@ describe('useHomeFeed', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getFeedWithDetails).toHaveBeenCalledWith();
-    expect(getRecommendations).not.toHaveBeenCalled();
+    expect(getRecommendationsWithDetails).not.toHaveBeenCalled();
     expect(ids(result.current.feed)).toEqual(['1']);
   });
 
-  it('logado sem categoria usa getRecommendations e entrega no formato Paginated<Product>', async () => {
-    vi.mocked(getRecommendations).mockResolvedValue(recs(['r1', 'r2'], 1, 2));
+  it('logado sem categoria usa getRecommendationsWithDetails e entrega no formato Paginated<ProductDetail>', async () => {
+    vi.mocked(getRecommendationsWithDetails).mockResolvedValue(recs(['r1', 'r2'], 1, 2));
 
     const { result } = renderHook(() => useHomeFeed(true, undefined));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(getRecommendations).toHaveBeenCalledWith(1);
+    expect(getRecommendationsWithDetails).toHaveBeenCalledWith(1);
     expect(getFeedWithDetails).not.toHaveBeenCalled();
     // Sem `personalized`: a grade não distingue o genérico do personalizado.
     expect(result.current.feed).toEqual({
-      items: [produto('r1'), produto('r2')],
+      items: [detalhe('r1'), detalhe('r2')],
       page: 1,
       pageSize: 20,
       total: 2,
@@ -90,12 +98,12 @@ describe('useHomeFeed', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(getFeedWithDetails).toHaveBeenCalledWith({ category: 'Acessórios' });
-    expect(getRecommendations).not.toHaveBeenCalled();
+    expect(getRecommendationsWithDetails).not.toHaveBeenCalled();
   });
 
   // RN-38: recomendação nunca vira erro para o usuário.
   it('recomendação que falha cai no feed, sem erro', async () => {
-    vi.mocked(getRecommendations).mockRejectedValue(new Error('500'));
+    vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
     vi.mocked(getFeedWithDetails).mockResolvedValue(feedPage(['1']));
 
     const { result } = renderHook(() => useHomeFeed(true, undefined));
@@ -107,7 +115,7 @@ describe('useHomeFeed', () => {
   });
 
   it('erro só quando recomendação e feed falham', async () => {
-    vi.mocked(getRecommendations).mockRejectedValue(new Error('500'));
+    vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
     vi.mocked(getFeedWithDetails).mockRejectedValue(new Error('500'));
 
     const { result } = renderHook(() => useHomeFeed(true, undefined));
@@ -118,7 +126,7 @@ describe('useHomeFeed', () => {
   });
 
   it('"carregar mais" no modo recomendação pede a próxima página e concatena', async () => {
-    vi.mocked(getRecommendations)
+    vi.mocked(getRecommendationsWithDetails)
       .mockResolvedValueOnce(recs(['r1'], 1, 2))
       .mockResolvedValueOnce(recs(['r2'], 2, 2));
 
@@ -127,14 +135,14 @@ describe('useHomeFeed', () => {
 
     await act(() => result.current.loadMore());
 
-    expect(getRecommendations).toHaveBeenLastCalledWith(2);
+    expect(getRecommendationsWithDetails).toHaveBeenLastCalledWith(2);
     expect(ids(result.current.feed)).toEqual(['r1', 'r2']);
     expect(result.current.hasMore).toBe(false);
     expect(getFeedWithDetails).not.toHaveBeenCalled();
   });
 
   it('se a primeira página caiu no feed, "carregar mais" continua no feed', async () => {
-    vi.mocked(getRecommendations).mockRejectedValue(new Error('500'));
+    vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
     vi.mocked(getFeedWithDetails)
       .mockResolvedValueOnce(feedPage(['1'], 1, 2))
       .mockResolvedValueOnce(feedPage(['2'], 2, 2));
@@ -145,7 +153,7 @@ describe('useHomeFeed', () => {
     await act(() => result.current.loadMore());
 
     expect(getFeedWithDetails).toHaveBeenLastCalledWith({ page: 2 });
-    expect(getRecommendations).toHaveBeenCalledTimes(1);
+    expect(getRecommendationsWithDetails).toHaveBeenCalledTimes(1);
     expect(ids(result.current.feed)).toEqual(['1', '2']);
   });
 
@@ -163,7 +171,7 @@ describe('useHomeFeed', () => {
   });
 
   it('falha no "carregar mais" mantém os itens e sinaliza erro', async () => {
-    vi.mocked(getRecommendations)
+    vi.mocked(getRecommendationsWithDetails)
       .mockResolvedValueOnce(recs(['r1'], 1, 2))
       .mockRejectedValueOnce(new Error('500'));
 
@@ -181,7 +189,7 @@ describe('useHomeFeed', () => {
   it('descarta a resposta velha quando a fonte muda durante a requisição', async () => {
     const feedAtrasado = deferred<Paginated<ProductDetail>>();
     vi.mocked(getFeedWithDetails).mockReturnValueOnce(feedAtrasado.promise);
-    vi.mocked(getRecommendations).mockResolvedValue(recs(['r1']));
+    vi.mocked(getRecommendationsWithDetails).mockResolvedValue(recs(['r1']));
 
     const { result, rerender } = renderHook(({ auth }) => useHomeFeed(auth, undefined), {
       initialProps: { auth: false },
@@ -196,7 +204,7 @@ describe('useHomeFeed', () => {
   });
 
   it('reload recarrega pela fonte atual', async () => {
-    vi.mocked(getRecommendations)
+    vi.mocked(getRecommendationsWithDetails)
       .mockRejectedValueOnce(new Error('500'))
       .mockResolvedValueOnce(recs(['r1']));
     vi.mocked(getFeedWithDetails).mockRejectedValueOnce(new Error('500'));

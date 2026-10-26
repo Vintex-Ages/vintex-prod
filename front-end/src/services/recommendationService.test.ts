@@ -169,6 +169,39 @@ describe('recommendationService (API real) — contrato do back-end#253 (05/10)'
     ]);
   });
 
+  // Pedido na revisão do PR: o card da Home logada precisa de categoria e
+  // tamanho, que só o detalhe traz (mesmo padrão do `getFeedWithDetails`).
+  it('getRecommendationsWithDetails completa com o detalhe e descarta o item cujo detalhe falha', async () => {
+    vi.doMock('@/services/catalogService', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@/services/catalogService')>()),
+      getProduct: vi.fn((id: string) =>
+        id === '7'
+          ? Promise.reject(new Error('404'))
+          : Promise.resolve({ ...mockProducts[0], id, category: 'Calçados', size: '38' }),
+      ),
+    }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await respondWith({
+      items: [feedItem(), feedItem({ id: 7, name: 'Jaqueta biker preta' })],
+      personalized: false,
+      page: 2,
+      page_size: 20,
+      total: 30,
+    });
+    const { getRecommendationsWithDetails } = await import('./recommendationService');
+
+    const result = await getRecommendationsWithDetails(2);
+
+    expect(result.items.map(({ id, category, size }) => ({ id, category, size }))).toEqual([
+      { id: '6', category: 'Calçados', size: '38' },
+    ]);
+    expect(result).toMatchObject({ personalized: false, page: 2, pageSize: 20, total: 30 });
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    warn.mockRestore();
+    vi.doUnmock('@/services/catalogService');
+  });
+
   it('envia a página pedida como query param', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { getRecommendations } = await import('./recommendationService');
