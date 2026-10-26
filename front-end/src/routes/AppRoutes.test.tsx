@@ -164,10 +164,10 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 describe('<AppRoutes />', () => {
   describe('FE-FND-6: rotas da Sprint 3', () => {
     it.each([
-      // `/profile/orders` (#321) e `/checkout` (#319) saíram daqui: viraram páginas reais.
+      // `/profile/orders` (#321), `/checkout` (#319) e `/profile/favorites` (#329)
+      // saíram daqui: viraram páginas reais.
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
-      ['/profile/favorites', 'Meus favoritos', BUYER],
       ['/stores', 'Brechós', null],
     ] as const)(
       'reconhece %s e renderiza seu placeholder no Layout',

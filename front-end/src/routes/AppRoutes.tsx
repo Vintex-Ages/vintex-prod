@@ -19,6 +19,7 @@ import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
+import Favorites from '@/pages/Profile/Favorites';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import OrderPayment from '@/pages/Orders/OrderPayment';
@@ -64,9 +65,10 @@ function WithLayout() {
  * (perfil da loja é vitrine, não área do vendedor).
  *
  * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; `/stores` é
- * pública. Entram dentro do `WithLayout`, com placeholder mínimo até a task de
- * tela correspondente substituir o `element`. Comprovantes exigem papel admin e
- * já têm tela (fila, FE-US032-1), fora do `WithLayout`.
+ * pública. Entram dentro do `WithLayout`; `/profile/favorites` já tem tela
+ * (FE-US013-2, #329) e os placeholders que restam (pagamento do pedido e
+ * `/stores`) serão trocados pela task correspondente. Comprovantes exigem papel
+ * admin e já têm tela (fila, FE-US032-1), fora do `WithLayout`.
  */
 function AppRoutes() {
   return (
@@ -166,12 +168,7 @@ function AppRoutes() {
           path={paths.favorites}
           element={
             <RequireAuth>
-              <Container as="main" className="flex flex-col gap-6 py-10">
-                <h1 className="font-display text-h2 text-tinta">Meus favoritos</h1>
-                <p className="font-ui text-body text-texto-auxiliar">
-                  Essa tela ainda não foi implementada.
-                </p>
-              </Container>
+              <Favorites />
             </RequireAuth>
           }
         />
