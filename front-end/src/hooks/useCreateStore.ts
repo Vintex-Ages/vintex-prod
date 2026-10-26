@@ -15,6 +15,7 @@ import {
   onlyDigits,
   type DocumentType,
 } from '@/utils/document';
+import { CEP_NOT_FOUND_MESSAGE, validateStoreAddress } from '@/utils/storeAddress';
 
 /**
  * Estado e regras do "Quero vender" (FE-US006-1, #212). A tela `Sell` só
@@ -84,7 +85,6 @@ const INITIAL_VALUES: CreateStoreValues = {
   pixKey: '',
 };
 
-const CEP_NOT_FOUND_MESSAGE = 'CEP não encontrado.';
 const GENERIC_SUBMIT_ERROR = 'Não foi possível criar sua loja agora. Tente novamente.';
 
 const DOCUMENT_LABEL: Record<DocumentType, { name: string; digits: number }> = {
@@ -110,19 +110,7 @@ function validate(values: CreateStoreValues, cepStatus: CepStatus): CreateStoreE
       : isValidDocument(values.documentType, values.documentNumber)
         ? undefined
         : invalidDocumentMessage(values.documentType),
-    cep:
-      onlyDigits(values.cep).length !== 8
-        ? 'Informe um CEP válido.'
-        : cepStatus === 'not_found'
-          ? CEP_NOT_FOUND_MESSAGE
-          : cepStatus === 'loading'
-            ? 'Aguarde a busca do CEP.'
-            : undefined,
-    street: required(values.street, 'Informe a rua.'),
-    number: required(values.number, 'Informe o número.'),
-    district: required(values.district, 'Informe o bairro.'),
-    city: required(values.city, 'Informe a cidade.'),
-    state: required(values.state, 'Selecione a UF.'),
+    ...validateStoreAddress(values, cepStatus),
     pixKey: required(values.pixKey, 'Informe a chave Pix.'),
   };
 

@@ -21,6 +21,7 @@ import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import Orders from '@/pages/Orders/Orders';
+import EditStore from '@/pages/Sell/EditStore';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
@@ -85,6 +86,14 @@ function AppRoutes() {
           element={
             <RequireStore>
               {(store, onStoreUpdated) => <SellerAdmin storeSource={{ store, onStoreUpdated }} />}
+            </RequireStore>
+          }
+        />
+        <Route
+          path={paths.sellerStore}
+          element={
+            <RequireStore>
+              <EditStore />
             </RequireStore>
           }
         />

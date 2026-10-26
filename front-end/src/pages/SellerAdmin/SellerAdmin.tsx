@@ -56,6 +56,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
     useSellerProducts();
 
   const anunciar = () => navigate(paths.sellerProductNew);
+  const editarLoja = () => navigate(paths.sellerStore);
 
   async function republicar(product: SellerProduct) {
     try {
@@ -100,7 +101,12 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
     <Container as="main" className="flex flex-col gap-6 py-10">
       <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
         <h1 className="font-display text-h2 text-tinta">Painel do vendedor</h1>
-        <Button onClick={anunciar}>Anunciar peça</Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={editarLoja}>
+            Editar loja
+          </Button>
+          <Button onClick={anunciar}>Anunciar peça</Button>
+        </div>
       </div>
 
       <TrustSealCard storeSource={storeSource} />
