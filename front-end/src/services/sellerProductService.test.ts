@@ -151,6 +151,23 @@ describe('sellerProductService', () => {
     expect(firstPage.items).toHaveLength(3);
   });
 
+  // #358: a listagem leva a capa (foto de posição 0) das peças publicadas e
+  // deixa `null` no rascunho sem foto — o `SellerProductRow` mostra o placeholder.
+  it('getMine devolve a capa das peças publicadas e null no rascunho sem foto', async () => {
+    const byId = new Map((await getMine()).items.map((item) => [item.id, item]));
+
+    expect(byId.get(ACTIVE)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-2/600/800',
+    );
+    expect(byId.get(SOLD)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-3/600/800',
+    );
+    expect(byId.get(UNPUBLISHED)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-4/600/800',
+    );
+    expect(byId.get(DRAFT_WITHOUT_IMAGE)?.coverImageUrl).toBeNull();
+  });
+
   it('getSalesSummary soma as vendidas em reais e desconta a comissão de 9%', async () => {
     expect(await getSalesSummary('month')).toEqual({
       period: 'month',
@@ -205,6 +222,50 @@ describe('sellerProductService', () => {
   });
 });
 
+/**
+ * Fixture serializado de `ProductManagementPage`/`ProductManagementResponse`
+ * em `back-end@c5bce0d` (back-end#265): `cover_image_url` é a foto de posição 0
+ * e vem nula no rascunho sem foto (RN-47). `price` vem número por causa do
+ * `@field_serializer("price") -> float` do schema.
+ */
+const BACKEND_MANAGEMENT_PAGE = {
+  items: [
+    {
+      id: 41,
+      name: 'Jaqueta Jeans Oversized',
+      description: 'Jaqueta jeans com lavagem clara.',
+      category: 'Roupas',
+      style: 'casual',
+      brand: "Levi's",
+      color: 'Azul',
+      size: 'G',
+      condition: 'Usado',
+      price: 199.9,
+      quantity: 1,
+      status: 'ativo',
+      cover_image_url: 'https://api.test/capa.jpg',
+    },
+    {
+      id: 42,
+      name: 'Saia Plissada',
+      description: null,
+      category: 'Roupas',
+      style: null,
+      brand: null,
+      color: null,
+      size: null,
+      condition: null,
+      price: 59.9,
+      quantity: 1,
+      status: 'rascunho',
+      cover_image_url: null,
+    },
+  ],
+  page: 1,
+  page_size: 20,
+  total: 2,
+};
+
 describe('sellerProductService com a API real', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -213,6 +274,41 @@ describe('sellerProductService com a API real', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  // #358: a listagem do back traz a capa (back-end#265); o mapeador leva a URL
+  // pra `coverImageUrl` e mantém `null` quando a peça não tem foto.
+  it('getMine mapeia cover_image_url e mantém null no rascunho sem capa', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMine: apiGetMine } = await import('./sellerProductService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(`${config.method} ${config.url}`);
+      return Promise.resolve({
+        data: BACKEND_MANAGEMENT_PAGE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    const page = await apiGetMine();
+
+    expect(urls).toEqual(['get /users/me/products']);
+    expect(page).toMatchObject({ page: 1, pageSize: 20, total: 2 });
+    expect(page.items[0]).toMatchObject({
+      id: '41',
+      status: 'ativo',
+      price: 199.9,
+      coverImageUrl: 'https://api.test/capa.jpg',
+    });
+    expect(page.items[1]).toMatchObject({
+      id: '42',
+      status: 'rascunho',
+      coverImageUrl: null,
+    });
   });
 
   // FE-US019-2 (#221): a rota é a declarada na back-end#234.
