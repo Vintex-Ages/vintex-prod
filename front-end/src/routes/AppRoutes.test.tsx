@@ -451,6 +451,7 @@ describe('<AppRoutes />', () => {
 
   it.each([
     paths.seller,
+    paths.sellerStore,
     paths.sellerProductNew,
     sellerProductPath('1'),
     sellerProductReviewPath('1'),

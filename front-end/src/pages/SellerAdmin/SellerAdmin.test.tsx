@@ -51,6 +51,7 @@ function renderPage() {
         <Routes>
           <Route path="/seller" element={<SellerAdmin />} />
           <Route path="/seller/products/new" element={<h1>Anunciar peça</h1>} />
+          <Route path="/seller/store" element={<h1>Editar loja</h1>} />
           <Route path="/seller/products/:id" element={<h1>Formulário da peça</h1>} />
         </Routes>
       </MemoryRouter>
@@ -148,6 +149,18 @@ describe('<SellerAdmin />', () => {
     renderPage();
 
     expect(await screen.findByText('Bota Chelsea')).toBeInTheDocument();
+  });
+
+  // FE-US006-4 (#335): a edição da loja abre a partir do painel.
+  it('"Editar loja" abre a tela de edição', async () => {
+    vi.mocked(getMine).mockResolvedValue(pagina([]));
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Editar loja' }));
+
+    expect(await screen.findByRole('heading', { name: 'Editar loja' })).toBeInTheDocument();
   });
 
   it('sem peças mostra o EmptyState com o CTA de anunciar', async () => {
