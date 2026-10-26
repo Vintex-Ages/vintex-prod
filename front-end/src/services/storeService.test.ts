@@ -6,6 +6,7 @@ import {
   getStore,
   getStoreProducts,
   requestVerification,
+  searchStores,
 } from './storeService';
 import { logout, me, register } from './authService';
 import type { StoreInput, StoreProfile } from '@/types/store';
@@ -786,5 +787,189 @@ describe('storeService (API real) — o que createStore manda', () => {
 
     expect(loja.city).toBe('Porto Alegre');
     expect(loja.state).toBe('RS');
+  });
+});
+
+// FE-SVC-store-search (#317): busca de brechós pelo nome (RN-42, back-end#256).
+describe('searchStores (mock)', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it('q="reden" acha o Garimpo da Redenção, sem diferenciar maiúscula', async () => {
+    const { items } = await searchStores('REDEN');
+
+    expect(items.map((store) => store.name)).toEqual(['Garimpo da Redenção']);
+  });
+
+  it('q vazio lista todas as lojas do catálogo, uma vez cada', async () => {
+    const { items, total } = await searchStores();
+    const ids = new Set(mockProducts.map((product) => product.store.id));
+
+    expect(total).toBe(ids.size);
+    expect(new Set(items.map((store) => store.id))).toEqual(ids);
+  });
+
+  it('q casa só o nome da loja, não a cidade', async () => {
+    expect((await searchStores('Caxias')).items).toEqual([]);
+  });
+
+  it('activeCount conta só peças ativas da loja, como getStoreProducts', async () => {
+    const { items } = await searchStores();
+    for (const store of items) {
+      const { total } = await getStoreProducts(store.id);
+      expect(store.activeCount).toBe(total);
+    }
+  });
+
+  it('a loja criada no mock também aparece na busca', async () => {
+    await logout();
+    await registerNewUser('Lojista');
+    await createStore(input);
+
+    const { items } = await searchStores('ceci');
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        name: 'Brechó da Ceci',
+        description: 'Peças vintage selecionadas a dedo.',
+        city: 'Porto Alegre',
+        state: 'RS',
+        activeCount: 0,
+      }),
+    ]);
+  });
+});
+
+describe('searchStores (API real)', () => {
+  /** Envelope `Page` do back-end#256, com uma loja sem endereço. */
+  const PAGINA = {
+    items: [
+      {
+        id: 7,
+        name: 'Brechó da Redenção',
+        description: 'Garimpo no Bom Fim.',
+        logo_url: 'https://cdn.test/logo.png',
+        verified: true,
+        city: 'Porto Alegre',
+        state: 'RS',
+        active_count: 5,
+      },
+      {
+        id: 8,
+        name: 'Brechó Sem Endereço',
+        description: null,
+        logo_url: null,
+        verified: false,
+        city: null,
+        state: null,
+        active_count: 0,
+      },
+    ],
+    page: 2,
+    page_size: 20,
+    total: 22,
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('chama GET /stores com q e page e mapeia o envelope Page', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores } = await import('./storeService');
+    const chamadas: { url?: string; params?: unknown }[] = [];
+    httpClient.defaults.adapter = (config) => {
+      chamadas.push({ url: config.url, params: config.params });
+      return Promise.resolve({ data: PAGINA, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    const resultado = await searchStores('reden', 2);
+
+    expect(chamadas).toEqual([{ url: '/stores', params: { q: 'reden', page: 2 } }]);
+    expect(resultado).toEqual({
+      items: [
+        {
+          id: '7',
+          name: 'Brechó da Redenção',
+          description: 'Garimpo no Bom Fim.',
+          logoUrl: 'https://cdn.test/logo.png',
+          city: 'Porto Alegre',
+          state: 'RS',
+          verified: true,
+          activeCount: 5,
+        },
+        {
+          id: '8',
+          name: 'Brechó Sem Endereço',
+          description: null,
+          logoUrl: null,
+          city: '',
+          state: '',
+          verified: false,
+          activeCount: 0,
+        },
+      ],
+      page: 2,
+      pageSize: 20,
+      total: 22,
+    });
+  });
+
+  it('q vazio não vai na chamada', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores } = await import('./storeService');
+    let params: unknown;
+    httpClient.defaults.adapter = (config) => {
+      params = config.params;
+      return Promise.resolve({ data: PAGINA, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await searchStores('  ');
+
+    expect(params).toEqual({ q: undefined, page: 1 });
+  });
+
+  it('erro da rota vira StoreError', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores, StoreError } = await import('./storeService');
+    httpClient.defaults.adapter = () => Promise.reject(new Error('rede fora'));
+
+    await expect(searchStores('x')).rejects.toBeInstanceOf(StoreError);
+  });
+
+  it('o perfil lê active_count quando o back manda a contagem corrigida', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStore: apiGetStore } = await import('./storeService');
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          id: 3,
+          name: 'Segunda Chance Modas',
+          description: null,
+          logo_url: null,
+          verified: true,
+          address: null,
+          metrics: {
+            created_at: '2026-03-27T00:00:00',
+            products_listed: 12,
+            products_sold: 4,
+            active_count: 7,
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const loja = await apiGetStore('3');
+
+    expect(loja.metrics?.activeProducts).toBe(7);
   });
 });

@@ -53,10 +53,15 @@ export interface StoreInput {
   acceptedContractVersion?: string;
 }
 
-/** Resumo da loja na listagem "Brechós do RS" (FE-CMP-38). `activeCount` = peças ativas. */
+/**
+ * Resumo da loja na listagem "Brechós do RS" (FE-CMP-38, FE-SVC-store-search).
+ * `activeCount` = peças `ativo` (back-end#256). Loja sem endereço vem com
+ * `city` e `state` vazios, como no `StoreProfile`.
+ */
 export interface StoreSummary {
   id: string;
   name: string;
+  description: string | null;
   logoUrl: string | null;
   city: string;
   state: string;
