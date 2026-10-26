@@ -14,6 +14,7 @@ import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
 import { useToast } from '@/context/useToast';
 import { useProtectedAction } from '@/hooks/useProtectedAction';
+import type { CheckoutState } from '@/pages/Checkout/Checkout';
 import { paths, storeProfile } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
@@ -81,7 +82,8 @@ function CartIcon() {
  * Barreira de login (FE-US012-5, #88): favoritar e comprar passam por
  * `useProtectedAction` — deslogado abre `LoginInterceptor` (compartilhado
  * entre os dois fluxos), logado executa a ação direto. O toggle de favorito
- * continua só local (sem persistência real).
+ * continua só local (sem persistência real). "Comprar Agora" abre o checkout
+ * com a peça (FE-US022-1, #319); deslogado, volta a ele depois do login.
  *
  * Sinalização de peça vendida (FE-US012-4, #87 → revisto em FE-US012-5, #88):
  * quando `status === 'vendido'`, mostra o `SoldBadge` junto do título/preço e
@@ -144,8 +146,17 @@ function ProductDetail() {
   const toggleFavorite = useCallback(() => setFavorited((value) => !value), []);
 
   const buyIntent = useMemo(() => ({ type: 'buy', payload: { productId } }), [productId]);
-  /** Não existe fluxo de compra real ainda (pagamento fora do escopo) — aqui só a barreira de login importa. */
-  const noopBuy = useCallback(() => {}, []);
+  /**
+   * Abre o checkout só com esta peça, sem passar pelo carrinho (FE-US022-1,
+   * #319). Deslogado, a barreira guarda a intenção e isto roda na volta do login.
+   */
+  const buyNow = useCallback(() => {
+    if (!product) return;
+    const { id, name, price, coverImageUrl, store } = product;
+    navigate(paths.checkout, {
+      state: { products: [{ id, name, price, coverImageUrl, store }] } satisfies CheckoutState,
+    });
+  }, [navigate, product]);
 
   const alreadyInCart = useMemo(
     () =>
@@ -193,7 +204,7 @@ function ProductDetail() {
 
   const protectedFavorite = useProtectedAction({ intent: favoriteIntent, action: toggleFavorite });
   const protectedAddToCart = useProtectedAction({ intent: cartIntent, action: addToCart });
-  const protectedBuy = useProtectedAction({ intent: buyIntent, action: noopBuy });
+  const protectedBuy = useProtectedAction({ intent: buyIntent, action: buyNow });
 
   const activeIntercept = protectedFavorite.interceptorOpen
     ? protectedFavorite

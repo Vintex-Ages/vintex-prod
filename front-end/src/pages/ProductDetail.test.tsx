@@ -1,7 +1,7 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { AuthProvider } from '@/context/AuthContext';
 import { CartProvider } from '@/context/CartContext';
@@ -87,6 +87,19 @@ function CartDestination() {
   return <h1>Carrinho de compras</h1>;
 }
 
+/** No lugar do checkout: mostra as peças que chegaram pelo `state` da navegação (#319). */
+function CheckoutDestination() {
+  const state = useLocation().state as { products?: { id: string; name: string }[] } | null;
+  return (
+    <>
+      <h1>Checkout</h1>
+      <p data-testid="pecas-checkout">
+        {state?.products?.map((product) => `${product.id}:${product.name}`).join(',')}
+      </p>
+    </>
+  );
+}
+
 function renderAt(
   path: string,
   options?: { authenticated?: boolean; cartValue?: CartContextValue },
@@ -107,6 +120,7 @@ function renderAt(
               <Route path={paths.product} element={<ProductDetail />} />
               <Route path={paths.login} element={<LoginProbe />} />
               <Route path={paths.cart} element={<CartDestination />} />
+              <Route path={paths.checkout} element={<CheckoutDestination />} />
             </Routes>
           </ToastProvider>
         </CartContext.Provider>
@@ -366,6 +380,33 @@ describe('<ProductDetail />', () => {
       await user.click(await screen.findByRole('button', { name: /Comprar Agora/ }));
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // FE-US022-1 (#319): "Comprar Agora" abre o checkout com a peça, sem passar pelo carrinho.
+    it('logado: Comprar Agora abre o checkout só com esta peça', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1', { authenticated: true });
+
+      await user.click(await screen.findByRole('button', { name: /Comprar Agora/ }));
+
+      expect(await screen.findByRole('heading', { name: 'Checkout' })).toBeInTheDocument();
+      expect(screen.getByTestId('pecas-checkout')).toHaveTextContent(
+        '1:Jaqueta jeans vintage clara',
+      );
+    });
+
+    it('deslogado: depois do login, volta ao checkout com a peça', async () => {
+      const user = userEvent.setup();
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: /Comprar Agora/ }));
+      await user.click(await screen.findByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      expect(await screen.findByRole('heading', { name: 'Checkout' })).toBeInTheDocument();
+      expect(screen.getByTestId('pecas-checkout')).toHaveTextContent(
+        '1:Jaqueta jeans vintage clara',
+      );
     });
     it('o link "Ver loja" aponta pra rota real do perfil da loja', async () => {
       renderAt('/product/1');

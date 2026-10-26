@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
@@ -111,6 +111,21 @@ function FakeCartProvider({
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
 
+/** No lugar do checkout: mostra as peças que chegaram pelo `state` da navegação. */
+function CheckoutProbe() {
+  const state = useLocation().state as { products?: { name: string }[] } | null;
+  return (
+    <>
+      <h1>Checkout</h1>
+      <ul aria-label="Peças do checkout">
+        {state?.products?.map((product) => (
+          <li key={product.name}>{product.name}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function renderCart(setup: Setup) {
   const spies = { remove: vi.fn<(productId: string) => void>(), refresh: vi.fn<() => void>() };
   render(
@@ -121,6 +136,7 @@ function renderCart(setup: Setup) {
             <Route path="/cart" element={<CartPage />} />
             <Route path="/catalog" element={<h1>Catálogo</h1>} />
             <Route path="/product/:id" element={<h1>Detalhe da peça</h1>} />
+            <Route path="/checkout" element={<CheckoutProbe />} />
           </Routes>
         </MemoryRouter>
       </FakeCartProvider>
@@ -233,17 +249,49 @@ describe('<Cart />', () => {
     expect(screen.getByRole('heading', { name: 'Catálogo' })).toBeInTheDocument();
   });
 
-  it('Finalizar compra fica desabilitado com a nota de em breve', async () => {
-    // Isola o bloqueio do placeholder: esta loja tem Pix, mas o checkout ainda não existe.
+  // #319, objetivo declarado 1: 1 Pedido = 1 loja, só com as peças disponíveis.
+  it('Finalizar compra leva ao checkout só com as peças disponíveis daquela loja', async () => {
+    const user = userEvent.setup();
     renderCart({
       initial: {
-        groups: [{ ...group(ANA, [item('1', 'Vestido floral', 100)]), pixKey: 'ana@pix.test' }],
+        groups: [
+          {
+            ...group(ANA, [
+              item('1', 'Vestido floral', 100),
+              item('2', 'Saia pausada', 40, ANA, 'pausado'),
+              item('3', 'Blusa de linho', 60),
+            ]),
+            pixKey: 'ana@pix.test',
+          },
+          { ...group(BIA, [item('4', 'Bota Chelsea', 80, BIA)]), pixKey: 'bia@pix.test' },
+        ],
       },
     });
 
-    const finalizar = await screen.findByRole('button', { name: 'Finalizar compra' });
-    expect(finalizar).toBeDisabled();
-    expect(finalizar).toHaveAccessibleDescription('Em breve: pagamento por Pix direto ao brechó.');
+    const ana = within(await screen.findByRole('region', { name: ANA.name }));
+    await user.click(ana.getByRole('button', { name: 'Finalizar compra' }));
+
+    const pecas = screen.getByRole('list', { name: 'Peças do checkout' });
+    expect(
+      within(pecas)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['Vestido floral', 'Blusa de linho']);
+  });
+
+  it('loja só com peças indisponíveis não deixa finalizar', async () => {
+    renderCart({
+      initial: {
+        groups: [
+          {
+            ...group(ANA, [item('2', 'Saia pausada', 40, ANA, 'pausado')]),
+            pixKey: 'ana@pix.test',
+          },
+        ],
+      },
+    });
+
+    expect(await screen.findByRole('button', { name: 'Finalizar compra' })).toBeDisabled();
   });
 
   it('erro ao carregar mostra ErrorState e tentar de novo recarrega', async () => {
@@ -287,7 +335,6 @@ describe('<Cart />', () => {
 
 describe('#359 — dados Pix por loja no carrinho', () => {
   const NO_PIX = 'Este brechó ainda não cadastrou a chave Pix';
-  const COMING_SOON = 'Em breve: pagamento por Pix direto ao brechó.';
   const aurora: Store = {
     id: '11',
     name: 'Brechó Aurora',
@@ -377,9 +424,7 @@ describe('#359 — dados Pix por loja no carrinho', () => {
     expect(store.queryByText('aurora@pix.test')).not.toBeInTheDocument();
     const checkout = store.getByRole('button', { name: 'Finalizar compra' });
     expect(checkout).toBeDisabled();
-    expect(checkout).toHaveAccessibleDescription(expect.stringContaining(NO_PIX));
-    expect(store.getByText(COMING_SOON, { exact: true })).toBeVisible();
-    expect(checkout).toHaveAccessibleDescription(expect.stringContaining(COMING_SOON));
+    expect(checkout).toHaveAccessibleDescription(NO_PIX);
   });
 
   it('mantém Pix, cidade, logo e aviso isolados entre duas lojas', async () => {
@@ -397,7 +442,7 @@ describe('#359 — dados Pix por loja no carrinho', () => {
     expect(second.getByText('Pelotas')).toBeInTheDocument();
     expect(second.getByRole('img', { name: brisa.name })).toHaveAttribute('src', brisa.logoUrl);
     expect(second.getByText(NO_PIX, { exact: true })).toBeInTheDocument();
-    expect(first.getByRole('button', { name: 'Finalizar compra' })).toBeDisabled();
+    expect(first.getByRole('button', { name: 'Finalizar compra' })).toBeEnabled();
     expect(second.getByRole('button', { name: 'Finalizar compra' })).toBeDisabled();
     expect(first.getByRole('button', { name: 'Finalizar compra' })).not.toHaveAccessibleDescription(
       expect.stringContaining(NO_PIX),
@@ -407,14 +452,13 @@ describe('#359 — dados Pix por loja no carrinho', () => {
     );
   });
 
-  it('com Pix mantém o checkout desabilitado e o aviso de em breve', async () => {
+  it('com Pix o checkout fica habilitado, sem o aviso de chave', async () => {
     renderCart({ initial: { groups: [pixGroup()] } });
 
     const store = await region();
     const checkout = store.getByRole('button', { name: 'Finalizar compra' });
-    expect(checkout).toBeDisabled();
-    expect(store.getByText(COMING_SOON, { exact: true })).toBeVisible();
-    expect(checkout).toHaveAccessibleDescription(COMING_SOON);
+    expect(checkout).toBeEnabled();
+    expect(checkout).not.toHaveAccessibleDescription();
     expect(store.queryByText(NO_PIX)).not.toBeInTheDocument();
   });
 
