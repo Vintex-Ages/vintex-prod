@@ -4,11 +4,16 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { getFeedWithDetails } from '@/services/catalogService';
+import {
+  getRecommendationsWithDetails,
+  type RecommendationsWithDetails,
+} from '@/services/recommendationService';
 import type { AuthUser } from '@/types/auth';
 import type { Paginated, ProductDetail } from '@/types/product';
 import Home from './Home';
 
 vi.mock('@/services/catalogService', () => ({ getFeedWithDetails: vi.fn() }));
+vi.mock('@/services/recommendationService', () => ({ getRecommendationsWithDetails: vi.fn() }));
 
 const feed: Paginated<ProductDetail> = {
   items: [
@@ -67,9 +72,39 @@ const BUYER: AuthUser = {
   is_admin: false,
 };
 
-/** Sem `user`, renderiza a Home anônima. */
-function renderHome(user: AuthUser | null = null) {
-  const auth: AuthContextValue = {
+/** Recomendações (FE-US029-1, #325), já com o detalhe que o card mostra. */
+function recommendation(
+  id: string,
+  name: string,
+  detail: Partial<ProductDetail> = {},
+): ProductDetail {
+  return {
+    id,
+    name,
+    price: 150,
+    coverImageUrl: null,
+    store: { id: 'loja-3', name: 'Brechó Cris' },
+    category: 'Roupas',
+    size: 'M',
+    color: 'Preto',
+    brand: 'Vintage',
+    condition: 'Usado',
+    description: '',
+    status: 'ativo',
+    media: [],
+    ...detail,
+  };
+}
+
+function recommendations(
+  items: ProductDetail[],
+  overrides: Partial<RecommendationsWithDetails> = {},
+): RecommendationsWithDetails {
+  return { items, personalized: true, page: 1, pageSize: 20, total: items.length, ...overrides };
+}
+
+function authValue(user: AuthUser | null): AuthContextValue {
+  return {
     user,
     token: user ? 'token' : null,
     isAuthenticated: user !== null,
@@ -78,8 +113,11 @@ function renderHome(user: AuthUser | null = null) {
     logout: () => {},
     refreshUser: async () => {},
   };
-  return render(
-    <AuthContext.Provider value={auth}>
+}
+
+function homeTree(user: AuthUser | null) {
+  return (
+    <AuthContext.Provider value={authValue(user)}>
       <MemoryRouter>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -88,12 +126,21 @@ function renderHome(user: AuthUser | null = null) {
           <Route path="/sell" element={<h1>Página de vender</h1>} />
         </Routes>
       </MemoryRouter>
-    </AuthContext.Provider>,
+    </AuthContext.Provider>
   );
+}
+
+/** Sem `user`, renderiza a Home anônima. */
+function renderHome(user: AuthUser | null = null) {
+  return render(homeTree(user));
 }
 
 beforeEach(() => {
   vi.mocked(getFeedWithDetails).mockReset();
+  // Logado, a grade vem das recomendações; por padrão, os mesmos itens do feed.
+  vi.mocked(getRecommendationsWithDetails)
+    .mockReset()
+    .mockResolvedValue(recommendations(feed.items));
 });
 afterEach(cleanup);
 
@@ -241,6 +288,167 @@ describe('<Home />', () => {
 
       await screen.findByRole('link', { name: 'Vestido floral' });
       expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('"Garimpados para Você" vem das recomendações (FE-US029-1, #325)', () => {
+    // Objetivo declarado (RN-64).
+    it('logado e sem categoria usa getRecommendationsWithDetails e mostra os itens dela', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
+        recommendations([
+          recommendation('7', 'Blazer de alfaiataria'),
+          recommendation('8', 'Camisa social branca'),
+        ]),
+      );
+      renderHome(BUYER);
+
+      const region = screen.getByRole('region', { name: 'Garimpados para Você' });
+      expect(
+        await within(region).findByRole('link', { name: 'Blazer de alfaiataria' }),
+      ).toBeInTheDocument();
+      expect(within(region).getByRole('link', { name: 'Camisa social branca' })).toHaveAttribute(
+        'href',
+        '/product/8',
+      );
+      expect(getRecommendationsWithDetails).toHaveBeenCalledWith(1);
+      expect(getFeedWithDetails).not.toHaveBeenCalled();
+    });
+
+    // Pedido na revisão do PR: o card do Figma (Home Logada T06) mostra
+    // categoria e tamanho, que a resposta de recomendações não traz.
+    it('o cartão recomendado mostra categoria e tamanho', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
+        recommendations([
+          recommendation('9', 'Bota de couro', {
+            category: 'Calçados',
+            size: '38',
+            condition: 'Seminovo',
+          }),
+        ]),
+      );
+      renderHome(BUYER);
+
+      const region = screen.getByRole('region', { name: 'Garimpados para Você' });
+      await within(region).findByRole('link', { name: 'Bota de couro' });
+      // Os chips de categoria da Home também dizem "Calçados": conta só o do card.
+      const categoriaNoCard = within(region)
+        .getAllByText('Calçados')
+        .filter((element) => !element.closest('[aria-label="Categorias de peças"]'));
+      expect(categoriaNoCard).toHaveLength(1);
+      expect(within(region).getByText('38 · Seminovo')).toBeInTheDocument();
+    });
+
+    // Objetivo declarado (RN-38): recomendação não vira erro para o usuário.
+    it('getRecommendationsWithDetails rejeitando mostra o feed, sem ErrorState', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
+      vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
+      renderHome(BUYER);
+
+      expect(await screen.findByRole('link', { name: 'Vestido floral' })).toBeInTheDocument();
+      expect(getFeedWithDetails).toHaveBeenCalledWith();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText('Algo não carregou')).not.toBeInTheDocument();
+    });
+
+    it('ErrorState só aparece se recomendações e feed falharem', async () => {
+      vi.mocked(getRecommendationsWithDetails).mockRejectedValue(new Error('500'));
+      vi.mocked(getFeedWithDetails).mockRejectedValue(new Error('500'));
+      renderHome(BUYER);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Não foi possível carregar as peças agora.',
+      );
+    });
+
+    /**
+     * Logado, os chips de categoria são links para o catálogo: não há como
+     * escolher categoria na Home logada. O caso real em que categoria e
+     * sessão se cruzam é a sessão mudar com a Home montada (o `AuthProvider`
+     * restaura a sessão depois de os filhos já terem renderizado): a categoria
+     * escolhida como anônimo continua valendo, e a fonte é o feed dela.
+     */
+    it('com categoria escolhida, ao virar logado continua no feed da categoria', async () => {
+      const user = userEvent.setup();
+      vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
+      const { rerender } = renderHome();
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      await user.click(screen.getByRole('button', { name: 'Acessórios' }));
+      await waitFor(() =>
+        expect(getFeedWithDetails).toHaveBeenLastCalledWith({ category: 'Acessórios' }),
+      );
+      const chamadasAntes = vi.mocked(getFeedWithDetails).mock.calls.length;
+
+      rerender(homeTree(BUYER));
+
+      await screen.findByRole('heading', { name: 'Garimpados para Você' });
+      await waitFor(() =>
+        expect(vi.mocked(getFeedWithDetails).mock.calls.length).toBeGreaterThan(chamadasAntes),
+      );
+      expect(getFeedWithDetails).toHaveBeenLastCalledWith({ category: 'Acessórios' });
+      expect(getRecommendationsWithDetails).not.toHaveBeenCalled();
+    });
+
+    it('logado, os chips de categoria levam ao catálogo e não trocam a fonte da grade', async () => {
+      renderHome(BUYER);
+      await screen.findByRole('link', { name: 'Vestido floral' });
+
+      const categorias = screen.getByRole('navigation', { name: 'Categorias de peças' });
+      expect(within(categorias).getByRole('link', { name: 'Roupas' })).toHaveAttribute(
+        'href',
+        '/catalog?q=Roupas',
+      );
+      expect(within(categorias).queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    // `personalized: false` = o back não tinha preferências e mandou o genérico (RN-38).
+    it('personalized: false mostra os itens que vieram, sem aviso nenhum', async () => {
+      const itens = [recommendation('7', 'Blazer de alfaiataria')];
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(recommendations(itens));
+      const personalizado = renderHome(BUYER);
+      await screen.findByRole('link', { name: 'Blazer de alfaiataria' });
+      const textoPersonalizado = personalizado.container.textContent;
+      cleanup();
+
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
+        recommendations(itens, { personalized: false }),
+      );
+      const generico = renderHome(BUYER);
+      await screen.findByRole('link', { name: 'Blazer de alfaiataria' });
+
+      expect(getFeedWithDetails).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      // A tela é a mesma, palavra por palavra: nenhum aviso de "genérico".
+      expect(generico.container.textContent).toBe(textoPersonalizado);
+    });
+
+    it('"Carregar mais" no modo recomendação pede getRecommendationsWithDetails(2) e concatena', async () => {
+      const user = userEvent.setup();
+      vi.mocked(getRecommendationsWithDetails)
+        .mockResolvedValueOnce(
+          recommendations([recommendation('7', 'Blazer de alfaiataria')], { total: 2 }),
+        )
+        .mockResolvedValueOnce(
+          recommendations([recommendation('8', 'Camisa social branca')], { page: 2, total: 2 }),
+        );
+      renderHome(BUYER);
+
+      await user.click(await screen.findByRole('button', { name: 'Carregar mais achados' }));
+
+      expect(await screen.findByRole('link', { name: 'Camisa social branca' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Blazer de alfaiataria' })).toBeInTheDocument();
+      expect(getRecommendationsWithDetails).toHaveBeenLastCalledWith(2);
+      expect(getFeedWithDetails).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole('button', { name: 'Carregar mais achados' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('não mostra o selo "98% seu estilo"', async () => {
+      renderHome(BUYER);
+      await screen.findByRole('link', { name: 'Vestido floral' });
+
+      expect(screen.queryByText(/seu estilo/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/98%/)).not.toBeInTheDocument();
     });
   });
 });
