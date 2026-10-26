@@ -6,7 +6,7 @@ export type MediaItem = {
   id: string;
   file?: File;
   url: string;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'document';
   position: number;
 };
 
@@ -21,9 +21,12 @@ export type MediaUploaderProps = {
   helperText?: string;
   error?: string;
   disabled?: boolean;
+  /** Tamanho máximo por arquivo, em MB (1 MB = 1024 × 1024 bytes); maior vira aviso. */
+  maxSizeMb?: number;
 };
 
 const DEFAULT_ACCEPT = 'image/*,video/*';
+const BYTES_PER_MB = 1024 * 1024;
 
 function matchesAccept(file: File, accept: string): boolean {
   const acceptedTypes = accept
@@ -53,6 +56,10 @@ function getMediaType(file: File): MediaItem['type'] | null {
     return 'video';
   }
 
+  if (file.type === 'application/pdf') {
+    return 'document';
+  }
+
   return null;
 }
 
@@ -68,6 +75,10 @@ function normalizePositions(items: MediaItem[]): MediaItem[] {
  *
  * Aceita arquivos por clique ou arrastar/soltar, permite reordenar e remover
  * itens e oferece a variante `single` para seleção de uma única mídia.
+ *
+ * PDF entra como `type: 'document'` quando o `accept` permite, e aparece como
+ * ícone + nome do arquivo (sem `<img>`). `maxSizeMb` recusa arquivo maior com
+ * um aviso no próprio componente; o `error` recebido por prop tem prioridade.
  * É apenas apresentacional: não realiza upload nem aplica regras de negócio
  * específicas das telas que utilizam o componente.
  *
@@ -88,6 +99,16 @@ function normalizePositions(items: MediaItem[]): MediaItem[] {
  *     onChange={setLogo}
  *     single
  *   />
+ *
+ *   <MediaUploader
+ *     id="comprovante"
+ *     label="Comprovante Pix"
+ *     value={comprovante}
+ *     onChange={setComprovante}
+ *     accept="image/png,image/jpeg,application/pdf"
+ *     maxSizeMb={8}
+ *     single
+ *   />
  */
 function MediaUploader({
   id,
@@ -100,9 +121,11 @@ function MediaUploader({
   helperText,
   error,
   disabled = false,
+  maxSizeMb,
 }: MediaUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [sizeError, setSizeError] = useState<string | null>(null);
 
   const orderedItems = [...value].sort((a, b) => a.position - b.position);
 
@@ -117,8 +140,19 @@ function MediaUploader({
       return;
     }
 
-    const validFiles = files.filter(
+    const acceptedFiles = files.filter(
       (file) => matchesAccept(file, accept) && getMediaType(file) !== null,
+    );
+    const tooLarge =
+      maxSizeMb === undefined
+        ? []
+        : acceptedFiles.filter((file) => file.size > maxSizeMb * BYTES_PER_MB);
+    const validFiles = acceptedFiles.filter((file) => !tooLarge.includes(file));
+
+    setSizeError(
+      tooLarge.length > 0
+        ? `O arquivo ${tooLarge.map((file) => file.name).join(', ')} passa de ${maxSizeMb} MB. Escolha um arquivo menor.`
+        : null,
     );
 
     if (validFiles.length === 0) {
@@ -216,7 +250,13 @@ function MediaUploader({
 
   const reachedLimit = !single && orderedItems.length >= max;
 
-  const describedBy = [helperText ? `${id}-helper` : null, error ? `${id}-error` : null]
+  const shownSizeError = error ? null : sizeError;
+
+  const describedBy = [
+    helperText ? `${id}-helper` : null,
+    error ? `${id}-error` : null,
+    shownSizeError ? `${id}-size-error` : null,
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -295,7 +335,7 @@ function MediaUploader({
         )}
       </div>
 
-      {helperText && !error && (
+      {helperText && !error && !shownSizeError && (
         <p id={`${id}-helper`} className="mt-2 text-body-sm text-texto-auxiliar">
           {helperText}
         </p>
@@ -307,12 +347,38 @@ function MediaUploader({
         </p>
       )}
 
+      {shownSizeError && (
+        <p id={`${id}-size-error`} role="alert" className="mt-2 text-body-sm text-vermelho-escuro">
+          {shownSizeError}
+        </p>
+      )}
+
       {orderedItems.length > 0 && (
         <ul className="mt-4 grid grid-cols-2 gap-4 tablet:grid-cols-4">
           {orderedItems.map((item, index) => (
             <li key={item.id} className="min-w-0">
               <div className="relative aspect-square overflow-hidden border border-linha bg-papel-profundo">
-                {item.type === 'image' ? (
+                {item.type === 'document' ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-3 text-center">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-10 w-10 text-texto-auxiliar"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Zm0 0v5h5M9 13h6m-6 4h6"
+                      />
+                    </svg>
+                    <span className="w-full break-all text-body-sm text-tinta">
+                      {item.file?.name ?? 'Documento PDF'}
+                    </span>
+                  </div>
+                ) : item.type === 'image' ? (
                   <img
                     src={item.url}
                     alt={`Pré-visualização ${index + 1}`}
@@ -327,7 +393,7 @@ function MediaUploader({
                   />
                 )}
 
-                {index === 0 && (
+                {index === 0 && item.type !== 'document' && (
                   <span className="absolute left-2 top-2 bg-tinta px-2 py-1 text-label font-semibold text-papel">
                     Capa
                   </span>
