@@ -18,6 +18,8 @@ import { formatCentsToBRL, formatPieceCount } from '@/utils/format';
  *
  * Comprovante recusado não é status do Pedido (RN-23): vem de
  * `payment.status` e, quando presente, ocupa o lugar do badge do status.
+ * Exceção: Pedido `expirado` mostra "Expirado" mesmo com a recusa, porque a
+ * recusa ficou para trás e o que vale agora é que o Pedido acabou (#321).
  * Sem prazo nem rastreio de transportadora (RN-83). "Avaliar loja" e
  * "Reportar problema" ficam para a Sprint 4.
  *
@@ -89,8 +91,11 @@ function OrderCard({ order, onOpen, action }: OrderCardProps) {
   const [first] = order.items;
   const extraCount = order.items.length - 1;
   const createdAt = formatDate(order.createdAt);
+  // `expirado` vence a recusa; fora isso, a recusa vence o badge do status.
   const badge =
-    order.payment?.status === 'rejeitado' ? REJECTED_BADGE : STATUS_BADGES[order.status];
+    order.status !== 'expirado' && order.payment?.status === 'rejeitado'
+      ? REJECTED_BADGE
+      : STATUS_BADGES[order.status];
 
   return (
     <article className="relative flex flex-col gap-3 border border-linha bg-branco-quente p-4 transition-colors hover:border-texto-auxiliar">

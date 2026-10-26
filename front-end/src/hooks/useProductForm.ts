@@ -11,6 +11,11 @@ import {
   SellerProductError,
 } from '@/services/sellerProductService';
 import { suggestListing } from '@/services/vintexAiService';
+import {
+  priceOutOfRange,
+  usePriceSuggestion,
+  type PriceSuggestionState,
+} from '@/hooks/usePriceSuggestion';
 import type {
   ListingCorrection,
   ProductInput,
@@ -37,6 +42,11 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  *
  * A IA nunca bloqueia o cadastro (RN-57): falha dela vira aviso, os campos
  * seguem editáveis e o vendedor preenche à mão.
+ *
+ * **Sugestão de preço (#326).** Mora aqui, e não na página, porque o alerta de
+ * preço fora da faixa aparece no formulário e se repete na revisão (RN-68).
+ * Só existe se o vendedor pedir (RN-67) e não é salva com a peça: trocar de
+ * peça a apaga (`usePriceSuggestion`).
  *
  * **Foto da etiqueta (#331).** Fica em `labelMedia`, separada de
  * `values.media`: não entra na galeria pública, não vai em `images` e não conta
@@ -283,6 +293,14 @@ export interface UseProductFormResult {
   canContinue: boolean;
   /** Por que a revisão não pode publicar agora, ou `null` se pode. */
   publishBlocked: string | null;
+  /** Sugestão de preço pedida pelo vendedor (#326), ou `idle` se não pediu. */
+  priceSuggestion: PriceSuggestionState;
+  /** Preço fora da faixa sugerida (RN-68). Só avisa: nunca bloqueia publicar. */
+  priceAlert: 'below' | 'above' | null;
+  /** Pede a faixa com os campos já preenchidos. Só o botão chama (RN-67). */
+  requestPriceSuggestion: () => void;
+  /** "Usar R$ X": troca o preço pelo sugerido, em reais. */
+  applyPriceSuggestion: (reais: number) => void;
   /**
    * Situação da peça no back, ou `undefined` antes do primeiro save. Fora de
    * `rascunho`, a revisão só salva as alterações (FE-US019-2).
@@ -319,6 +337,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [semFotoNoBack, setSemFotoNoBack] = useState(false);
   const [draftId, setDraftId] = useState<string | undefined>(productId);
   const [productStatus, setProductStatus] = useState<ProductStatus | undefined>(undefined);
+  const precoSugerido = usePriceSuggestion();
+  const resetPriceSuggestion = precoSugerido.reset;
 
   // Id da peça já carregada em memória, pelo getById ou pelo último save.
   // Evita buscar novamente a mesma peça durante a navegação.
@@ -354,6 +374,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
       setSemFotoNoBack(false);
       setDraftId(undefined);
       setProductStatus(undefined);
+      resetPriceSuggestion();
       return;
     }
     if (productId === carregadoRef.current) return;
@@ -375,6 +396,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
         setLabelMediaState([]);
         setLabelRead(false);
         setSemFotoNoBack(false);
+        resetPriceSuggestion();
       })
       .catch(() => {
         if (!ativo) return;
@@ -388,7 +410,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     return () => {
       ativo = false;
     };
-  }, [productId]);
+  }, [productId, resetPriceSuggestion]);
 
   const setField = useCallback(
     <K extends keyof ProductFormValues>(campo: K, valor: ProductFormValues[K]) => {
@@ -630,6 +652,23 @@ export function useProductForm(productId?: string): UseProductFormResult {
     }
   }, [draftId, publishBlocked, values, corrections, productStatus]);
 
+  const requestPriceSuggestion = () => {
+    void precoSugerido.request({
+      name: values.name.trim(),
+      category: values.category ?? undefined,
+      brand: values.brand.trim() || undefined,
+      condition: values.condition ?? undefined,
+      size: values.size ?? undefined,
+      description: values.description.trim() || undefined,
+    });
+  };
+
+  const applyPriceSuggestion = (reais: number) => {
+    setField('priceCents', Math.round(reais * 100));
+  };
+
+  const priceReais = paraReais(values.priceCents) ?? null;
+
   return {
     values,
     errors,
@@ -642,10 +681,14 @@ export function useProductForm(productId?: string): UseProductFormResult {
     loading,
     loadFailed,
     formError,
-    priceReais: paraReais(values.priceCents) ?? null,
+    priceReais,
     formStep: values.media.length === 0 ? 0 : 1,
     canContinue: values.media.length > 0 && !saving && !analyzing,
     publishBlocked,
+    priceSuggestion: precoSugerido.state,
+    priceAlert: priceOutOfRange(precoSugerido.state, priceReais),
+    requestPriceSuggestion,
+    applyPriceSuggestion,
     productStatus,
     setField,
     setMedia,

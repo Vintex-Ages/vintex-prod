@@ -37,6 +37,8 @@ export const paths = {
    * Para montar um link real, use `sellerProductReviewPath(id)`.
    */
   sellerProductReview: '/seller/products/:id/review',
+  /** Editar a própria loja (FE-US006-4, #335), aberta pelo painel do vendedor. */
+  sellerStore: '/seller/store',
   cart: '/cart',
   /** Padrão de rota para `<Route path>` — para montar um link real, use `storeProfile(id)`. */
   store: '/store/:id',

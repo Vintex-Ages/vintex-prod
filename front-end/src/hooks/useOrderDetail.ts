@@ -26,8 +26,12 @@ export interface OrderDetailView {
 /** Códigos de "não existe para você": o do mock e o 404 do envelope do back. */
 const NOT_FOUND_CODES = new Set(['ORDER_NOT_FOUND', 'NOT_FOUND']);
 
-/** Regras de exibição do detalhe, fora do componente de apresentação. */
-export function deriveOrderView(order: Order): OrderDetailView {
+/**
+ * Regras de exibição do Pedido, fora do componente de apresentação. Só lê
+ * `status` e `payment`, então serve ao detalhe (`Order`) e à lista
+ * (`OrderSummary`, #321) sem a regra ser copiada.
+ */
+export function deriveOrderView(order: Pick<Order, 'status' | 'payment'>): OrderDetailView {
   const awaiting = order.status === 'aguardando_comprovante';
   const rejected = awaiting && order.payment?.status === 'rejeitado';
 
