@@ -11,6 +11,7 @@ import StyleGuide from '@/pages/StyleGuide/StyleGuide';
 import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import VintexAI from '@/pages/VintexAI/VintexAI';
 import Sell from '@/pages/Sell/Sell';
+import EditStore from '@/pages/Sell/EditStore';
 import SellerAdmin from '@/pages/SellerAdmin/SellerAdmin';
 import Review from '@/pages/SellerProduct/Review';
 import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
@@ -21,7 +22,6 @@ import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import Orders from '@/pages/Orders/Orders';
-import EditStore from '@/pages/Sell/EditStore';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 

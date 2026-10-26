@@ -1,17 +1,10 @@
+// Edição da própria loja (FE-US006-4, #335).
+import type { MyStoreDetails, StoreAddress, StoreDocument, StoreUpdate } from '@/types/store';
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, Store } from '@/types/product';
-import type {
-  MyStoreDetails,
-  StoreAddress,
-  StoreDocument,
-  StoreInput,
-  StoreMetrics,
-  StoreProfile,
-  StoreUpdate,
-  StoreVerification,
-} from '@/types/store';
+import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
