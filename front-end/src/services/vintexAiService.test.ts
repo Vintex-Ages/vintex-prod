@@ -289,6 +289,56 @@ describe('vintexAiService.chat (API real)', () => {
     });
   });
 
+  it('converte os filtros do back (`price_max` em texto) para `FilterParams`', async () => {
+    // "Cinto por menos de 300 reais": o back filtrava por preço, mas o chip e
+    // o "Ver no catálogo" liam `priceMax` e o preço sumia da tela.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        respostaOk(
+          sse({
+            type: 'interpreted',
+            filters: {
+              category: 'Acessórios',
+              color: 'Azul',
+              price_min: '50',
+              price_max: '300',
+              desconhecido: 'x',
+            },
+            similarity: 'cinto',
+          }),
+        ),
+      ),
+    );
+
+    const chunks = await coletar({
+      messages: [{ role: 'user', text: 'Cinto azul entre 50 e 300 reais' }],
+    });
+
+    expect(chunks[0]).toEqual({
+      type: 'interpreted',
+      interpreted: {
+        filters: { category: 'Acessórios', color: 'Azul', priceMin: 50, priceMax: 300 },
+        similarity: 'cinto',
+      },
+    });
+  });
+
+  it('preço que não é número fica fora dos filtros interpretados', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          respostaOk(sse({ type: 'interpreted', filters: { price_max: 'barato', price_min: '' } })),
+        ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'algo barato' }] });
+
+    expect(chunks[0]).toEqual({ type: 'interpreted', interpreted: { filters: {} } });
+  });
+
   it('falha de rede vira chunk de erro, nunca exceção para quem itera', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
