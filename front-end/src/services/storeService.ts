@@ -2,12 +2,18 @@ import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
 import type { Paginated, Product, Store } from '@/types/product';
-import type { StoreInput, StoreMetrics, StoreProfile, StoreVerification } from '@/types/store';
+import type {
+  StoreInput,
+  StoreMetrics,
+  StoreProfile,
+  StoreSummary,
+  StoreVerification,
+} from '@/types/store';
 
 /**
  * Service de loja do vendedor (FE-SVC-store, issue #201) — criação, perfil
- * próprio/público, verificação (Selo Confiável, `.ai/glossary.md`) e peças da
- * loja. Segue o mesmo padrão de `catalogService.ts`: flag `VITE_USE_MOCKS`,
+ * próprio/público, verificação (Selo Confiável, `.ai/glossary.md`), peças da
+ * loja e busca de brechós pelo nome (FE-SVC-store-search, #317). Segue o mesmo padrão de `catalogService.ts`: flag `VITE_USE_MOCKS`,
  * branch mock vs. API real, erros normalizados em `StoreError`.
  */
 const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
@@ -251,6 +257,41 @@ function mockGetStore(id: string): StoreProfile {
   };
 }
 
+/** RN-42 / back-end#256: `q` casa só o nome da loja, sem diferenciar maiúscula. */
+function matchesStoreName(name: string, q: string): boolean {
+  return name.toLowerCase().includes(q.trim().toLowerCase());
+}
+
+/**
+ * Lojas do mock: as embutidas nas peças de `mocks/products.ts` mais as criadas
+ * no mock, montadas pelo mesmo `mockGetStore` do perfil (os campos comuns
+ * saem iguais). Em ordem de nome, para a lista não mudar entre chamadas.
+ */
+function mockSearchStores(q: string, page: number): Paginated<StoreSummary> {
+  const ids = new Set([
+    ...mockProducts.map((product) => product.store.id),
+    ...Object.keys(readStores()),
+  ]);
+  const items = [...ids]
+    .map((id) => toStoreSummary(mockGetStore(id)))
+    .filter((store) => matchesStoreName(store.name, q))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  return paginate(items, page, DEFAULT_PAGE_SIZE);
+}
+
+function toStoreSummary(store: StoreProfile): StoreSummary {
+  return {
+    id: store.id,
+    name: store.name,
+    description: store.description || null,
+    logoUrl: store.logoUrl,
+    city: store.city,
+    state: store.state,
+    verified: store.verification === 'confiavel',
+    activeCount: store.metrics?.activeProducts ?? 0,
+  };
+}
+
 /** Só peças `ativo` aparecem — vendidas/despublicadas ficam de fora do perfil público. */
 function mockGetStoreProducts(
   id: string,
@@ -302,6 +343,8 @@ interface ApiStoreMetrics {
   created_at: string;
   products_listed: number;
   products_sold: number;
+  /** back-end#256: contagem só de peças `ativo`, se o perfil passar a mandá-la à parte. */
+  active_count?: number;
 }
 
 interface ApiStoreProfile {
@@ -323,6 +366,18 @@ interface ApiStoreProfile {
  * feed e do detalhe, que tem o serializer e chegam como numero. Mesmo padrao
  * do `sellerProductService`.
  */
+/** Item de `GET /api/stores` (back-end#256): endereço já achatado em `city`/`state`. */
+interface ApiStoreSummary {
+  id: number | string;
+  name: string;
+  description: string | null;
+  logo_url: string | null;
+  verified: boolean;
+  city: string | null;
+  state: string | null;
+  active_count: number;
+}
+
 interface ApiStoreProductItem {
   id: number | string;
   name: string;
@@ -363,23 +418,34 @@ function mesesNaPlataforma(createdAt: string): number {
  */
 function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
   return {
-    activeProducts: metrics.products_listed,
+    // back-end#256 corrige a contagem (só `ativo`). `products_listed` contava
+    // vendida e despublicada; se o perfil mandar `active_count`, ele vale.
+    activeProducts: metrics.active_count ?? metrics.products_listed,
     soldProducts: metrics.products_sold,
     monthsOnPlatform: mesesNaPlataforma(metrics.created_at),
   };
 }
 
-function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
+/** Campos que o perfil e a listagem de lojas têm em comum, no mesmo formato. */
+function mapStoreBase(store: Pick<ApiStoreProfile, 'id' | 'name' | 'logo_url' | 'verified'>) {
   return {
     id: String(store.id),
     name: store.name,
-    description: store.description ?? '',
     logoUrl: store.logo_url,
+    verification: (store.verified ? 'confiavel' : 'pendente') as StoreVerification,
+  };
+}
+
+function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
+  const { verification, ...base } = mapStoreBase(store);
+  return {
+    ...base,
+    description: store.description ?? '',
     // Loja sem endereço cadastrado ainda é loja: a tela esconde a linha em vez
     // de quebrar. O back permite `address` nulo.
     city: store.address?.city ?? '',
     state: store.address?.state ?? '',
-    verification: store.verified ? 'confiavel' : 'pendente',
+    verification,
     createdAt: store.metrics.created_at,
     metrics: mapStoreMetrics(store.metrics),
   };
@@ -391,6 +457,18 @@ function mapStoreProfile(store: ApiStoreProfile): StoreProfile {
  * anterior lia `item.store.id` e derrubava a página com `TypeError` assim que o
  * mock fosse desligado — a loja entra a partir do perfil já carregado.
  */
+function mapStoreSummary(store: ApiStoreSummary): StoreSummary {
+  const { verification, ...base } = mapStoreBase(store);
+  return {
+    ...base,
+    description: store.description,
+    city: store.city ?? '',
+    state: store.state ?? '',
+    verified: verification === 'confiavel',
+    activeCount: store.active_count,
+  };
+}
+
 function mapStoreProductItem(item: ApiStoreProductItem, store: Store): Product {
   return {
     id: String(item.id),
@@ -583,6 +661,22 @@ async function apiGetStore(id: string): Promise<StoreProfile> {
   }
 }
 
+async function apiSearchStores(q: string, page: number): Promise<Paginated<StoreSummary>> {
+  try {
+    const { data } = await httpClient.get<ApiPage<ApiStoreSummary>>('/stores', {
+      params: { q: q.trim() || undefined, page },
+    });
+    return {
+      items: data.items.map(mapStoreSummary),
+      page: data.page,
+      pageSize: data.page_size,
+      total: data.total,
+    };
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
 async function apiGetStoreProducts(
   id: string,
   { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
@@ -654,6 +748,17 @@ export async function requestVerification(): Promise<StoreProfile> {
 
 export async function getStore(id: string): Promise<StoreProfile> {
   return useMocks ? mockGetStore(id) : apiGetStore(id);
+}
+
+/**
+ * Brechós pelo nome (RN-42), para a página "Brechós do RS" (#330). `q` vazio
+ * lista todas; casa só o nome da loja, nunca a cidade (back-end#256). Pública.
+ *
+ * Usage:
+ *   const { items, total } = await searchStores('reden');
+ */
+export async function searchStores(q = '', page = 1): Promise<Paginated<StoreSummary>> {
+  return useMocks ? mockSearchStores(q, page) : apiSearchStores(q, page);
 }
 
 export async function getStoreProducts(

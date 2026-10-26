@@ -494,4 +494,165 @@ describe('MediaUploader', () => {
 
     expect(screen.getByText('Capa')).toBeInTheDocument();
   });
+
+  // #305: comprovante Pix é imagem ou PDF (RN-20).
+  describe('documento (PDF)', () => {
+    const COMPROVANTE_ACCEPT = 'image/png,image/jpeg,application/pdf';
+
+    it('PDF aceito vira item document', () => {
+      const onChange = vi.fn();
+      const pdf = new File(['%PDF'], 'comprovante.pdf', { type: 'application/pdf' });
+
+      render(
+        <MediaUploader
+          id="comprovante"
+          label="Comprovante"
+          value={[]}
+          onChange={onChange}
+          accept={COMPROVANTE_ACCEPT}
+          single
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Comprovante'), { target: { files: [pdf] } });
+
+      expect(onChange).toHaveBeenCalledWith([
+        expect.objectContaining({
+          file: pdf,
+          url: 'blob:comprovante.pdf',
+          type: 'document',
+          position: 0,
+        }),
+      ]);
+    });
+
+    it('item document mostra ícone e nome do arquivo, sem <img>', () => {
+      const item: MediaItem = {
+        id: 'doc-1',
+        file: new File(['%PDF'], 'comprovante_pix.pdf', { type: 'application/pdf' }),
+        url: 'blob:comprovante_pix.pdf',
+        type: 'document',
+        position: 0,
+      };
+
+      render(
+        <MediaUploader
+          id="comprovante"
+          label="Comprovante"
+          value={[item]}
+          onChange={vi.fn()}
+          single
+        />,
+      );
+
+      expect(screen.getByText('comprovante_pix.pdf')).toBeInTheDocument();
+      expect(screen.queryByRole('img')).not.toBeInTheDocument();
+      expect(screen.queryByText('Capa')).not.toBeInTheDocument();
+    });
+
+    it('PDF fora do accept continua recusado', () => {
+      const onChange = vi.fn();
+      const pdf = new File(['%PDF'], 'comprovante.pdf', { type: 'application/pdf' });
+
+      render(<MediaUploader id="fotos" label="Fotos" value={[]} onChange={onChange} />);
+
+      fireEvent.change(screen.getByLabelText('Fotos'), { target: { files: [pdf] } });
+
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('maxSizeMb', () => {
+    function fileOfSize(name: string, type: string, bytes: number): File {
+      const file = new File(['x'], name, { type });
+      Object.defineProperty(file, 'size', { value: bytes });
+      return file;
+    }
+
+    it('arquivo acima de maxSizeMb é recusado com mensagem clara', () => {
+      const onChange = vi.fn();
+      const grande = fileOfSize('grande.pdf', 'application/pdf', 8 * 1024 * 1024 + 1);
+
+      render(
+        <MediaUploader
+          id="comprovante"
+          label="Comprovante"
+          value={[]}
+          onChange={onChange}
+          accept="application/pdf"
+          maxSizeMb={8}
+          single
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Comprovante'), { target: { files: [grande] } });
+
+      expect(onChange).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'O arquivo grande.pdf passa de 8 MB. Escolha um arquivo menor.',
+      );
+    });
+
+    it('arquivo no limite entra e limpa o aviso de tamanho', () => {
+      const onChange = vi.fn();
+      const grande = fileOfSize('grande.pdf', 'application/pdf', 9 * 1024 * 1024);
+      const certo = fileOfSize('certo.pdf', 'application/pdf', 8 * 1024 * 1024);
+
+      render(
+        <MediaUploader
+          id="comprovante"
+          label="Comprovante"
+          value={[]}
+          onChange={onChange}
+          accept="application/pdf"
+          maxSizeMb={8}
+          single
+        />,
+      );
+
+      const input = screen.getByLabelText('Comprovante');
+      fireEvent.change(input, { target: { files: [grande] } });
+      fireEvent.change(input, { target: { files: [certo] } });
+
+      expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ file: certo })]);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('com vários arquivos, só o grande fica de fora', () => {
+      const onChange = vi.fn();
+      const pequena = fileOfSize('pequena.jpg', 'image/jpeg', 1024);
+      const grande = fileOfSize('grande.jpg', 'image/jpeg', 3 * 1024 * 1024);
+
+      render(
+        <MediaUploader id="fotos" label="Fotos" value={[]} onChange={onChange} maxSizeMb={2} />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Fotos'), { target: { files: [pequena, grande] } });
+
+      expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ file: pequena })]);
+      expect(screen.getByRole('alert')).toHaveTextContent('grande.jpg');
+    });
+
+    it('a mensagem de erro recebida por prop tem prioridade', () => {
+      const grande = fileOfSize('grande.pdf', 'application/pdf', 9 * 1024 * 1024);
+
+      render(
+        <MediaUploader
+          id="comprovante"
+          label="Comprovante"
+          value={[]}
+          onChange={vi.fn()}
+          accept="application/pdf"
+          maxSizeMb={8}
+          error="Envie o comprovante."
+          single
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Comprovante'), { target: { files: [grande] } });
+
+      expect(screen.getByText('Envie o comprovante.')).toBeInTheDocument();
+      expect(screen.queryByText(/passa de 8 MB/)).not.toBeInTheDocument();
+    });
+  });
 });
