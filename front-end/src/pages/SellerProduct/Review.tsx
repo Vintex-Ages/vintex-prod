@@ -17,6 +17,7 @@ import {
 } from '@/hooks/useProductForm';
 import { paths, sellerProductPath } from '@/routes/paths';
 import { formatCentsToBRL } from '@/utils/format';
+import { PRICE_OUT_OF_RANGE_MESSAGE } from '@/utils/priceSuggestion';
 import type { ListingSuggestionField } from '@/types/vintex-ai';
 
 /**
@@ -35,6 +36,10 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * sobre a IA e depois `publish`. Sem foto, publicar fica bloqueado com o
  * motivo na tela (RN-47); outros erros viram `Toast` e a revisão continua
  * aberta, com os dados.
+ *
+ * Se o vendedor pediu a sugestão de preço no formulário e o preço ficou fora
+ * da faixa, o mesmo alerta aparece no bloco de preço (FE-US018-1, #326). Ele
+ * não bloqueia publicar (RN-68).
  *
  * A regra mora no `useProductForm`, compartilhado com o formulário pelo
  * `SellerProductFlow`; esta página só decide o que mostrar e para onde ir.
@@ -105,6 +110,7 @@ export default function Review() {
     formError,
     priceReais,
     publishBlocked,
+    priceAlert,
     productStatus,
     publishDraft,
   } = useProductFlow();
@@ -257,6 +263,14 @@ export default function Review() {
             </p>
             <PriceBreakdown price={priceReais} variant="card" />
           </div>
+          {priceAlert ? (
+            <p
+              role="status"
+              className="border-l-2 border-dourado bg-papel-profundo px-3 py-2 text-body-sm text-tinta"
+            >
+              {PRICE_OUT_OF_RANGE_MESSAGE[priceAlert]}
+            </p>
+          ) : null}
         </BlocoResumo>
 
         {publishBlocked ? (
