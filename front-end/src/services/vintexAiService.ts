@@ -3,6 +3,7 @@ import { getAuthToken, handleAuthRequired, httpClient } from '@/services/httpCli
 import { mapFeedItem, type ApiFeedItem } from '@/services/catalogService';
 import { uploadMedia } from '@/services/sellerProductService';
 import { products as mockProducts } from '@/mocks/products';
+import type { FilterParams } from '@/types/product';
 import type {
   ChatChunk,
   ChatMessage,
@@ -309,9 +310,10 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
 //      `catalogService` em vez de um segundo mapeamento paralelo.
 //   3. `interpreted`: o back manda `filters`/`similarity` soltos no evento;
 //      aqui eles voltam para dentro de `interpreted`, como o tipo do front
-//      declara. Os *nomes* das chaves de `filters` continuam os do back
-//      (`price_max`): converter isso é de quem for renderizar os chips
-//      (#210), e o back ainda não emite esse chunk.
+//      declara. `filters` vem com os nomes do feed do back (`price_max`,
+//      preço em texto) e vira `FilterParams` (`priceMax`, número) em
+//      `toFilterParams`: sem isso o chip de preço sumia e o "Ver no catálogo"
+//      abria sem o limite de preço.
 // ---------------------------------------------------------------------------
 
 /**
@@ -414,6 +416,29 @@ function parseSseEvent(raw: string): ChatChunk | null {
   return toChatChunk(payload);
 }
 
+/** Filtros que o back interpreta, com o nome que o front usa em `FilterParams`. */
+const TEXT_FILTERS = ['category', 'size', 'brand', 'condition', 'color'] as const;
+const PRICE_FILTERS = { price_min: 'priceMin', price_max: 'priceMax' } as const;
+
+/**
+ * `filters` do evento `interpreted` (nomes do feed do back, tudo em texto) ->
+ * `FilterParams`. Preço que não for número fica de fora; chave desconhecida
+ * também, para um filtro novo no back não virar chip quebrado.
+ */
+function toFilterParams(filters: Record<string, unknown> = {}): FilterParams {
+  const params: FilterParams = {};
+  for (const key of TEXT_FILTERS) {
+    const value = filters[key];
+    if (typeof value === 'string' && value.trim()) params[key] = value;
+  }
+  for (const [apiKey, key] of Object.entries(PRICE_FILTERS)) {
+    const value = filters[apiKey];
+    const price = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+    if (value !== '' && Number.isFinite(price)) params[key] = price;
+  }
+  return params;
+}
+
 /**
  * Evento do back -> `ChatChunk` do front. Não é cast: `products` e
  * `interpreted` têm shape diferente dos dois lados (ver o bloco de contrato
@@ -435,12 +460,12 @@ function toChatChunk(payload: unknown): ChatChunk | null {
     }
     case 'interpreted': {
       const { filters, similarity } = payload as {
-        filters?: Record<string, string>;
+        filters?: Record<string, unknown>;
         similarity?: string | null;
       };
       return {
         type: 'interpreted',
-        interpreted: { filters: filters ?? {}, similarity: similarity ?? undefined },
+        interpreted: { filters: toFilterParams(filters), similarity: similarity ?? undefined },
       };
     }
     case 'done':
