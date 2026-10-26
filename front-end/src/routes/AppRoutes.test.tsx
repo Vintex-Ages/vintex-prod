@@ -5,6 +5,7 @@ import { AxiosError } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { FavoritesProvider } from '@/context/FavoritesContext';
 import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
@@ -92,9 +93,11 @@ function renderAt(path: string) {
       <AuthProvider>
         <NotificationsProvider>
           <CartContext.Provider value={CART_VALUE}>
-            <ToastProvider>
-              <AppRoutes />
-            </ToastProvider>
+            <FavoritesProvider>
+              <ToastProvider>
+                <AppRoutes />
+              </ToastProvider>
+            </FavoritesProvider>
           </CartContext.Provider>
         </NotificationsProvider>
       </AuthProvider>
@@ -145,10 +148,12 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
       <AuthContext.Provider value={authValue}>
         <NotificationsProvider>
           <CartContext.Provider value={CART_VALUE}>
-            <ToastProvider>
-              <AppRoutes />
-              <LocationProbe />
-            </ToastProvider>
+            <FavoritesProvider>
+              <ToastProvider>
+                <AppRoutes />
+                <LocationProbe />
+              </ToastProvider>
+            </FavoritesProvider>
           </CartContext.Provider>
         </NotificationsProvider>
       </AuthContext.Provider>

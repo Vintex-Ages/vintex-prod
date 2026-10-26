@@ -111,7 +111,22 @@ function roundMoney(value: number): number {
 function toSellerProduct(detail: SellerProductDetail): SellerProduct {
   const { id, name, price, status, description, category, size, color, brand, condition, style } =
     detail;
-  return { id, name, price, status, description, category, size, color, brand, condition, style };
+  // Mesma regra do back na listagem (back-end#265): a capa é a foto de posição 0,
+  // e `null` só sobra no rascunho sem foto (RN-47).
+  return {
+    id,
+    name,
+    price,
+    status,
+    coverImageUrl: detail.images[0] ?? null,
+    description,
+    category,
+    size,
+    color,
+    brand,
+    condition,
+    style,
+  };
 }
 
 // ---- mock ----
@@ -381,6 +396,12 @@ interface ApiSellerProduct {
   price: number | string;
   quantity: number;
   status: ProductStatus;
+  /**
+   * Foto de posição 0, a mesma regra do feed (back-end#265). Nula só em
+   * rascunho sem foto (RN-47). Opcional porque payloads gerados antes do
+   * campo existir chegam sem ele.
+   */
+  cover_image_url?: string | null;
 }
 
 /** `ProductDraftResponse` (back-end#159). */
@@ -422,6 +443,7 @@ function mapSellerProduct(item: ApiSellerProduct): SellerProduct {
     name: item.name,
     price: Number(item.price),
     status: item.status,
+    coverImageUrl: item.cover_image_url ?? null,
     description: optional(item.description),
     category: optional(item.category),
     size: optional(item.size),
