@@ -11,6 +11,7 @@ import Stepper from '@/components/common/Stepper';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
 import PriceBreakdown from '@/components/seller/PriceBreakdown';
+import PriceSuggestion from '@/components/seller/PriceSuggestion';
 import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
 import {
   ETAPAS_CADASTRO,
@@ -38,6 +39,11 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * foto da peça (RN-47). Lida, a IA preenche marca e "Composição da etiqueta",
  * com o aviso de etiqueta processada; ilegível, nenhum dos dois é preenchido e
  * o motivo aparece junto dos outros avisos da IA (RN-59).
+ *
+ * Junto do preço fica o "Sugerir preço" (FE-US018-1, #326): a faixa só é
+ * pedida no clique (RN-67), "Usar R$ X" preenche o preço e o alerta de preço
+ * fora da faixa não bloqueia nada (RN-68). O estado vem do hook, porque a
+ * revisão repete o mesmo alerta.
  *
  * Esta página só grava o rascunho: "Continuar para revisão" salva e leva à
  * revisão (FE-US016-1, #218), que é quem publica (RN-50). O estado vem do
@@ -89,6 +95,9 @@ export default function SellerProductForm() {
     formError,
     formStep,
     canContinue,
+    priceSuggestion,
+    requestPriceSuggestion,
+    applyPriceSuggestion,
     setField,
     setMedia,
     setLabelMedia,
@@ -315,6 +324,13 @@ export default function SellerProductForm() {
             />
             {/* RN-15: quanto o vendedor recebe, recalculado a cada tecla (FE-US017-1). */}
             <PriceBreakdown price={priceReais} />
+            <PriceSuggestion
+              state={priceSuggestion.status}
+              suggestion={priceSuggestion.suggestion}
+              currentPrice={priceReais}
+              onRequest={requestPriceSuggestion}
+              onUse={applyPriceSuggestion}
+            />
           </div>
         </div>
 

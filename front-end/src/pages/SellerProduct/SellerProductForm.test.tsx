@@ -588,4 +588,116 @@ describe('SellerProductForm', () => {
     expect(await screen.findByText('R$ 182,00')).toBeInTheDocument();
     expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
   });
+
+  // FE-US018-1 (#326): sugestão de preço ligada ao formulário.
+  describe('sugestão de preço', () => {
+    const FAIXA = {
+      min: 100,
+      max: 200,
+      justification: 'Peças parecidas no catálogo.',
+      basedOn: 12,
+    };
+
+    beforeEach(() => {
+      vi.spyOn(vintexAiService, 'suggestPrice').mockResolvedValue(FAIXA);
+    });
+
+    const ALERTA_ACIMA = 'Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.';
+
+    async function pedirSugestao() {
+      fireEvent.click(screen.getByRole('button', { name: 'Sugerir preço' }));
+      return screen.findByText('R$ 100,00 – R$ 200,00');
+    }
+
+    // Objetivo declarado 3: RN-67, a sugestão só existe se o vendedor pedir.
+    it('sem clicar no botão, nenhuma chamada à sugestão, nem ao salvar', async () => {
+      renderForm();
+      await subirFoto();
+      preencherObrigatorios();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+      await screen.findByRole('heading', { name: 'Revisão da peça' });
+
+      expect(vi.mocked(vintexAiService.suggestPrice)).not.toHaveBeenCalled();
+    });
+
+    it('o botão envia nome, categoria, marca, conservação, tamanho e descrição preenchidos', async () => {
+      renderForm();
+      await subirFoto();
+      preencherObrigatorios();
+      fireEvent.change(screen.getByLabelText('Marca (opcional)'), { target: { value: 'Zara' } });
+
+      await pedirSugestao();
+
+      expect(vi.mocked(vintexAiService.suggestPrice)).toHaveBeenCalledWith({
+        name: 'Jaqueta',
+        category: 'Roupas',
+        brand: 'Zara',
+        condition: 'Seminovo',
+        size: 'M',
+        description: 'Jaqueta de couro sintético preta.',
+      });
+    });
+
+    it('"Usar R$ X" preenche o preço e o valor líquido recalcula', async () => {
+      renderForm();
+      await subirFoto();
+
+      await pedirSugestao();
+      fireEvent.click(screen.getByRole('button', { name: 'Usar R$ 150,00' }));
+
+      expect(screen.getByLabelText('Preço')).toHaveValue('R$ 150,00');
+      expect(await screen.findByText('R$ 136,50')).toBeInTheDocument();
+    });
+
+    it('o alerta aparece com o preço fora da faixa e some quando ele volta', async () => {
+      renderForm();
+      await subirFoto();
+      preencherObrigatorios();
+
+      await pedirSugestao();
+      expect(screen.getByText(ALERTA_ACIMA)).toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '150,00' } });
+      expect(screen.queryByText(ALERTA_ACIMA)).not.toBeInTheDocument();
+    });
+
+    // Objetivo declarado 2: VS-018 cenário 3, a falha não impede salvar.
+    it('falha da sugestão avisa e o rascunho continua salvando', async () => {
+      vi.mocked(vintexAiService.suggestPrice).mockRejectedValue(new Error('fora do ar'));
+      renderForm();
+      await subirFoto();
+      preencherObrigatorios();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sugerir preço' }));
+      expect(
+        await screen.findByText('Sugestão indisponível agora. Você pode seguir com o seu preço.'),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+      await screen.findByRole('heading', { name: 'Revisão da peça' });
+      expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalled();
+    });
+
+    // Objetivo declarado 4: back-end#254, sem base suficiente.
+    it('sem base suficiente mostra a justificativa, sem faixa e sem alerta', async () => {
+      vi.mocked(vintexAiService.suggestPrice).mockResolvedValue({
+        min: null,
+        max: null,
+        justification: 'Ainda não há peças parecidas suficientes.',
+        basedOn: 0,
+      });
+      renderForm();
+      await subirFoto();
+      preencherObrigatorios();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sugerir preço' }));
+
+      expect(
+        await screen.findByText('Ainda não há peças parecidas suficientes.'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Usar/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(ALERTA_ACIMA)).not.toBeInTheDocument();
+    });
+  });
 });

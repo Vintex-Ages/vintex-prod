@@ -381,6 +381,36 @@ describe('Review', () => {
   });
 
   // FE-US019-2 (#221): editar peça anunciada ou pausada não passa pelo `publish`.
+  // FE-US018-1 (#326), objetivo declarado 1: RN-68, o alerta não bloqueia.
+  it('preço fora da faixa pedida no formulário repete o alerta e publicar segue habilitado', async () => {
+    vi.spyOn(vintexAiService, 'suggestPrice').mockResolvedValue({
+      min: 100,
+      max: 200,
+      justification: 'Peças parecidas no catálogo.',
+      basedOn: 12,
+    });
+    renderFluxo();
+    await subirFoto();
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Jaqueta' } });
+    fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '259,90' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sugerir preço' }));
+    await screen.findByText('R$ 100,00 – R$ 200,00');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+    await screen.findByRole('heading', { name: 'Revisar anúncio' });
+
+    expect(
+      screen.getByText('Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publicar' })).toBeEnabled();
+  });
+
+  it('sem sugestão pedida, a revisão não mostra alerta de preço', async () => {
+    await irParaRevisao();
+
+    expect(screen.queryByText(/faixa sugerida/)).not.toBeInTheDocument();
+  });
+
   describe('editando peça já publicada', () => {
     it.each([
       { status: 'ativo', rotulo: 'anunciada' },

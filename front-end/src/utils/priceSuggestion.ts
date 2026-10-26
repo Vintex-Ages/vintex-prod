@@ -24,6 +24,15 @@ export function priceRangePosition(
   return 'within';
 }
 
+/**
+ * Aviso de preço fora da faixa (RN-68), o mesmo no formulário e na revisão.
+ * Informativo: o vendedor pode manter o preço.
+ */
+export const PRICE_OUT_OF_RANGE_MESSAGE = {
+  below: 'Seu preço está abaixo da faixa sugerida. Você pode mantê-lo se preferir.',
+  above: 'Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.',
+} as const;
+
 /** Média da faixa, arredondada para reais (valor do "Usar R$ X"). */
 export function averagePrice(range: PriceRange): number {
   return Math.round(((range.min + range.max) / 2) * 100) / 100;
