@@ -41,12 +41,14 @@ vi.mock('@/services/favoriteService', async (importOriginal) => {
 });
 
 import { addItem, getCart, removeItem } from '@/services/cartService';
-import { addFavorite } from '@/services/favoriteService';
+import { addFavorite, listFavoriteIds, removeFavorite } from '@/services/favoriteService';
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedAddItem = vi.mocked(addItem);
 const mockedRemoveItem = vi.mocked(removeItem);
 const mockedAddFavorite = vi.mocked(addFavorite);
+const mockedListFavoriteIds = vi.mocked(listFavoriteIds);
+const mockedRemoveFavorite = vi.mocked(removeFavorite);
 
 afterEach(() => {
   cleanup();
@@ -526,6 +528,26 @@ describe('<ProductDetail />', () => {
         'true',
       );
       expect(mockedAddFavorite).toHaveBeenCalledWith('u_1', '1');
+    });
+
+    // A retomada favorita; não alterna. Com a peça já favorita no back e os ids
+    // carregados antes da retomada, um `toggle` desfavoritaria.
+    it('deslogado: peça que já era favorita continua favorita depois do login', async () => {
+      const user = userEvent.setup();
+      mockedListFavoriteIds.mockResolvedValueOnce(new Set(['1']));
+      renderAt('/product/1');
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar aos favoritos' }));
+      await screen.findByRole('dialog');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      await waitFor(() => expect(mockedAddFavorite).toHaveBeenCalledWith('u_1', '1'));
+      expect(await screen.findByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(mockedRemoveFavorite).not.toHaveBeenCalled();
     });
 
     // Objetivo declarado do ticket: falha da API desfaz o coração, sem erro genérico.

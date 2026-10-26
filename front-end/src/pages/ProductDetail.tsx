@@ -102,7 +102,7 @@ function ProductDetail() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { cart, loading: cartLoading, error: cartError, add } = useCart();
-  const { ids: favoriteIds, toggle: toggleFavoriteProduct } = useFavorites();
+  const { ids: favoriteIds, setFavorite } = useFavorites();
   const { toast } = useToast();
 
   const [product, setProduct] = useState<ProductDetailData | null>(null);
@@ -152,16 +152,25 @@ function ProductDetail() {
    * a escrita passa pelo `favoriteService`. O contexto é otimista e desfaz o
    * coração quando a API falha — inclusive no `404` de peça que deixou de
    * existir. O erro morre aqui de propósito: nada de erro genérico na tela.
+   *
+   * O sentido é decidido no clique (`favoriteTargetRef`), não no momento em que
+   * a ação roda: retomada depois do login, ela roda numa página remontada, com
+   * `ids` ainda carregando — um `toggle` ali podia desfavoritar uma peça que já
+   * era favorita. Sem clique nesta montagem, é retomada de quem clicou deslogado
+   * no coração vazio, então é favoritar.
    */
+  const favoriteTargetRef = useRef<boolean | null>(null);
   const toggleFavorite = useCallback(async () => {
     if (!productId) return;
+    const target = favoriteTargetRef.current ?? true;
+    favoriteTargetRef.current = null;
 
     try {
-      await toggleFavoriteProduct(productId);
+      await setFavorite(productId, target);
     } catch {
       // Silencioso de propósito: o `FavoritesContext` desfez o coração.
     }
-  }, [productId, toggleFavoriteProduct]);
+  }, [productId, setFavorite]);
 
   const buyIntent = useMemo(() => ({ type: 'buy', payload: { productId } }), [productId]);
   /**
@@ -412,6 +421,7 @@ function ProductDetail() {
           <FavoriteButton
             active={isFavorite}
             onToggle={() => {
+              favoriteTargetRef.current = !isFavorite;
               void protectedFavorite.runProtectedAction();
             }}
             disabled={product.status === 'vendido'}
