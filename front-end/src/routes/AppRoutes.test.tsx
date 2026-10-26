@@ -159,8 +159,7 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 describe('<AppRoutes />', () => {
   describe('FE-FND-6: rotas da Sprint 3', () => {
     it.each([
-      ['/checkout', 'Checkout', BUYER],
-      // `/profile/orders` saiu daqui no #321: virou página real, com teste próprio abaixo.
+      // `/profile/orders` (#321) e `/checkout` (#319) saíram daqui: viraram páginas reais.
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
       ['/profile/favorites', 'Meus favoritos', BUYER],
@@ -176,6 +175,13 @@ describe('<AppRoutes />', () => {
         expect(screen.getByRole('contentinfo')).toBeInTheDocument();
       },
     );
+
+    // #319: o checkout recebe as peças pela navegação; sem elas, volta ao carrinho.
+    it('comprador em /checkout sem peças escolhidas volta ao carrinho', async () => {
+      renderAtWithAuth('/checkout', makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe('/cart'));
+    });
 
     it.each([
       ['/profile/orders', 'Meus pedidos'],

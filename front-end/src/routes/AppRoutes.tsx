@@ -21,6 +21,7 @@ import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import Orders from '@/pages/Orders/Orders';
+import Checkout from '@/pages/Checkout/Checkout';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
@@ -119,17 +120,11 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
-        {/* Sprint 3: apenas rotas e placeholders, sem antecipar as telas. */}
         <Route
           path={paths.checkout}
           element={
             <RequireAuth>
-              <Container as="main" className="flex flex-col gap-6 py-10">
-                <h1 className="font-display text-h2 text-tinta">Checkout</h1>
-                <p className="font-ui text-body text-texto-auxiliar">
-                  Essa tela ainda não foi implementada.
-                </p>
-              </Container>
+              <Checkout />
             </RequireAuth>
           }
         />
