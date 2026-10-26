@@ -5,6 +5,7 @@ import { AxiosError } from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { AuthProvider } from '@/context/AuthContext';
+import { FavoritesProvider } from '@/context/FavoritesContext';
 import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
@@ -92,9 +93,11 @@ function renderAt(path: string) {
       <AuthProvider>
         <NotificationsProvider>
           <CartContext.Provider value={CART_VALUE}>
-            <ToastProvider>
-              <AppRoutes />
-            </ToastProvider>
+            <FavoritesProvider>
+              <ToastProvider>
+                <AppRoutes />
+              </ToastProvider>
+            </FavoritesProvider>
           </CartContext.Provider>
         </NotificationsProvider>
       </AuthProvider>
@@ -145,10 +148,12 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
       <AuthContext.Provider value={authValue}>
         <NotificationsProvider>
           <CartContext.Provider value={CART_VALUE}>
-            <ToastProvider>
-              <AppRoutes />
-              <LocationProbe />
-            </ToastProvider>
+            <FavoritesProvider>
+              <ToastProvider>
+                <AppRoutes />
+                <LocationProbe />
+              </ToastProvider>
+            </FavoritesProvider>
           </CartContext.Provider>
         </NotificationsProvider>
       </AuthContext.Provider>
@@ -159,10 +164,10 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 describe('<AppRoutes />', () => {
   describe('FE-FND-6: rotas da Sprint 3', () => {
     it.each([
-      // `/profile/orders` (#321) e `/checkout` (#319) saíram daqui: viraram páginas reais.
+      // `/profile/orders` (#321), `/checkout` (#319) e `/profile/favorites` (#329)
+      // saíram daqui: viraram páginas reais.
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
-      ['/profile/favorites', 'Meus favoritos', BUYER],
       // `/stores` deixou de ser placeholder na #330: é a página real de brechós.
       ['/stores', 'Brechós do RS', null],
     ] as const)('reconhece %s e renderiza a tela no Layout', async (path, heading, user) => {

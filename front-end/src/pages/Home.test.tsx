@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
+import { FavoritesProvider } from '@/context/FavoritesContext';
 import { getFeedWithDetails } from '@/services/catalogService';
 import {
   getRecommendationsWithDetails,
@@ -118,14 +119,17 @@ function authValue(user: AuthUser | null): AuthContextValue {
 function homeTree(user: AuthUser | null) {
   return (
     <AuthContext.Provider value={authValue(user)}>
-      <MemoryRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
-          <Route path="/vintex" element={<VintexProbe />} />
-          <Route path="/sell" element={<h1>Página de vender</h1>} />
-        </Routes>
-      </MemoryRouter>
+      {/* O card lê o coração do `useFavorites` (#328), como no App. */}
+      <FavoritesProvider>
+        <MemoryRouter>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/product/1" element={<h1>Detalhe da peça</h1>} />
+            <Route path="/vintex" element={<VintexProbe />} />
+            <Route path="/sell" element={<h1>Página de vender</h1>} />
+          </Routes>
+        </MemoryRouter>
+      </FavoritesProvider>
     </AuthContext.Provider>
   );
 }
@@ -142,7 +146,12 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue(recommendations(feed.items));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // O mock de favoritos grava no `sessionStorage` por usuário (#328): nenhum
+  // teste pode herdar o coração marcado pelo anterior.
+  window.sessionStorage.clear();
+});
 
 describe('<Home />', () => {
   it('renderiza os dados do feed e preserva o placeholder para peças sem foto', async () => {
@@ -449,6 +458,64 @@ describe('<Home />', () => {
 
       expect(screen.queryByText(/seu estilo/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/98%/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('favoritar de verdade no card (FE-US013-1, #328)', () => {
+    beforeEach(() => {
+      vi.mocked(getFeedWithDetails).mockResolvedValue(feed);
+    });
+
+    // Objetivo declarado: o coração do card persiste, não é estado de página.
+    it('logado: favoritar grava no service e o coração continua marcado ao reabrir a Home', async () => {
+      const user = userEvent.setup();
+      const primeiraRenderizacao = renderHome(BUYER);
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      await user.click(screen.getAllByRole('button', { name: 'Adicionar aos favoritos' })[0]);
+
+      expect(screen.getByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      // Reabrir a Home relê os ids do service (mock em `sessionStorage`).
+      primeiraRenderizacao.unmount();
+      renderHome(BUYER);
+
+      expect(await screen.findByRole('button', { name: 'Remover dos favoritos' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+
+    // Objetivo declarado: falha da API desfaz o coração — não mentir na tela.
+    it('404 no PUT desfaz o coração sem erro genérico', async () => {
+      const user = userEvent.setup();
+      // A recomendação traz o id de uma peça que o service não conhece: o
+      // `PUT` do favorito responde `PRODUCT_NOT_FOUND`, como no back.
+      vi.mocked(getRecommendationsWithDetails).mockResolvedValue(
+        recommendations([{ ...feed.items[0], id: 'peca-que-deixou-de-existir' }]),
+      );
+      renderHome(BUYER);
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      await user.click(screen.getByRole('button', { name: 'Adicionar aos favoritos' }));
+
+      expect(
+        await screen.findByRole('button', { name: 'Adicionar aos favoritos' }),
+      ).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('anônimo não vê coração no card — a barreira é a do detalhe (#88)', async () => {
+      renderHome();
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+
+      expect(
+        screen.queryByRole('button', { name: 'Adicionar aos favoritos' }),
+      ).not.toBeInTheDocument();
     });
   });
 });
