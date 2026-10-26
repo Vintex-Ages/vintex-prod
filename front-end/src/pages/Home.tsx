@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import BrandSignature from '@/components/common/BrandSignature';
@@ -13,12 +13,11 @@ import FilterToggle from '@/components/catalog/FilterToggle';
 import { useAuth } from '@/context/useAuth';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
+import { useHomeFeed } from '@/hooks/useHomeFeed';
 import { paths, productDetail } from '@/routes/paths';
-import { getFeedWithDetails } from '@/services/catalogService';
 import { getPreferences, getStyles } from '@/services/preferenceService';
 import { formatPieceCount } from '@/utils/format';
 import type { Preference, StyleOption } from '@/types/preference';
-import type { Paginated, ProductDetail } from '@/types/product';
 
 /**
  * Termos que existem no catálogo — cada um devolve resultado tanto no mock
@@ -45,6 +44,14 @@ const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
  * - **Convite para vender (FE-US006-1, #212).** A Home logada usa o banner do
  *   Figma e oferece "Anunciar Peça" (`/sell`) a quem ainda não tem loja.
  *   Como no `Header`, a fonte é `user.is_seller`, sem requisição extra.
+ * - **"Garimpados para Você" vem das recomendações (FE-US029-1, #325).**
+ *   Logado e sem categoria, a grade é `getRecommendations` (RN-64); se ela
+ *   falhar, cai no feed sem aviso (RN-38). Com categoria ou deslogado, segue
+ *   o feed. Fonte, paginação e descarte de resposta velha moram no
+ *   `useHomeFeed`; aqui é só a tela.
+ *
+ * Usage:
+ *   <Route path={paths.home} element={<Home />} />
  */
 function Home() {
   const navigate = useNavigate();
@@ -55,21 +62,16 @@ function Home() {
   const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
   // ponytail: Home favorites are page-local toggles until a shared favorites service exists.
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [feed, setFeed] = useState<Paginated<ProductDetail> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState(false);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(false);
-    (selectedCategory ? getFeedWithDetails({ category: selectedCategory }) : getFeedWithDetails())
-      .then(setFeed)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [selectedCategory]);
-
-  useEffect(load, [load]);
+  const {
+    feed,
+    loading,
+    loadingMore,
+    error,
+    hasItems,
+    hasMore,
+    loadMore,
+    reload: load,
+  } = useHomeFeed(isAuthenticated, selectedCategory);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -97,26 +99,6 @@ function Home() {
       current = false;
     };
   }, [isAuthenticated]);
-
-  async function loadMore() {
-    if (!feed || loading || loadingMore) return;
-    setLoadingMore(true);
-    setError(false);
-    try {
-      const next = await getFeedWithDetails({
-        page: feed.page + 1,
-        ...(selectedCategory ? { category: selectedCategory } : {}),
-      });
-      setFeed({ ...next, items: [...feed.items, ...next.items] });
-    } catch {
-      setError(true);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  const hasItems = Boolean(feed && feed.items.length > 0);
-  const hasMore = Boolean(feed && feed.items.length < feed.total);
 
   function toggleFavorite(id: string) {
     setFavorites((current) =>
