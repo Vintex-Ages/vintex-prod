@@ -160,7 +160,7 @@ describe('<AppRoutes />', () => {
   describe('FE-FND-6: rotas da Sprint 3', () => {
     it.each([
       ['/checkout', 'Checkout', BUYER],
-      ['/profile/orders', 'Meus pedidos', BUYER],
+      // `/profile/orders` saiu daqui no #321: virou página real, com teste próprio abaixo.
       ['/profile/orders/123', 'Detalhe do pedido', BUYER],
       ['/profile/orders/123/payment', 'Pagamento do pedido', BUYER],
       ['/profile/favorites', 'Meus favoritos', BUYER],
@@ -233,6 +233,20 @@ describe('<AppRoutes />', () => {
         await screen.findByRole('heading', { level: 1, name: 'Detalhe do pedido' }),
       ).toBeInTheDocument();
       expect(screen.getByTestId('route-path').textContent).toBe(path);
+    });
+
+    // #321: a lista deixou de ser placeholder.
+    it('/profile/orders monta a página Meus pedidos de verdade, não o texto provisório', async () => {
+      renderAtWithAuth('/profile/orders', makeAuthValue({ isAuthenticated: true, user: BUYER }));
+
+      expect(await screen.findByRole('list', { name: 'Pedidos' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Meus pedidos' })).toBeInTheDocument();
+      expect(screen.queryByText('Essa tela ainda não foi implementada.')).not.toBeInTheDocument();
+      // Dentro do Layout. O `<header>` de cada `OrderCard` fica dentro de um
+      // `<article>` e não é landmark no navegador, mas o Testing Library o conta
+      // como `banner`; por isso o do Layout é o primeiro, não o único.
+      expect(screen.getAllByRole('banner')[0].closest('article')).toBeNull();
+      expect(screen.getByRole('contentinfo')).toBeInTheDocument();
     });
 
     // #322: o detalhe deixou de ser placeholder.
