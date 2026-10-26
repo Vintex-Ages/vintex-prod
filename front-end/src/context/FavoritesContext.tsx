@@ -44,8 +44,22 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   // Estado mais recente para o `toggle` decidir sem esperar o render.
   const idsRef = useRef(ids);
   idsRef.current = ids;
+  // Escritas feitas desde o início da carga. A lista do back pode ter saído
+  // antes delas (ex.: a ação retomada depois do login favorita enquanto a
+  // carga corre); sem reaplicá-las, a carga apagaria o coração recém-marcado.
+  const writesRef = useRef(new Map<string, boolean>());
+
+  const applyWrites = useCallback((base: Set<string>) => {
+    let next = base;
+    writesRef.current.forEach((favorite, productId) => {
+      next = withFavorite(next, productId, favorite);
+    });
+    idsRef.current = next;
+    setIds(next);
+  }, []);
 
   useEffect(() => {
+    writesRef.current = new Map();
     if (userId === null) {
       setIds(new Set());
       setLoading(false);
@@ -56,10 +70,10 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     listFavoriteIds(userId)
       .then((loaded) => {
-        if (active) setIds(loaded);
+        if (active) applyWrites(loaded);
       })
       .catch(() => {
-        if (active) setIds(new Set());
+        if (active) applyWrites(new Set());
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -68,24 +82,28 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [userId, applyWrites]);
 
-  const toggle = useCallback(
-    async (productId: string) => {
+  const setFavorite = useCallback(
+    async (productId: string, favorite: boolean) => {
       if (userId === null) throw NOT_AUTHENTICATED;
 
       const wasFavorite = idsRef.current.has(productId);
-      const optimistic = withFavorite(idsRef.current, productId, !wasFavorite);
+      const optimistic = withFavorite(idsRef.current, productId, favorite);
       idsRef.current = optimistic;
+      writesRef.current.set(productId, favorite);
       setIds(optimistic);
 
       try {
-        if (wasFavorite) await removeFavorite(userId, productId);
-        else await addFavorite(userId, productId);
+        // Chama a API mesmo se `ids` já concorda: `ids` pode estar vazio por
+        // carga em curso ou falha, e as duas rotas são idempotentes no back.
+        if (favorite) await addFavorite(userId, productId);
+        else await removeFavorite(userId, productId);
       } catch (error) {
         // Desfaz só esta peça: outro toggle pode ter mudado as demais no meio.
         const reverted = withFavorite(idsRef.current, productId, wasFavorite);
         idsRef.current = reverted;
+        writesRef.current.set(productId, wasFavorite);
         setIds(reverted);
         throw error;
       }
@@ -93,9 +111,14 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     [userId],
   );
 
+  const toggle = useCallback(
+    (productId: string) => setFavorite(productId, !idsRef.current.has(productId)),
+    [setFavorite],
+  );
+
   const value = useMemo<FavoritesContextValue>(
-    () => ({ ids, toggle, loading }),
-    [ids, toggle, loading],
+    () => ({ ids, toggle, setFavorite, loading }),
+    [ids, toggle, setFavorite, loading],
   );
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;

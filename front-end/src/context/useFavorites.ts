@@ -20,6 +20,13 @@ export interface FavoritesContextValue {
    * `AUTH_REQUIRED`), para a tela avisar.
    */
   toggle: (productId: string) => Promise<void>;
+  /**
+   * Como o `toggle`, mas com o sentido explícito: `true` favorita, `false` tira.
+   * Use quando quem chama sabe o que quer e não pode depender de `ids` — que
+   * fica vazio enquanto carrega ou se a carga falhar. Ex.: "Remover" na página
+   * de favoritos, ou a ação retomada depois do login.
+   */
+  setFavorite: (productId: string, favorite: boolean) => Promise<void>;
   /** `true` enquanto carrega os favoritos depois do login. */
   loading: boolean;
 }
