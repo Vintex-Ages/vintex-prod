@@ -21,6 +21,7 @@ import SellerProfile from '@/pages/SellerProfile/SellerProfile';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
+import OrderPayment from '@/pages/Orders/OrderPayment';
 import Orders from '@/pages/Orders/Orders';
 import Checkout from '@/pages/Checkout/Checkout';
 import { RequireAuth, RequireRole, RequireStore } from './guards';
@@ -157,12 +158,7 @@ function AppRoutes() {
           path={paths.orderPayment}
           element={
             <RequireAuth>
-              <Container as="main" className="flex flex-col gap-6 py-10">
-                <h1 className="font-display text-h2 text-tinta">Pagamento do pedido</h1>
-                <p className="font-ui text-body text-texto-auxiliar">
-                  Essa tela ainda não foi implementada.
-                </p>
-              </Container>
+              <OrderPayment />
             </RequireAuth>
           }
         />
