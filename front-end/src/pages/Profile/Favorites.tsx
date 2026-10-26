@@ -58,7 +58,7 @@ function FavoritesSkeleton({ count = 3 }: { count?: number }) {
  * porque nenhuma regra manda tirá-la de lá. Peça **Vendida**, **Reservada** ou
  * **Pausada** aparece como Indisponível, com a ação desabilitada e o preço
  * riscado — a peça é sinalizada, não escondida (RN-44). "Remover" tira dos
- * favoritos (`toggle`) e a linha sai da lista.
+ * favoritos (`setFavorite(id, false)`) e a linha sai da lista.
  *
  * Fica de fora, de propósito: "Em outro carrinho" e "Alta procura" (nenhuma
  * regra, e o primeiro expõe o carrinho de outra pessoa), "Alertas" e "Ver

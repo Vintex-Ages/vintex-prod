@@ -23,11 +23,14 @@ const AUTH: AuthContextValue = {
   refreshUser: async () => {},
 };
 
-const toggle = vi.fn<FavoritesContextValue['toggle']>();
+const setFavorite = vi.fn<FavoritesContextValue['setFavorite']>();
 
 const FAVORITES: FavoritesContextValue = {
-  ids: new Set(['1']),
-  toggle,
+  // `ids` vazio de propósito: é o caso da carga do contexto que falhou, e
+  // "Remover" ainda precisa tirar a peça (DELETE), não favoritar.
+  ids: new Set(),
+  toggle: vi.fn(),
+  setFavorite,
   loading: false,
 };
 
@@ -61,7 +64,7 @@ function pagina(
 describe('useFavoritesList', () => {
   beforeEach(() => {
     vi.mocked(listFavorites).mockReset();
-    toggle.mockReset().mockResolvedValue(undefined);
+    setFavorite.mockReset().mockResolvedValue(undefined);
   });
 
   it('começa carregando e devolve a primeira página com o estado de cada peça', async () => {
@@ -137,7 +140,7 @@ describe('useFavoritesList', () => {
     expect(result.current.entries.map((entry) => entry.product.id)).toEqual(['1']);
   });
 
-  it('remove pelo toggle e tira a peça da lista', async () => {
+  it('remove pelo setFavorite(id, false) e tira a peça da lista', async () => {
     vi.mocked(listFavorites).mockResolvedValue(
       pagina([favorito('1', 'ativo'), favorito('2', 'ativo')]),
     );
@@ -149,14 +152,14 @@ describe('useFavoritesList', () => {
       await result.current.remove('1');
     });
 
-    expect(toggle).toHaveBeenCalledWith('1');
+    expect(setFavorite).toHaveBeenCalledWith('1', false);
     expect(result.current.entries.map((entry) => entry.product.id)).toEqual(['2']);
     expect(result.current.state).toMatchObject({ status: 'ready', total: 1 });
   });
 
-  it('falha no toggle mantém a peça e propaga o erro para a tela avisar', async () => {
+  it('falha no setFavorite mantém a peça e propaga o erro para a tela avisar', async () => {
     vi.mocked(listFavorites).mockResolvedValue(pagina([favorito('1', 'ativo')]));
-    toggle.mockRejectedValueOnce(new Error('fora do ar'));
+    setFavorite.mockRejectedValueOnce(new Error('fora do ar'));
 
     const { result } = renderHook(() => useFavoritesList(), { wrapper });
     await waitFor(() => expect(result.current.state.status).toBe('ready'));

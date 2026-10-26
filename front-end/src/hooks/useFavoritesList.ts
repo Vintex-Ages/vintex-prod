@@ -47,9 +47,11 @@ function toUnavailable(status: ProductStatus): UnavailableReason | undefined {
  *   reordena.
  * - `status` de cada peça vira `unavailable`, e é o que desabilita a ação de
  *   carrinho — peça Indisponível é sinalizada, não escondida (RN-44).
- * - `remove()` usa o `toggle` do `FavoritesContext`, para o coração das outras
- *   telas acompanhar a remoção; a peça só sai da lista depois que a API
- *   confirma. Se falhar, a peça continua listada e o erro sobe para a tela.
+ * - `remove()` usa o `setFavorite(id, false)` do `FavoritesContext`, para o
+ *   coração das outras telas acompanhar a remoção; a peça só sai da lista
+ *   depois que a API confirma. Não é `toggle`: o `ids` do contexto pode estar
+ *   vazio (carregando ou com falha) e aí o toggle favoritaria em vez de
+ *   tirar. Se falhar, a peça continua listada e o erro sobe para a tela.
  * - `loadMore()` acrescenta a próxima página. Falha nela não apaga a lista:
  *   vira `loadMoreError` e o botão continua lá para tentar de novo.
  * - `retry()` recomeça da primeira página, passando por `loading`.
@@ -67,7 +69,7 @@ function toUnavailable(status: ProductStatus): UnavailableReason | undefined {
 export function useFavoritesList() {
   const { user } = useAuth();
   const userId = user?.id;
-  const { toggle } = useFavorites();
+  const { setFavorite } = useFavorites();
   const [state, setState] = useState<FavoritesListState>({ status: 'loading' });
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState(false);
@@ -138,7 +140,7 @@ export function useFavoritesList() {
    */
   const remove = useCallback(
     async (productId: string) => {
-      await toggle(productId);
+      await setFavorite(productId, false);
       setState((current) =>
         current.status === 'ready'
           ? {
@@ -149,7 +151,7 @@ export function useFavoritesList() {
           : current,
       );
     },
-    [toggle],
+    [setFavorite],
   );
 
   const entries: FavoriteEntry[] =

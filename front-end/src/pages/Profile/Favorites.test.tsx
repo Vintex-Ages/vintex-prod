@@ -59,13 +59,18 @@ function cartValue(add: CartContextValue['add']): CartContextValue {
 }
 
 type Setup = {
-  toggle?: FavoritesContextValue['toggle'];
+  setFavorite?: FavoritesContextValue['setFavorite'];
   add?: CartContextValue['add'];
 };
 
 /** Página real, com o contexto de favoritos e o carrinho em memória. */
-function renderPage({ toggle = async () => {}, add = async () => {} }: Setup = {}) {
-  const favorites: FavoritesContextValue = { ids: new Set(['1']), toggle, loading: false };
+function renderPage({ setFavorite = async () => {}, add = async () => {} }: Setup = {}) {
+  const favorites: FavoritesContextValue = {
+    ids: new Set(['1']),
+    toggle: async () => {},
+    setFavorite,
+    loading: false,
+  };
 
   return render(
     <MemoryRouter initialEntries={[paths.favorites]}>
@@ -204,18 +209,18 @@ describe('<Favorites />', () => {
     expect(screen.getByText('Jaqueta jeans')).toBeInTheDocument();
   });
 
-  it('remover tira a peça da lista pelo toggle', async () => {
-    const toggle = vi.fn().mockResolvedValue(undefined);
+  it('remover tira a peça da lista pelo setFavorite', async () => {
+    const setFavorite = vi.fn().mockResolvedValue(undefined);
     vi.mocked(listFavorites).mockResolvedValue(
       pagina([favorito('1', 'Jaqueta jeans', 'ativo'), favorito('2', 'Vestido floral', 'ativo')]),
     );
 
-    renderPage({ toggle });
+    renderPage({ setFavorite });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: 'Remover Jaqueta jeans' }));
 
-    expect(toggle).toHaveBeenCalledWith('1');
+    expect(setFavorite).toHaveBeenCalledWith('1', false);
     await waitFor(() => expect(screen.queryByText('Jaqueta jeans')).not.toBeInTheDocument());
     expect(screen.getByText('Vestido floral')).toBeInTheDocument();
   });
@@ -232,10 +237,10 @@ describe('<Favorites />', () => {
   });
 
   it('falha ao remover mantém a peça e avisa', async () => {
-    const toggle = vi.fn().mockRejectedValue(new Error('fora do ar'));
+    const setFavorite = vi.fn().mockRejectedValue(new Error('fora do ar'));
     vi.mocked(listFavorites).mockResolvedValue(pagina([favorito('1', 'Jaqueta jeans', 'ativo')]));
 
-    renderPage({ toggle });
+    renderPage({ setFavorite });
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: 'Remover Jaqueta jeans' }));
