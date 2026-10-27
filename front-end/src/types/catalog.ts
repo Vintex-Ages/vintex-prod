@@ -1,4 +1,13 @@
 /**
+ * Uma cidade com a UF dela, como aparece no endereço de uma loja. É a opção do
+ * filtro de localização do catálogo (FE-US009-5, #336).
+ */
+export type StoreLocation = {
+  city: string;
+  state: string;
+};
+
+/**
  * Filtros disponíveis para consulta do catálogo.
  * Os nomes aqui seguem a convenção do frontend.
  * A conversão para os nomes esperados pela API é feita no catalogService.

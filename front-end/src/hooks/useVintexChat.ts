@@ -81,6 +81,15 @@ function fallbackFor(message: ChatMessage, question: string): Partial<ChatMessag
   if (count === 0) {
     return { text: 'Não achei peças para isso agora.', catalogQuery: question };
   }
+  // Alternativas (RN-61) não "combinam com o que você pediu": a frase diz o que são.
+  if (message.productsMatchType === 'fallback') {
+    return {
+      text:
+        count === 1
+          ? 'Não achei peça exata para isso. Separei 1 alternativa próxima do catálogo.'
+          : `Não achei peça exata para isso. Separei ${count} alternativas próximas do catálogo.`,
+    };
+  }
   return {
     text:
       count === 1
@@ -114,7 +123,9 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
         } else if (chunk.type === 'products') {
           setState((current) => ({
             messages: current.messages.map((message) =>
-              message.id === vintexMessageId ? { ...message, products: chunk.products } : message,
+              message.id === vintexMessageId
+                ? { ...message, products: chunk.products, productsMatchType: chunk.matchType }
+                : message,
             ),
           }));
         } else if (chunk.type === 'interpreted') {
@@ -190,6 +201,7 @@ function retry(): void {
             ...message,
             text: '',
             products: undefined,
+            productsMatchType: undefined,
             interpreted: undefined,
             catalogQuery: undefined,
           }

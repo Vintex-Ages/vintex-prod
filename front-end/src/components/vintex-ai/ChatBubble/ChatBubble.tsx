@@ -46,8 +46,9 @@ type ChatBubbleProps = {
  *     `aria-live="polite"` no parágrafo, para leitores de tela anunciarem
  *     o texto chegando aos poucos.
  *   - `message.outfit` → compõe `OutfitSuggestionCard` (#139); `message.products`
- *     → compõe `ChatProductList` (peças reais, #209). Nenhum dos dois é
- *     reimplementado aqui.
+ *     → compõe `ChatProductList` (peças reais, #209), sob "Alternativas
+ *     próximas" quando `productsMatchType` é `fallback` (#333). Nenhum dos
+ *     dois é reimplementado aqui.
  *
  * Componente de apresentação puro: não busca dados, não decide quando
  * streamar ou re-tentar — isso é da página (`#208`). Tipos vêm de
@@ -118,7 +119,11 @@ export function ChatBubble({
       {message.outfit ? <OutfitSuggestionCard suggestion={message.outfit} /> : null}
       {message.products && message.products.length > 0 ? (
         <div className="mt-4">
-          <ChatProductList products={message.products} onOpen={onOpenProduct} />
+          <ChatProductList
+            products={message.products}
+            onOpen={onOpenProduct}
+            title={message.productsMatchType === 'fallback' ? 'Alternativas próximas' : undefined}
+          />
         </div>
       ) : null}
     </div>
