@@ -717,13 +717,81 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
     });
   });
 
-  it('getDeliveryAddressDefault no modo API devolve null (sem contrato confirmado ainda)', async () => {
+  // FE-INT-3 (#332): o endereço do último Pedido vem na lista (`delivery_address`
+  // de `OrderListItemResponse`, back-end#248), "é dele que o checkout
+  // pré-preenche a próxima compra". A lista sai do mais recente.
+  it('getDeliveryAddressDefault lê o endereço do Pedido mais recente da lista', async () => {
+    const { httpClient } = await import('@/services/httpClient');
     const { getDeliveryAddressDefault: apiGetDeliveryAddressDefault } =
       await import('./orderService');
+    const calls: { url?: string; params?: unknown }[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      calls.push({ url: config.url, params: config.params });
+      return Promise.resolve({
+        data: {
+          items: [
+            {
+              id: 77,
+              store: { id: 3, name: 'Roupa Rodada' },
+              items: [],
+              total_amount: 229.9,
+              status: 'em_analise',
+              payment: { status: 'pendente' },
+              delivery_address: {
+                zip_code: '90010-000',
+                street: 'Rua dos Andradas',
+                number: '500',
+                complement: null,
+                neighborhood: 'Centro Histórico',
+                city: 'Porto Alegre',
+                state: 'RS',
+              },
+              created_at: '2026-09-20T12:00:00Z',
+            },
+          ],
+          page: 1,
+          page_size: 1,
+          total: 4,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
 
     const address = await apiGetDeliveryAddressDefault('u_ana');
 
-    expect(address).toBeNull();
+    expect(calls).toEqual([{ url: '/users/me/orders', params: { page: 1, page_size: 1 } }]);
+    expect(address).toEqual({
+      zipCode: '90010-000',
+      street: 'Rua dos Andradas',
+      number: '500',
+      complement: undefined,
+      neighborhood: 'Centro Histórico',
+      city: 'Porto Alegre',
+      state: 'RS',
+    });
+  });
+
+  it('getDeliveryAddressDefault sem Pedido ou com falha devolve null (o checkout segue vazio)', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getDeliveryAddressDefault: apiGetDeliveryAddressDefault } =
+      await import('./orderService');
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: { items: [], page: 1, page_size: 1, total: 0 },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    expect(await apiGetDeliveryAddressDefault('u_ana')).toBeNull();
+
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 503, data: {} } });
+    expect(await apiGetDeliveryAddressDefault('u_ana')).toBeNull();
   });
 
   it('MIXED_STORES do back (envelope de erro) vira OrderError com o mesmo code', async () => {
