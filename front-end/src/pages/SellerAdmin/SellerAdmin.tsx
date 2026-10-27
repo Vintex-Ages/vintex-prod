@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import Button from '@/components/common/Button';
@@ -13,6 +14,7 @@ import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 import FinancialSummary from './FinancialSummary';
+import SellerDrafts from './SellerDrafts';
 import TrustSealCard from './TrustSealCard';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
@@ -36,6 +38,10 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
  * Despublicar confirma com um Toast que oferece "Desfazer" (republica). A
  * linha muda sem recarregar a lista; erro do back vira Toast de erro.
  *
+ * Aba "Rascunhos" (FE-US019-6, #345) ao lado dos chips de status: lista os
+ * cadastros pela metade, fora das contagens e do total (RN-51) — ver
+ * `SellerDrafts` e `docs/adr/0004`.
+ *
  * Abaixo das peças, a seção "Financeiro" (FE-US019-3, #222) com o resumo de
  * vendas por período — ver `FinancialSummary`. No topo, o card do selo
  * Confiável (FE-US007-1, #224) — ver `TrustSealCard`.
@@ -54,6 +60,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
   const { toast } = useToast();
   const { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct } =
     useSellerProducts();
+  // A aba de rascunhos não é um status do saldo: troca a lista inteira, não filtra.
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const anunciar = () => navigate(paths.sellerProductNew);
   const editarLoja = () => navigate(paths.sellerStore);
@@ -164,13 +172,23 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
               <FilterChip
                 key={chip.value}
                 label={chip.label}
-                active={filter === chip.value}
-                onToggle={() => setFilter(chip.value)}
+                active={!showDrafts && filter === chip.value}
+                onToggle={() => {
+                  setShowDrafts(false);
+                  setFilter(chip.value);
+                }}
               />
             ))}
+            <FilterChip
+              label="Rascunhos"
+              active={showDrafts}
+              onToggle={() => setShowDrafts(true)}
+            />
           </div>
 
-          {state.counts.total === 0 ? (
+          {showDrafts ? (
+            <SellerDrafts />
+          ) : state.counts.total === 0 ? (
             <EmptyState
               title="Nenhuma peça por aqui"
               message="Anuncie sua primeira peça e ela aparece neste painel."
