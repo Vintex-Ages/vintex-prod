@@ -492,7 +492,8 @@ interface ApiDeliveryAddress {
   zip_code: string;
   street: string;
   number: string;
-  complement?: string;
+  /** O back manda `null` quando não há complemento. */
+  complement?: string | null;
   neighborhood: string;
   city: string;
   state: string;
@@ -523,7 +524,7 @@ interface ApiOrder {
 /** Item da lista (back-end#248): loja só `{ id, name }`, sem `history`. */
 type ApiOrderSummary = Pick<
   ApiOrder,
-  'id' | 'items' | 'total_amount' | 'status' | 'payment' | 'created_at'
+  'id' | 'items' | 'total_amount' | 'status' | 'payment' | 'created_at' | 'delivery_address'
 > & { store: { id: number | string; name: string } };
 
 interface ApiPage<T> {
@@ -538,7 +539,7 @@ function mapApiDeliveryAddress(address: ApiDeliveryAddress): DeliveryAddress {
     zipCode: address.zip_code,
     street: address.street,
     number: address.number,
-    complement: address.complement,
+    complement: address.complement ?? undefined,
     neighborhood: address.neighborhood,
     city: address.city,
     state: address.state,
@@ -702,13 +703,24 @@ async function apiSubmitReceipt(orderId: string, file: File): Promise<Order> {
 }
 
 /**
- * TODO: endpoint/shape de `users.address` ainda não confirmado com o back
- * (a issue só diz "a partir de users.address", sem endpoint). Sem
- * contrato, não arrisca um `GET` que pode nem existir — devolve `null`
- * (sem pré-preenchimento) até confirmar.
+ * Endereço do Pedido mais recente (FE-INT-3, #332). O endereço do comprador só
+ * existe dentro do Pedido, e a lista do back traz `delivery_address` para isto:
+ * "é dele que o checkout pré-preenche a próxima compra" (`OrderListItemResponse`,
+ * back-end#248). A lista sai do mais recente, então basta o primeiro item.
+ *
+ * Pré-preencher é conveniência: sem Pedido ou com falha, devolve `null` e o
+ * checkout abre vazio, sem erro.
  */
-function apiGetDeliveryAddressDefault(): Promise<DeliveryAddress | null> {
-  return Promise.resolve(null);
+async function apiGetDeliveryAddressDefault(): Promise<DeliveryAddress | null> {
+  try {
+    const { data } = await httpClient.get<ApiPage<ApiOrderSummary>>('/users/me/orders', {
+      params: { page: 1, page_size: 1 },
+    });
+    const latest = data.items[0]?.delivery_address;
+    return latest ? mapApiDeliveryAddress(latest) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
