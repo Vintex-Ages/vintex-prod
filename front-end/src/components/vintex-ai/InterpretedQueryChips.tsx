@@ -1,6 +1,7 @@
 import { FilterChip } from '@/components/catalog/FilterChip';
 import Button from '@/components/common/Button';
 import type { FilterParams } from '@/types/product';
+import { filterValues } from '@/utils/catalogQuery';
 import type { InterpretedQuery } from '@/types/vintex-ai';
 import { formatCentsToBRL } from '@/utils/format';
 
@@ -25,12 +26,14 @@ function priceLabel({ priceMin, priceMax }: FilterParams): string | null {
 
 /** Um rótulo por filtro objetivo, na ordem em que se lê um pedido: o quê, cor, tamanho… */
 function chipLabels(filters: FilterParams): string[] {
+  const list = (value: FilterParams['size']) => filterValues(value).join(' ou ');
+  const size = list(filters.size);
   const labels = [
     filters.category,
-    filters.color,
-    filters.size && `Tamanho ${filters.size}`,
-    filters.condition,
-    filters.brand,
+    list(filters.color),
+    size && `Tamanho ${size}`,
+    list(filters.condition),
+    list(filters.brand),
     priceLabel(filters),
     filters.city,
   ];
