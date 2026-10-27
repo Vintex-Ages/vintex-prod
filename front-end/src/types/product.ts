@@ -94,14 +94,20 @@ export interface Paginated<T> {
   total: number;
 }
 
+/**
+ * Valor de um filtro de múltipla escolha (#337): um valor ou vários. Vários
+ * valores no mesmo campo somam por OU (tamanho M ou G); campos diferentes, por E.
+ */
+export type FilterValue = string | string[];
+
 export interface FilterParams {
   category?: string;
   priceMin?: number;
   priceMax?: number;
-  size?: string;
-  brand?: string;
-  condition?: string;
-  color?: string;
+  size?: FilterValue;
+  brand?: FilterValue;
+  condition?: FilterValue;
+  color?: FilterValue;
   city?: string;
   state?: string;
   q?: string;

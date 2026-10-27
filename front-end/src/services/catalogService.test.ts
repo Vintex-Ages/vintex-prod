@@ -101,6 +101,22 @@ describe('catalogService (mock)', () => {
       expect(page.items.map((item) => item.id)).toContain('3');
     });
 
+    // FE-US009-4 (#337): valores do mesmo campo somam por OU; campos diferentes, por E.
+    it('vários valores no mesmo campo devolvem peças de qualquer um deles', async () => {
+      const page = await getProducts({ size: ['M', 'G'] });
+      const ids = page.items.map((item) => item.id);
+
+      expect(ids).toEqual(expect.arrayContaining(['1', '2', '6', '7', '8']));
+      expect(ids).not.toContain('3');
+      expect(ids).not.toContain('5');
+    });
+
+    it('vários valores num campo somam por E com outro campo', async () => {
+      const page = await getProducts({ size: ['M', 'G'], color: 'Branco' });
+
+      expect(page.items.map((item) => item.id)).toEqual(['6']);
+    });
+
     it('filtra por faixa de preço', async () => {
       const page = await getProducts({ priceMin: 200, priceMax: 260 });
 
@@ -189,6 +205,30 @@ describe('catalogService.search (HTTP, VITE_USE_MOCKS=false)', () => {
       params: { q: 'vestido', category: 'Roupas' },
     });
     expect(result.status).toBe('rejected');
+  });
+
+  // FE-US009-4 (#337): o mesmo parâmetro repetido (`size=M&size=G`), que é o
+  // que o FastAPI lê como lista — sem colchetes nem índice.
+  it('manda cada valor do mesmo campo como parâmetro repetido', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { search: apiSearch } = await import('./catalogService');
+    const adapter = vi.fn((config: InternalAxiosRequestConfig) =>
+      Promise.resolve({
+        data: { items: [], total: 0, match_type: 'exact', suggestions: null },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }),
+    );
+    httpClient.defaults.adapter = adapter;
+
+    await apiSearch('vestido', { size: ['M', 'G'], category: 'Roupas' });
+
+    const url = httpClient.getUri(adapter.mock.calls[0][0]);
+    expect(url).toContain('size=M&size=G');
+    expect(url).toContain('category=Roupas');
+    expect(url).not.toContain('size%5B');
   });
 });
 
@@ -444,6 +484,15 @@ describe('catalogService.getFeed — contrato do backend 659951f', () => {
       expect(form.get('color')).toBe('Preto');
       expect(form.get('page')).toBe('2');
       expect(form.has('q')).toBe(false);
+    });
+
+    it('na busca por foto, cada valor do mesmo campo vai como um campo do form', async () => {
+      const { apiSearchByImage, adapter } = await setup();
+
+      await apiSearchByImage(imagem(), { size: ['M', 'G'] });
+
+      const form = adapter.mock.calls[0][0].data as FormData;
+      expect(form.getAll('size')).toEqual(['M', 'G']);
     });
 
     it('rejeita tipo inválido sem fazer requisição', async () => {
