@@ -447,9 +447,11 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
     expect(review.payment.validatedAt).toBe('2026-10-07T12:00:00Z');
   });
 
-  it('approveReceipt de item que a fila não carregou relê o item e mescla a resposta parcial', async () => {
+  // FE-INT-3 (#332): o back não tem `GET /admin/payments/{id}` (back-end#250/#251
+  // só listam, baixam o arquivo e validam). O item é relido pela própria fila.
+  it('approveReceipt de item que a fila não carregou relê o item pela fila e mescla a resposta parcial', async () => {
     const calls = await stubAdapter((config) =>
-      config.method === 'post' ? PARTIAL_APPROVED : API_REVIEW,
+      config.method === 'post' ? PARTIAL_APPROVED : PAGE_WITH_REVIEW,
     );
     const { approveReceipt } = await import('./adminReceiptService');
 
@@ -457,11 +459,52 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
 
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       'post /admin/payments/77/approve',
-      'get /admin/payments/77',
+      'get /admin/payments',
     ]);
     expect(review.buyer.name).toBe('Ana');
     expect(review.payment.status).toBe('aprovado');
     expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
+  });
+
+  // 409 (outra pessoa validou): a tela relê o item para mostrar quem validou.
+  it('getReceiptReview procura o Pedido na fila pelo nome da loja já conhecido', async () => {
+    const outro = { ...API_REVIEW, order_id: 78 };
+    const atualizado = {
+      ...API_REVIEW,
+      payment: {
+        ...API_REVIEW.payment,
+        status: 'aprovado',
+        validated_by: { id: 2, name: 'Carla' },
+        validated_at: '2026-10-07T12:00:00Z',
+      },
+    };
+    let listas = 0;
+    const calls = await stubAdapter(() => {
+      listas += 1;
+      return listas === 1
+        ? PAGE_WITH_REVIEW
+        : listas === 2
+          ? { items: [outro], page: 1, page_size: 1, total: 2 }
+          : { items: [atualizado], page: 2, page_size: 1, total: 2 };
+    });
+    const { listReceipts, getReceiptReview } = await import('./adminReceiptService');
+    await listReceipts();
+
+    const review = await getReceiptReview('77');
+
+    expect(calls.slice(1).map((call) => call.params)).toEqual([
+      { q: 'Roupa Rodada', page: 1 },
+      { q: 'Roupa Rodada', page: 2 },
+    ]);
+    expect(review.payment.status).toBe('aprovado');
+    expect(review.payment.validatedBy).toEqual({ id: '2', name: 'Carla' });
+  });
+
+  it('getReceiptReview de Pedido que não está na fila falha com ORDER_NOT_FOUND', async () => {
+    await stubAdapter(() => ({ items: [], page: 1, page_size: 20, total: 0 }));
+    const { getReceiptReview } = await import('./adminReceiptService');
+
+    await expect(getReceiptReview('999')).rejects.toMatchObject({ code: 'ORDER_NOT_FOUND' });
   });
 
   it('rejectReceipt envia { reason } e devolve o item completo com o motivo e quem validou', async () => {
@@ -598,21 +641,28 @@ describe('adminReceiptService (API real) — contrato proposto pelo front', () =
     });
   });
 
-  it('getReceiptReview lê o item pela rota do Pedido e mapeia o registro de quem validou', async () => {
+  it('getReceiptReview sem o item carregado percorre a fila sem filtro e mapeia quem validou', async () => {
     const calls = await stubAdapter(() => ({
-      ...API_REVIEW,
-      payment: {
-        ...API_REVIEW.payment,
-        status: 'aprovado',
-        validated_by: { id: 1, name: 'Admin' },
-        validated_at: '2026-10-07T12:00:00Z',
-      },
+      items: [
+        {
+          ...API_REVIEW,
+          payment: {
+            ...API_REVIEW.payment,
+            status: 'aprovado',
+            validated_by: { id: 1, name: 'Admin' },
+            validated_at: '2026-10-07T12:00:00Z',
+          },
+        },
+      ],
+      page: 1,
+      page_size: 20,
+      total: 1,
     }));
     const { getReceiptReview } = await import('./adminReceiptService');
 
     const review = await getReceiptReview('77');
 
-    expect(calls[0]).toMatchObject({ method: 'get', url: '/admin/payments/77' });
+    expect(calls[0]).toMatchObject({ method: 'get', url: '/admin/payments', params: { page: 1 } });
     expect(review.orderId).toBe('77');
     expect(review.payment.validatedBy).toEqual({ id: '1', name: 'Admin' });
   });
