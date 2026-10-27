@@ -38,6 +38,27 @@ vi.mock('@/services/catalogService', () => ({
   searchByImage: vi.fn(),
 }));
 
+// As opções de cidade e estado saem das lojas (FE-US009-5, #336).
+vi.mock('@/services/storeService', () => ({
+  searchStores: vi.fn().mockResolvedValue({
+    items: [
+      {
+        id: '7',
+        name: 'Ateliê Reviver',
+        description: null,
+        logoUrl: null,
+        city: 'Canoas',
+        state: 'RS',
+        verified: false,
+        activeCount: 3,
+      },
+    ],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+  }),
+}));
+
 // Dublês de SearchResult para a UI, não fixtures reais do backend.
 const mockResult: SearchResult = {
   match_type: 'exact',
@@ -372,6 +393,29 @@ describe('Catalog', () => {
   });
 
   // FE-US027-3: "Ver no catálogo" da Vintex chega com os filtros na URL.
+  // FE-US009-5 (#336): cidade soma com os outros filtros (interseção, back-end#108).
+  it('escolher uma cidade busca por ela junto com a categoria', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    await user.click(screen.getByRole('button', { name: /Mais filtros/ }));
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Cidade' }),
+      await screen.findByRole('option', { name: 'Canoas' }),
+    );
+
+    await waitFor(() => {
+      expect(search).toHaveBeenLastCalledWith(
+        '',
+        expect.objectContaining({ category: 'Roupas', city: 'Canoas', state: 'RS' }),
+      );
+    });
+  });
+
   it('abre com os filtros da URL já aplicados na busca', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 

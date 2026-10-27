@@ -11,6 +11,7 @@ import ErrorState from '@/components/common/ErrorState';
 import IconButton from '@/components/common/IconButton';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
+import { useStoreLocations } from '@/hooks/useStoreLocations';
 import { paths, productDetail } from '@/routes/paths';
 import { search, searchByImage } from '@/services/catalogService';
 import type { ImageInterpretation } from '@/services/catalogService';
@@ -89,6 +90,8 @@ function getEmptyCopy(searching: boolean, byImage: boolean) {
  *   enviar texto sai do modo imagem, porque a rota de imagem não aceita `q`.
  */
 function Catalog() {
+  // Cidades e UFs das lojas para o filtro de localização (FE-US009-5, #336).
+  const { locations } = useStoreLocations();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const query = searchParams.get('q') ?? '';
@@ -501,6 +504,7 @@ function Catalog() {
         sizeOptions={[...SIZES]}
         conditionOptions={[...CONDITIONS]}
         colorOptions={[...COLORS]}
+        locationOptions={locations}
         resultCount={loading ? undefined : total}
       />
 
