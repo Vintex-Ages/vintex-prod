@@ -24,21 +24,19 @@ const STALE_IMAGE_NOTICE =
 const INVALID_IMAGE_NOTICE = 'Não foi possível usar essa foto. Escolha outra imagem.';
 
 /**
- * Converte os filtros do painel (múltipla escolha) para o formato aceito
- * pelo catalogService (um valor só por campo). Limitação conhecida: quando
- * o usuário marca mais de um valor no mesmo campo (ex.: tamanho M e G), só
- * o primeiro é enviado à API. Ajustar quando `FilterParams` suportar
- * arrays — débito técnico.
+ * Converte os filtros do painel para o formato do catalogService. Os campos de
+ * múltipla escolha vão com todos os valores marcados (#337): tamanho M e G
+ * busca peças M ou G.
  */
 function toFilterParams(filters: CatalogFilters): FilterParams {
   return {
     category: filters.category,
     priceMin: filters.minPrice,
     priceMax: filters.maxPrice,
-    size: filters.size?.[0],
-    brand: filters.brand?.[0],
-    condition: filters.condition?.[0],
-    color: filters.color?.[0],
+    size: filters.size,
+    brand: filters.brand,
+    condition: filters.condition,
+    color: filters.color,
     city: filters.city,
     state: filters.state,
   };
