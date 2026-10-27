@@ -56,6 +56,11 @@ export interface ChatMessage {
    * `products`, nunca inferida do texto — ver `ChatChunk`.
    */
   products?: Product[];
+  /**
+   * `fallback` quando nada casou com o pedido e `products` são alternativas
+   * próximas (RN-61, back-end#260); ausente com back antigo, que não marca.
+   */
+  productsMatchType?: ChatMatchType;
   /** O que a Vintex entendeu do pedido (RN-60). Vem do chunk `interpreted`. */
   interpreted?: InterpretedQuery;
   /**
@@ -70,9 +75,12 @@ export interface ChatMessage {
  * union serve pro mock e pra API real — quem consome nunca sabe qual dos
  * dois está por trás.
  */
+/** Mesmo sentido do `match_type` do feed: peças do pedido ou alternativas (RN-61). */
+export type ChatMatchType = 'exact' | 'fallback';
+
 export type ChatChunk =
   | { type: 'text'; delta: string }
-  | { type: 'products'; products: Product[] }
+  | { type: 'products'; products: Product[]; matchType?: ChatMatchType }
   | { type: 'interpreted'; interpreted: InterpretedQuery }
   | { type: 'done' }
   /**
