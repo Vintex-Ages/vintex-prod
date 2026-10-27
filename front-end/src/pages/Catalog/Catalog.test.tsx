@@ -140,6 +140,27 @@ describe('Catalog', () => {
     expect(screen.getByRole('button', { name: 'Roupas' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  // FE-US009-4 (#337): marcar M e G mandava só M, sem aviso.
+  it('marcar dois tamanhos envia os dois, junto com outro filtro', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    await user.click(screen.getByRole('button', { name: /Mais filtros/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await user.click(screen.getByRole('checkbox', { name: 'G' }));
+
+    await waitFor(() => {
+      expect(search).toHaveBeenLastCalledWith(
+        '',
+        expect.objectContaining({ category: 'Roupas', size: ['M', 'G'] }),
+      );
+    });
+  });
+
   it('atualiza a busca conforme o usuário digita', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
     const user = userEvent.setup();
@@ -359,7 +380,8 @@ describe('Catalog', () => {
     await waitFor(() => expect(search).toHaveBeenCalled());
     expect(search).toHaveBeenLastCalledWith(
       '',
-      expect.objectContaining({ category: 'Casacos', color: 'Preto', priceMax: 100 }),
+      // Múltipla escolha chega como lista, mesmo com um valor só (#337).
+      expect.objectContaining({ category: 'Casacos', color: ['Preto'], priceMax: 100 }),
     );
   });
 });
@@ -413,7 +435,7 @@ describe('Catalog: busca por imagem', () => {
     await waitFor(() =>
       expect(searchByImage).toHaveBeenCalledWith(
         file,
-        expect.objectContaining({ category: 'Casacos', color: 'Preto' }),
+        expect.objectContaining({ category: 'Casacos', color: ['Preto'] }),
       ),
     );
     expect(await screen.findByText('Jaqueta parecida')).toBeInTheDocument();
