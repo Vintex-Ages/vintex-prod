@@ -337,6 +337,25 @@ async function mockUnpublish(id: string): Promise<SellerProductDetail> {
   return save({ ...product, status: 'despublicado' });
 }
 
+/**
+ * Descartar é apagar (back-end#271): o rascunho nunca foi público, não há
+ * histórico a guardar. Só rascunho pode ser descartado, como no back.
+ */
+async function mockDiscardDraft(id: string): Promise<void> {
+  const user = await me();
+  const products = await readProducts(user.id);
+  const product = products.find((item) => item.id === id);
+  if (!product) throw productNotFound(id);
+  if (product.status === 'vendido') throw productSold();
+  if (product.status !== 'rascunho') {
+    throw productNotEditable('Só rascunho pode ser descartado.');
+  }
+  writeProducts(
+    user.id,
+    products.filter((item) => item.id !== id),
+  );
+}
+
 async function mockGetMine({
   status,
   page = 1,
@@ -574,6 +593,19 @@ async function apiGetMine({
 }
 
 /**
+ * `DELETE /users/me/products/{id}` (back-end#271, PR back-end#323): 204 sem
+ * corpo; 404 `PRODUCT_NOT_FOUND` (inclusive peça de outro vendedor) e 409
+ * `PRODUCT_NOT_EDITABLE`/`PRODUCT_SOLD` para peça que não é rascunho.
+ */
+async function apiDiscardDraft(id: string): Promise<void> {
+  try {
+    await httpClient.delete(`/users/me/products/${id}`);
+  } catch (error) {
+    throw toSellerProductError(error);
+  }
+}
+
+/**
  * Rota proposta na #202; a back-end#146 ainda não tem branch. Sem a rota, a
  * tela mostra "ainda não disponível" em vez de erro (`docs/adr/0002`).
  */
@@ -635,6 +667,11 @@ export async function unpublish(id: string): Promise<SellerProductDetail> {
 
 export async function getMine(params: GetMineParams = {}): Promise<Paginated<SellerProduct>> {
   return useMocks ? mockGetMine(params) : apiGetMine(params);
+}
+
+/** Apaga um rascunho e as fotos dele (FE-US019-6, #345). Peça que não é rascunho é recusada. */
+export async function discardDraft(id: string): Promise<void> {
+  return useMocks ? mockDiscardDraft(id) : apiDiscardDraft(id);
 }
 
 export async function getSalesSummary(period: SalesPeriod): Promise<SalesSummary> {

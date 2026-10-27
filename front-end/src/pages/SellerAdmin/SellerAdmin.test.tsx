@@ -1,9 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '@/context/ToastContext';
 import {
+  discardDraft,
   getMine,
   getSalesSummary,
   publish,
@@ -18,6 +19,7 @@ import SellerAdmin from './SellerAdmin';
 vi.mock('@/services/sellerProductService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/sellerProductService')>()),
   getMine: vi.fn(),
+  discardDraft: vi.fn(),
   getSalesSummary: vi.fn(),
   publish: vi.fn(),
   unpublish: vi.fn(),
@@ -53,6 +55,7 @@ function renderPage() {
           <Route path="/seller/products/new" element={<h1>Anunciar peça</h1>} />
           <Route path="/seller/store" element={<h1>Editar loja</h1>} />
           <Route path="/seller/products/:id" element={<h1>Formulário da peça</h1>} />
+          <Route path="/seller/products/:id/review" element={<h1>Revisão da peça</h1>} />
         </Routes>
       </MemoryRouter>
     </ToastProvider>,
@@ -355,6 +358,115 @@ describe('<SellerAdmin />', () => {
         await screen.findByText('Esta peça já foi vendida e não pode mais ser alterada.'),
       ).toBeInTheDocument();
       expect(within(linha('Jaqueta jeans')).getByText('Anunciada')).toBeInTheDocument();
+    });
+  });
+
+  describe('aba de rascunhos (FE-US019-6, #345)', () => {
+    const PUBLICADAS = [
+      peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
+      peca({ id: '2', name: 'Bota Chelsea', status: 'vendido' }),
+    ];
+    const RASCUNHOS = [
+      peca({ id: '7', name: 'Saia plissada', status: 'rascunho' }),
+      peca({
+        id: '8',
+        name: 'Blazer xadrez',
+        status: 'rascunho',
+        coverImageUrl: 'https://x/b.jpg',
+      }),
+    ];
+
+    function comRascunhos(rascunhos: SellerProduct[] = RASCUNHOS) {
+      vi.mocked(getMine).mockImplementation(async (params) =>
+        pagina(params?.status === 'rascunho' ? rascunhos : PUBLICADAS),
+      );
+    }
+
+    async function abrirAba(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: 'Rascunhos' }));
+    }
+
+    it('a aba fica ao lado das outras e lista os rascunhos', async () => {
+      comRascunhos();
+      const user = userEvent.setup();
+      renderPage();
+
+      await abrirAba(user);
+
+      expect(getMine).toHaveBeenCalledWith(expect.objectContaining({ status: 'rascunho' }));
+      expect(await screen.findByText('Saia plissada')).toBeInTheDocument();
+      expect(screen.getByText('Blazer xadrez')).toBeInTheDocument();
+      expect(screen.queryByText('Jaqueta jeans')).toBeNull();
+    });
+
+    it('sem rascunhos, explica o que é um rascunho', async () => {
+      comRascunhos([]);
+      const user = userEvent.setup();
+      renderPage();
+
+      await abrirAba(user);
+
+      expect(await screen.findByText('Nenhum rascunho por aqui')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Rascunho é a peça que você começou a cadastrar/),
+      ).toBeInTheDocument();
+    });
+
+    it('"Continuar" leva para a revisão daquele rascunho', async () => {
+      comRascunhos();
+      const user = userEvent.setup();
+      renderPage();
+
+      await abrirAba(user);
+      const linha = (await screen.findByText('Saia plissada')).closest('article')!;
+      await user.click(within(linha).getByRole('button', { name: 'Continuar' }));
+
+      expect(await screen.findByRole('heading', { name: 'Revisão da peça' })).toBeInTheDocument();
+    });
+
+    it('"Descartar" pede confirmação, apaga e não mexe nas contagens', async () => {
+      comRascunhos();
+      vi.mocked(discardDraft).mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderPage();
+
+      await abrirAba(user);
+      const linha = (await screen.findByText('Saia plissada')).closest('article')!;
+      await user.click(within(linha).getByRole('button', { name: 'Descartar' }));
+
+      const dialogo = await screen.findByRole('dialog', { name: 'Descartar rascunho?' });
+      expect(discardDraft).not.toHaveBeenCalled();
+      await user.click(within(dialogo).getByRole('button', { name: 'Descartar' }));
+
+      expect(discardDraft).toHaveBeenCalledWith('7');
+      await waitFor(() => expect(screen.queryByText('Saia plissada')).toBeNull());
+      expect(screen.getByText('Blazer xadrez')).toBeInTheDocument();
+      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+      expect(screen.getByText('2 peças no total')).toBeInTheDocument();
+    });
+
+    it('cancelar a confirmação não descarta', async () => {
+      comRascunhos();
+      const user = userEvent.setup();
+      renderPage();
+
+      await abrirAba(user);
+      const linha = (await screen.findByText('Saia plissada')).closest('article')!;
+      await user.click(within(linha).getByRole('button', { name: 'Descartar' }));
+      await user.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancelar' }),
+      );
+
+      expect(discardDraft).not.toHaveBeenCalled();
+      expect(screen.getByText('Saia plissada')).toBeInTheDocument();
+    });
+
+    it('rascunhos não entram nas contagens das peças anunciadas', async () => {
+      comRascunhos();
+      renderPage();
+
+      expect(await screen.findByText('2 peças no total')).toBeInTheDocument();
+      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
     });
   });
 
