@@ -279,7 +279,7 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   await sleep(MOCK_STEP_DELAY_MS, signal);
   if (signal?.aborted) return;
 
-  yield { type: 'products', products: mockProducts.slice(0, 3) };
+  yield { type: 'products', products: mockProducts.slice(0, 3), matchType: 'exact' };
 
   if (signal?.aborted) return;
   await sleep(MOCK_WORD_DELAY_MS, signal);
@@ -455,8 +455,15 @@ function toChatChunk(payload: unknown): ChatChunk | null {
       return typeof delta === 'string' ? { type: 'text', delta } : null;
     }
     case 'products': {
-      const { products } = payload as { products?: ApiFeedItem[] };
-      return { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      // `match_type` (back-end#260), o mesmo nome do feed. Valor fora do
+      // contrato é ignorado: a lista aparece como antes, sem marcador.
+      const { products, match_type } = payload as {
+        products?: ApiFeedItem[];
+        match_type?: unknown;
+      };
+      const chunk: ChatChunk = { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      if (match_type === 'exact' || match_type === 'fallback') chunk.matchType = match_type;
+      return chunk;
     }
     case 'interpreted': {
       const { filters, similarity } = payload as {
