@@ -12,8 +12,10 @@ import Gallery from '@/components/product/Gallery';
 import SoldBadge from '@/components/product/SoldBadge';
 import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
+import { useFavorites } from '@/context/useFavorites';
 import { useToast } from '@/context/useToast';
 import { useProtectedAction } from '@/hooks/useProtectedAction';
+import type { CheckoutState } from '@/pages/Checkout/Checkout';
 import { paths, storeProfile } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
@@ -80,8 +82,11 @@ function CartIcon() {
  *
  * Barreira de login (FE-US012-5, #88): favoritar e comprar passam por
  * `useProtectedAction` — deslogado abre `LoginInterceptor` (compartilhado
- * entre os dois fluxos), logado executa a ação direto. O toggle de favorito
- * continua só local (sem persistência real).
+ * entre os dois fluxos), logado executa a ação direto. O coração lê e escreve
+ * no `useFavorites` (FE-US013-1, #328): favoritar aqui aparece no card da
+ * grade, persiste no service e, depois do login, a intenção guardada marca a
+ * peça de verdade. "Comprar Agora" abre o checkout com a peça (FE-US022-1,
+ * #319); deslogado, volta a ele depois do login.
  *
  * Sinalização de peça vendida (FE-US012-4, #87 → revisto em FE-US012-5, #88):
  * quando `status === 'vendido'`, mostra o `SoldBadge` junto do título/preço e
@@ -97,11 +102,11 @@ function ProductDetail() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { cart, loading: cartLoading, error: cartError, add } = useCart();
+  const { ids: favoriteIds, setFavorite } = useFavorites();
   const { toast } = useToast();
 
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [status, setStatus] = useState<Status>('loading');
-  const [favorited, setFavorited] = useState(false);
   const [lookItemAdded, setLookItemAdded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const isAddingRef = useRef(false);
@@ -133,6 +138,7 @@ function ProductDetail() {
   }, [id]);
 
   const productId = product?.id ?? '';
+  const isFavorite = productId !== '' && favoriteIds.has(productId);
 
   /**
    * `intent`/`action` precisam manter identidade estável entre renders: o
@@ -141,11 +147,43 @@ function ProductDetail() {
    * render reexecutaria a ação já concluída (desfazendo o toggle).
    */
   const favoriteIntent = useMemo(() => ({ type: 'favorite', payload: { productId } }), [productId]);
-  const toggleFavorite = useCallback(() => setFavorited((value) => !value), []);
+  /**
+   * Favoritar de verdade (FE-US013-1, #328): o estado vem do `useFavorites` e
+   * a escrita passa pelo `favoriteService`. O contexto é otimista e desfaz o
+   * coração quando a API falha — inclusive no `404` de peça que deixou de
+   * existir. O erro morre aqui de propósito: nada de erro genérico na tela.
+   *
+   * O sentido é decidido no clique (`favoriteTargetRef`), não no momento em que
+   * a ação roda: retomada depois do login, ela roda numa página remontada, com
+   * `ids` ainda carregando — um `toggle` ali podia desfavoritar uma peça que já
+   * era favorita. Sem clique nesta montagem, é retomada de quem clicou deslogado
+   * no coração vazio, então é favoritar.
+   */
+  const favoriteTargetRef = useRef<boolean | null>(null);
+  const toggleFavorite = useCallback(async () => {
+    if (!productId) return;
+    const target = favoriteTargetRef.current ?? true;
+    favoriteTargetRef.current = null;
+
+    try {
+      await setFavorite(productId, target);
+    } catch {
+      // Silencioso de propósito: o `FavoritesContext` desfez o coração.
+    }
+  }, [productId, setFavorite]);
 
   const buyIntent = useMemo(() => ({ type: 'buy', payload: { productId } }), [productId]);
-  /** Não existe fluxo de compra real ainda (pagamento fora do escopo) — aqui só a barreira de login importa. */
-  const noopBuy = useCallback(() => {}, []);
+  /**
+   * Abre o checkout só com esta peça, sem passar pelo carrinho (FE-US022-1,
+   * #319). Deslogado, a barreira guarda a intenção e isto roda na volta do login.
+   */
+  const buyNow = useCallback(() => {
+    if (!product) return;
+    const { id, name, price, coverImageUrl, store } = product;
+    navigate(paths.checkout, {
+      state: { products: [{ id, name, price, coverImageUrl, store }] } satisfies CheckoutState,
+    });
+  }, [navigate, product]);
 
   const alreadyInCart = useMemo(
     () =>
@@ -193,7 +231,7 @@ function ProductDetail() {
 
   const protectedFavorite = useProtectedAction({ intent: favoriteIntent, action: toggleFavorite });
   const protectedAddToCart = useProtectedAction({ intent: cartIntent, action: addToCart });
-  const protectedBuy = useProtectedAction({ intent: buyIntent, action: noopBuy });
+  const protectedBuy = useProtectedAction({ intent: buyIntent, action: buyNow });
 
   const activeIntercept = protectedFavorite.interceptorOpen
     ? protectedFavorite
@@ -381,8 +419,9 @@ function ProductDetail() {
       <div className="fixed inset-x-0 bottom-0 z-20 flex min-h-16 items-center gap-2 border-t border-linha bg-papel/95 px-4 py-2 backdrop-blur-sm web:static web:mt-8 web:gap-3 web:border-0 web:bg-transparent web:p-0">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-linha">
           <FavoriteButton
-            active={favorited}
+            active={isFavorite}
             onToggle={() => {
+              favoriteTargetRef.current = !isFavorite;
               void protectedFavorite.runProtectedAction();
             }}
             disabled={product.status === 'vendido'}

@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMine, publish, unpublish } from '@/services/sellerProductService';
 import type { ProductStatus, SellerProduct } from '@/types/product';
 
-/** Chips do painel (RN-51). `rascunho` não entra no painel — ver `docs/adr/0001`. */
+/**
+ * Chips do painel (RN-51). `rascunho` não entra na lista nem nas contagens
+ * (`docs/adr/0001`); tem aba própria, com hook próprio (`docs/adr/0004`).
+ */
 export type StatusFilter = 'todas' | 'ativo' | 'vendido' | 'despublicado';
 
 export type SellerProductsCounts = {

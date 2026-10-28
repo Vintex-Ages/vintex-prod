@@ -1,59 +1,24 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
+import AddressFields from '@/components/common/AddressFields';
 import Button from '@/components/common/Button';
 import DocumentModal from '@/components/common/DocumentModal';
 import ErrorState from '@/components/common/ErrorState';
 import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
-import Select, { type SelectOption } from '@/components/common/Select';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
-import { DESCRIPTION_MAX_LENGTH, useCreateStore, type CepStatus } from '@/hooks/useCreateStore';
+import { DESCRIPTION_MAX_LENGTH, useCreateStore } from '@/hooks/useCreateStore';
 import { useSellerContract } from '@/hooks/useSellerContract';
 import { paths } from '@/routes/paths';
+import type { StoreAddress } from '@/types/store';
 import type { DocumentType } from '@/utils/document';
-
-const UFS = [
-  'AC',
-  'AL',
-  'AP',
-  'AM',
-  'BA',
-  'CE',
-  'DF',
-  'ES',
-  'GO',
-  'MA',
-  'MT',
-  'MS',
-  'MG',
-  'PA',
-  'PB',
-  'PR',
-  'PE',
-  'PI',
-  'RJ',
-  'RN',
-  'RS',
-  'RO',
-  'RR',
-  'SC',
-  'SP',
-  'SE',
-  'TO',
-];
-const UF_OPTIONS: SelectOption[] = UFS.map((uf) => ({ value: uf, label: uf }));
 
 const DOCUMENT_OPTIONS: { value: DocumentType; label: string; placeholder: string }[] = [
   { value: 'cpf', label: 'CPF', placeholder: '000.000.000-00' },
   { value: 'cnpj', label: 'CNPJ', placeholder: '00.000.000/0000-00' },
 ];
-
-const CEP_HELPER: Partial<Record<CepStatus, string>> = {
-  loading: 'Buscando endereço…',
-  error: 'Não foi possível consultar o CEP agora. Preencha o endereço abaixo.',
-};
 
 const legendClass = 'mb-4 font-display text-h4 text-tinta';
 
@@ -165,6 +130,52 @@ function Sell() {
 
   const document = DOCUMENT_OPTIONS.find((option) => option.value === values.documentType)!;
 
+  const addressValue: StoreAddress = {
+    cep: values.cep,
+    street: values.street,
+    number: values.number,
+    complement: values.complement,
+    district: values.district,
+    city: values.city,
+    state: values.state ?? '',
+  };
+
+  const addressErrors: Partial<Record<keyof StoreAddress, string>> = {
+    cep: errors.cep,
+    street: errors.street,
+    number: errors.number,
+    complement: errors.complement,
+    district: errors.district,
+    city: errors.city,
+    state: errors.state,
+  };
+
+  function handleAddressChange(field: keyof StoreAddress, value: string) {
+    switch (field) {
+      case 'cep':
+        setField('cep', value);
+        break;
+      case 'street':
+        setField('street', value);
+        break;
+      case 'number':
+        setField('number', value);
+        break;
+      case 'complement':
+        setField('complement', value);
+        break;
+      case 'district':
+        setField('district', value);
+        break;
+      case 'city':
+        setField('city', value);
+        break;
+      case 'state':
+        setField('state', value || null);
+        break;
+    }
+  }
+
   return (
     <Container as="main" width="narrow" className="py-8 tablet:py-12">
       {intro}
@@ -237,72 +248,14 @@ function Sell() {
 
         <fieldset className="flex flex-col gap-5" disabled={submitting}>
           <legend className={legendClass}>Endereço</legend>
-          <InputField
-            id="store-cep"
-            label="CEP"
-            placeholder="00000-000"
-            value={values.cep}
-            onChange={(value) => setField('cep', value)}
-            error={errors.cep}
-            helperText={CEP_HELPER[cepStatus]}
+          <AddressFields
+            idPrefix="store"
+            value={addressValue}
+            onChange={handleAddressChange}
+            errors={addressErrors}
+            cepStatus={cepStatus}
             disabled={submitting}
           />
-          <InputField
-            id="store-street"
-            label="Rua"
-            value={values.street}
-            onChange={(value) => setField('street', value)}
-            error={errors.street}
-            disabled={submitting}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <InputField
-              id="store-number"
-              label="Número"
-              value={values.number}
-              onChange={(value) => setField('number', value)}
-              error={errors.number}
-              disabled={submitting}
-            />
-            <InputField
-              id="store-complement"
-              label="Complemento"
-              placeholder="Opcional"
-              value={values.complement}
-              onChange={(value) => setField('complement', value)}
-              disabled={submitting}
-            />
-          </div>
-          <InputField
-            id="store-district"
-            label="Bairro"
-            value={values.district}
-            onChange={(value) => setField('district', value)}
-            error={errors.district}
-            disabled={submitting}
-          />
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <InputField
-                id="store-city"
-                label="Cidade"
-                value={values.city}
-                onChange={(value) => setField('city', value)}
-                error={errors.city}
-                disabled={submitting}
-              />
-            </div>
-            <Select
-              id="store-state"
-              label="UF"
-              placeholder="—"
-              options={UF_OPTIONS}
-              value={values.state}
-              onChange={(value) => setField('state', value)}
-              error={errors.state}
-              disabled={submitting}
-            />
-          </div>
         </fieldset>
 
         <fieldset className="flex flex-col gap-5" disabled={submitting}>

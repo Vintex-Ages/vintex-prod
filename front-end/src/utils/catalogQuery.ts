@@ -1,5 +1,5 @@
 import type { CatalogFilters } from '@/types/catalog';
-import type { FilterParams } from '@/types/product';
+import type { FilterParams, FilterValue } from '@/types/product';
 
 /**
  * Filtros do catálogo na query string (`/catalog?category=Roupas&color=Preto`).
@@ -8,16 +8,15 @@ import type { FilterParams } from '@/types/product';
  *
  * Nomes iguais aos de `FilterParams`; preço em reais (`priceMax=100`).
  */
-const TEXT_KEYS = [
-  'q',
-  'category',
-  'size',
-  'brand',
-  'condition',
-  'color',
-  'city',
-  'state',
-] as const;
+/** Lista os valores de um `FilterValue`, sem vazios. */
+export function filterValues(value: FilterValue | undefined): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  return values.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+}
+
+const TEXT_KEYS = ['q', 'category', 'city', 'state'] as const;
+/** Múltipla escolha: um parâmetro repetido por valor (`size=M&size=G`, #337). */
+const LIST_KEYS = ['size', 'brand', 'condition', 'color'] as const;
 const NUMBER_KEYS = ['priceMin', 'priceMax'] as const;
 
 /**
@@ -32,6 +31,9 @@ export function toCatalogSearch(filters: FilterParams): string {
   for (const key of TEXT_KEYS) {
     const value = filters[key]?.trim();
     if (value) params.set(key, value);
+  }
+  for (const key of LIST_KEYS) {
+    for (const value of filterValues(filters[key])) params.append(key, value.trim());
   }
   for (const key of NUMBER_KEYS) {
     const value = filters[key];
@@ -59,8 +61,11 @@ function numberParam(params: URLSearchParams, key: string): number | undefined {
 export function fromCatalogSearch(params: URLSearchParams): CatalogFilters {
   const text = (key: string) => params.get(key)?.trim() || undefined;
   const list = (key: string) => {
-    const value = text(key);
-    return value ? [value] : undefined;
+    const values = params
+      .getAll(key)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return values.length ? values : undefined;
   };
 
   const filters: CatalogFilters = {

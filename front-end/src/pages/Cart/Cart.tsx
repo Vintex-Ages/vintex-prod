@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Avatar from '@/components/common/Avatar';
 import CartItemRow from '@/components/cart/CartItemRow';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -7,6 +8,7 @@ import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import { useCart } from '@/context/useCart';
 import { useToast } from '@/context/useToast';
+import type { CheckoutState } from '@/pages/Checkout/Checkout';
 import { paths, productDetail } from '@/routes/paths';
 import type { CartGroup, CartItem } from '@/types/cart';
 import { formatCentsToBRL } from '@/utils/format';
@@ -33,7 +35,9 @@ function toRowItem(item: CartItem) {
  * marcada como indisponível e fora do subtotal, sem aviso nem remoção: a
  * pausa é temporária (#297, `CONTEXT.md` → Indisponível).
  *
- * "Finalizar compra" é placeholder desabilitado: o checkout é da S3.
+ * "Finalizar compra" abre o checkout (FE-US022-1, #319) com as peças
+ * **disponíveis** daquela loja: um Pedido é de uma loja só. Sem chave Pix, ou
+ * sem peça disponível, o botão fica desabilitado.
  *
  * Usage:
  *   <Route path={paths.cart} element={<RequireAuth><Cart /></RequireAuth>} />
@@ -176,15 +180,40 @@ function Cart() {
 
       {visibleGroups.map((group) => {
         const headingId = `carrinho-loja-${group.store.id}`;
+        const hasPix = Boolean(group.pixKey?.trim());
+        const noPixId = `${headingId}-sem-pix`;
+        // 1 Pedido = 1 loja, só com o que ainda está disponível (#319).
+        const available = group.items.filter((entry) => !entry.unavailable);
         return (
           <section
             key={group.store.id}
             aria-labelledby={headingId}
-            className="flex flex-col gap-3 border-t border-linha pt-4"
+            className="flex min-w-0 flex-col gap-3 border-t border-linha pt-4"
           >
-            <h2 id={headingId} className="font-display text-h4 text-tinta">
-              {group.store.name}
-            </h2>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="shrink-0">
+                <Avatar name={group.store.name} src={group.store.logoUrl} />
+              </div>
+              <div className="min-w-0 break-words">
+                <h2 id={headingId} className="font-display text-h4 text-tinta">
+                  {group.store.name}
+                </h2>
+                {group.store.city && (
+                  <p className="font-ui text-body-sm text-texto-auxiliar">{group.store.city}</p>
+                )}
+              </div>
+            </div>
+
+            {hasPix ? (
+              <p className="min-w-0 break-all font-ui text-body-sm text-tinta">
+                <span className="font-semibold">Chave Pix: </span>
+                <span className="select-text">{group.pixKey}</span>
+              </p>
+            ) : (
+              <p id={noPixId} className="font-ui text-body-sm text-texto-auxiliar">
+                Este brechó ainda não cadastrou a chave Pix
+              </p>
+            )}
 
             <ul className="flex flex-col gap-3">
               {group.items.map((item) => (
@@ -206,17 +235,19 @@ function Cart() {
                   {formatCentsToBRL(group.subtotalCents)}
                 </strong>
               </p>
-              <div className="flex flex-col items-start gap-1 tablet:items-end">
-                <Button disabled aria-describedby={`${headingId}-em-breve`}>
-                  Finalizar compra
-                </Button>
-                <span
-                  id={`${headingId}-em-breve`}
-                  className="font-ui text-label text-texto-auxiliar"
-                >
-                  Em breve: pagamento por Pix direto ao brechó.
-                </span>
-              </div>
+              <Button
+                disabled={!hasPix || available.length === 0}
+                aria-describedby={hasPix ? undefined : noPixId}
+                onClick={() =>
+                  navigate(paths.checkout, {
+                    state: {
+                      products: available.map((entry) => entry.product),
+                    } satisfies CheckoutState,
+                  })
+                }
+              >
+                Finalizar compra
+              </Button>
             </div>
           </section>
         );

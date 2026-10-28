@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import Button from '@/components/common/Button';
@@ -8,10 +9,12 @@ import SellerProductRow, { type RowAction } from '@/components/seller/SellerProd
 import StatCard from '@/components/seller/StatCard';
 import { useToast } from '@/context/useToast';
 import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts';
+import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
 import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 import FinancialSummary from './FinancialSummary';
+import SellerDrafts from './SellerDrafts';
 import TrustSealCard from './TrustSealCard';
 
 /** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
@@ -35,6 +38,10 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
  * Despublicar confirma com um Toast que oferece "Desfazer" (republica). A
  * linha muda sem recarregar a lista; erro do back vira Toast de erro.
  *
+ * Aba "Rascunhos" (FE-US019-6, #345) ao lado dos chips de status: lista os
+ * cadastros pela metade, fora das contagens e do total (RN-51) — ver
+ * `SellerDrafts` e `docs/adr/0004`.
+ *
  * Abaixo das peças, a seção "Financeiro" (FE-US019-3, #222) com o resumo de
  * vendas por período — ver `FinancialSummary`. No topo, o card do selo
  * Confiável (FE-US007-1, #224) — ver `TrustSealCard`.
@@ -48,13 +55,16 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function SellerAdmin() {
+function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct } =
     useSellerProducts();
+  // A aba de rascunhos não é um status do saldo: troca a lista inteira, não filtra.
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const anunciar = () => navigate(paths.sellerProductNew);
+  const editarLoja = () => navigate(paths.sellerStore);
 
   async function republicar(product: SellerProduct) {
     try {
@@ -99,10 +109,15 @@ function SellerAdmin() {
     <Container as="main" className="flex flex-col gap-6 py-10">
       <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
         <h1 className="font-display text-h2 text-tinta">Painel do vendedor</h1>
-        <Button onClick={anunciar}>Anunciar peça</Button>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={editarLoja}>
+            Editar loja
+          </Button>
+          <Button onClick={anunciar}>Anunciar peça</Button>
+        </div>
       </div>
 
-      <TrustSealCard />
+      <TrustSealCard storeSource={storeSource} />
 
       {state.status === 'loading' && (
         <>
@@ -157,13 +172,23 @@ function SellerAdmin() {
               <FilterChip
                 key={chip.value}
                 label={chip.label}
-                active={filter === chip.value}
-                onToggle={() => setFilter(chip.value)}
+                active={!showDrafts && filter === chip.value}
+                onToggle={() => {
+                  setShowDrafts(false);
+                  setFilter(chip.value);
+                }}
               />
             ))}
+            <FilterChip
+              label="Rascunhos"
+              active={showDrafts}
+              onToggle={() => setShowDrafts(true)}
+            />
           </div>
 
-          {state.counts.total === 0 ? (
+          {showDrafts ? (
+            <SellerDrafts />
+          ) : state.counts.total === 0 ? (
             <EmptyState
               title="Nenhuma peça por aqui"
               message="Anuncie sua primeira peça e ela aparece neste painel."

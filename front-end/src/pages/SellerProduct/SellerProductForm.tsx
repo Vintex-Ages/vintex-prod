@@ -11,6 +11,7 @@ import Stepper from '@/components/common/Stepper';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
 import PriceBreakdown from '@/components/seller/PriceBreakdown';
+import PriceSuggestion from '@/components/seller/PriceSuggestion';
 import { CATEGORIES, COLORS, CONDITIONS, SIZES } from '@/components/catalog/categories';
 import {
   ETAPAS_CADASTRO,
@@ -32,6 +33,17 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * lê e os campos aparecem preenchidos com a etiqueta de sugestão (RN-56).
  * Digitar em cima apaga a etiqueta. Nada da IA bloqueia o cadastro: se ela
  * falhar, o aviso aparece e os campos seguem editáveis (RN-57).
+ *
+ * Ao lado da galeria fica a "Foto da etiqueta (opcional)" (FE-US015-1, #331),
+ * em estado próprio do hook: ela não entra na galeria pública nem conta como
+ * foto da peça (RN-47). Lida, a IA preenche marca e "Composição da etiqueta",
+ * com o aviso de etiqueta processada; ilegível, nenhum dos dois é preenchido e
+ * o motivo aparece junto dos outros avisos da IA (RN-59).
+ *
+ * Junto do preço fica o "Sugerir preço" (FE-US018-1, #326): a faixa só é
+ * pedida no clique (RN-67), "Usar R$ X" preenche o preço e o alerta de preço
+ * fora da faixa não bloqueia nada (RN-68). O estado vem do hook, porque a
+ * revisão repete o mesmo alerta.
  *
  * Esta página só grava o rascunho: "Continuar para revisão" salva e leva à
  * revisão (FE-US016-1, #218), que é quem publica (RN-50). O estado vem do
@@ -75,14 +87,20 @@ export default function SellerProductForm() {
     errors,
     suggested,
     aiNotes,
+    labelMedia,
+    labelRead,
     analyzing,
     saving,
     loading,
     formError,
     formStep,
     canContinue,
+    priceSuggestion,
+    requestPriceSuggestion,
+    applyPriceSuggestion,
     setField,
     setMedia,
+    setLabelMedia,
     saveDraft,
   } = useProductFlow();
 
@@ -140,19 +158,44 @@ export default function SellerProductForm() {
           </p>
         </div>
 
-        <div id="secao-fotos">
+        <div className="grid gap-6 tablet:grid-cols-3">
+          <div id="secao-fotos" className="tablet:col-span-2">
+            <MediaUploader
+              id="fotos"
+              label="Fotos da peça"
+              value={values.media}
+              onChange={setMedia}
+              max={8}
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              helperText="Até 8 fotos. A primeira é a capa do anúncio."
+              error={errors.media}
+              disabled={saving}
+            />
+          </div>
+
+          {/* Fora da galeria pública: a etiqueta só alimenta a IA (#331). */}
           <MediaUploader
-            id="fotos"
-            label="Fotos da peça"
-            value={values.media}
-            onChange={setMedia}
-            max={8}
+            id="etiqueta"
+            label="Foto da etiqueta (opcional)"
+            value={labelMedia}
+            onChange={setLabelMedia}
+            single
             accept="image/jpeg,image/png,image/webp,image/heic"
-            helperText="Até 8 fotos. A primeira é a capa do anúncio."
-            error={errors.media}
+            helperText="Não aparece no anúncio. A Vintex lê marca e composição."
             disabled={saving}
           />
         </div>
+
+        {labelRead ? (
+          <p
+            role="status"
+            className="flex flex-wrap items-center gap-2 border border-verde-rs bg-papel p-3 text-label text-tinta"
+          >
+            <AISuggestedTag compact label="Marca de campo sugerido" />
+            Etiqueta processada: a IA encontrou marca, tamanho e composição. Confira os valores
+            antes de continuar.
+          </p>
+        ) : null}
 
         {suggested.size > 0 ? (
           /* Em `compact` a etiqueta e so o icone, com o texto no `aria-label`.
@@ -254,6 +297,22 @@ export default function SellerProductForm() {
             labelAdornment={marca('brand')}
           />
 
+          <InputField
+            id="composicao"
+            label="Composição da etiqueta (opcional)"
+            value={values.composition}
+            onChange={(valor) => setField('composition', valor)}
+            placeholder="100% algodão"
+            helperText={
+              suggested.has('composition')
+                ? 'Extraído somente porque a etiqueta está legível.'
+                : undefined
+            }
+            error={errors.composition}
+            disabled={saving}
+            labelAdornment={marca('composition')}
+          />
+
           <div className="flex flex-col gap-2">
             <PriceInput
               id="preco"
@@ -265,6 +324,13 @@ export default function SellerProductForm() {
             />
             {/* RN-15: quanto o vendedor recebe, recalculado a cada tecla (FE-US017-1). */}
             <PriceBreakdown price={priceReais} />
+            <PriceSuggestion
+              state={priceSuggestion.status}
+              suggestion={priceSuggestion.suggestion}
+              currentPrice={priceReais}
+              onRequest={requestPriceSuggestion}
+              onUse={applyPriceSuggestion}
+            />
           </div>
         </div>
 
@@ -298,6 +364,7 @@ export default function SellerProductForm() {
             { id: 'cor', message: errors.color },
             { id: 'conservacao', message: errors.condition },
             { id: 'marca', message: errors.brand },
+            { id: 'composicao', message: errors.composition },
             { id: 'preco', message: errors.priceCents },
             { id: 'descricao', message: errors.description },
           ]}

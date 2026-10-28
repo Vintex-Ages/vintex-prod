@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { ApiError } from '@/types/auth';
 import type { Cart, CartGroup, CartItem } from '@/types/cart';
-import type { Product, Store } from '@/types/product';
+import type { Product, ProductStatus, Store } from '@/types/product';
 import { getProduct } from './catalogService';
 import { httpClient } from './httpClient';
 
@@ -97,6 +97,16 @@ function writeStoredItems(userId: string, items: StoredCartItem[]): void {
 }
 
 /**
+ * Mesma regra da API: `vendido` é definitivo; `reservado` (Pedido em aberto,
+ * back-end#251) fica indisponível como `pausado` até virar `vendido` ou voltar a `ativo`.
+ */
+function mockUnavailable(status: ProductStatus): CartItem['unavailable'] {
+  if (status === 'vendido') return 'vendido';
+  if (status === 'reservado') return 'pausado';
+  return undefined;
+}
+
+/**
  * Busca o estado atual de cada produto salvo (em paralelo) e monta o `Cart`.
  * Um `productId` que não existe mais no catálogo (`getProduct` rejeita) é
  * ignorado, sem quebrar o carrinho inteiro por causa de um item órfão.
@@ -108,7 +118,7 @@ async function buildCartFromSaved(saved: StoredCartItem[]): Promise<Cart> {
       return {
         product,
         addedAt: entry.addedAt,
-        unavailable: product.status === 'vendido' ? 'vendido' : undefined,
+        unavailable: mockUnavailable(product.status),
       };
     }),
   );
@@ -162,12 +172,10 @@ interface ApiCartStore {
   id: number | string;
   name: string;
   verified: boolean;
-  /**
-   * Chave Pix do vendedor (RN-18/RN-19). PENDENTE NO BACK: `FeedStoreResponse`
-   * (o `store` do grupo) só tem `id`, `name` e `verified`. A loja já grava a
-   * chave desde o back-end#216; falta ela viajar aqui. Opcional até lá.
-   */
+  /** Campos do `CartStoreInfo` proposto no back-end#259; opcionais para respostas antigas. */
   pix_key?: string | null;
+  city?: string | null;
+  logo_url?: string | null;
 }
 
 interface ApiCartItem {
@@ -198,6 +206,8 @@ function mapApiStore(store: ApiCartStore): Store {
     id: String(store.id),
     name: store.name,
     verified: store.verified,
+    city: store.city ?? undefined,
+    logoUrl: store.logo_url ?? undefined,
   };
 }
 

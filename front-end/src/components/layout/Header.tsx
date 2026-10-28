@@ -10,6 +10,7 @@ import shareIcon from '@/assets/product-detail/share.svg';
 import { AccountButton } from './AccountButton';
 import { AccountMenu } from './AccountMenu';
 import CartBadge from './CartBadge';
+import NotificationBell from './NotificationBell';
 import Container from './Container';
 import { NAV_LINKS } from './navLinks';
 
@@ -52,6 +53,7 @@ function Header() {
   const [open, setOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [term, setTerm] = useState('');
   const mobileSearchToggleRef = useRef<HTMLButtonElement>(null);
   const mobileSearchRegionRef = useRef<HTMLDivElement>(null);
@@ -68,7 +70,19 @@ function Header() {
     setOpen(false);
     setMobileNavOpen(false);
     setMobileSearchOpen(false);
+    setNotificationsOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    setNotificationsOpen(false);
+  }, [user?.id, isAuthenticated]);
+
+  function toggleNotifications() {
+    setNotificationsOpen((value) => !value);
+    setOpen(false);
+    setMobileNavOpen(false);
+    setMobileSearchOpen(false);
+  }
 
   useEffect(() => {
     if (!mobileSearchOpen) return;
@@ -131,6 +145,11 @@ function Header() {
       label: 'Meus Estilos & Preferências da IA',
       onSelect: () => goTo(paths.profilePreferences),
     },
+    { label: 'Meus pedidos', onSelect: () => goTo(paths.orders) },
+    { label: 'Meus favoritos', onSelect: () => goTo(paths.favorites) },
+    ...(user?.is_admin === true
+      ? [{ label: 'Painel admin', onSelect: () => goTo(paths.adminReceipts) }]
+      : []),
   ];
 
   /** Rotas que já oferecem a busca em tamanho grande — ver o comentário no JSX. */
@@ -138,8 +157,16 @@ function Header() {
 
   if (pathname.startsWith('/product/')) {
     return (
-      <header className="sticky top-0 z-30 h-[68px] border-b border-linha bg-papel/95 backdrop-blur-sm">
-        <Container className="flex h-full items-center justify-between gap-3">
+      <header
+        className={`sticky top-0 z-30 border-b border-linha bg-papel/95 backdrop-blur-sm ${isAuthenticated ? 'min-h-[68px]' : 'h-[68px]'}`}
+      >
+        <Container
+          className={
+            isAuthenticated
+              ? 'flex min-h-[68px] flex-wrap items-center justify-between gap-3 py-2 tablet:h-[68px] tablet:flex-nowrap tablet:py-0'
+              : 'flex h-full items-center justify-between gap-3'
+          }
+        >
           <div className="flex min-w-0 items-center gap-4">
             <button
               type="button"
@@ -157,7 +184,14 @@ function Header() {
               <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
             </Link>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className={`flex shrink-0 items-center gap-2 ${isAuthenticated ? 'ml-auto' : ''}`}>
+            {isAuthenticated && (
+              <NotificationBell
+                open={notificationsOpen}
+                onToggle={toggleNotifications}
+                onClose={() => setNotificationsOpen(false)}
+              />
+            )}
             <button
               type="button"
               aria-label="Compartilhar produto"
@@ -180,7 +214,9 @@ function Header() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-linha bg-papel">
-      <Container className="flex items-center gap-1 py-3 tablet:gap-6 tablet:py-4">
+      <Container
+        className={`flex items-center gap-1 py-3 tablet:gap-6 tablet:py-4 ${isAuthenticated && showSearch ? 'flex-wrap' : ''}`}
+      >
         <Link
           to={paths.home}
           className="shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
@@ -199,6 +235,7 @@ function Header() {
                 setMobileNavOpen((value) => !value);
                 setOpen(false);
                 setMobileSearchOpen(false);
+                setNotificationsOpen(false);
               }}
               className="inline-flex min-h-touch min-w-touch items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
             >
@@ -268,6 +305,7 @@ function Header() {
               setMobileSearchOpen((value) => !value);
               setMobileNavOpen(false);
               setOpen(false);
+              setNotificationsOpen(false);
             }}
             className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center text-tinta transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta tablet:hidden"
           >
@@ -319,7 +357,9 @@ function Header() {
           competia com o que a página oferece como ação principal.
         */}
         {showSearch ? (
-          <div className="hidden min-w-0 flex-1 justify-center tablet:flex">
+          <div
+            className={`hidden min-w-0 flex-1 justify-center tablet:flex ${isAuthenticated ? 'tablet:min-w-40' : ''}`}
+          >
             <div className="w-full max-w-md">
               <SearchBar
                 value={term}
@@ -334,38 +374,50 @@ function Header() {
           <div className="hidden flex-1 tablet:block" />
         )}
 
-        <div className="relative ml-auto flex shrink-0 items-center gap-1 tablet:ml-0 tablet:gap-2">
+        <div
+          className={`ml-auto flex shrink-0 items-center gap-1 tablet:gap-2 ${isAuthenticated && showSearch ? 'tablet:ml-auto' : 'tablet:ml-0'}`}
+        >
+          {isAuthenticated && (
+            <NotificationBell
+              open={notificationsOpen}
+              onToggle={toggleNotifications}
+              onClose={() => setNotificationsOpen(false)}
+            />
+          )}
           {isAuthenticated ? (
             <CartBadge count={count} onClick={() => navigate(paths.cart)} />
           ) : null}
 
-          <div className="[&_button]:min-w-touch [&_button]:px-2 [&_span]:sr-only [&_svg:last-child]:hidden tablet:[&_button]:px-3 tablet:[&_span]:not-sr-only tablet:[&_svg:last-child]:block">
-            <AccountButton
-              label={isAuthenticated ? (user?.name ?? 'Conta') : 'Conta'}
-              open={open}
-              onClick={() => {
-                setOpen((value) => !value);
-                setMobileNavOpen(false);
-                setMobileSearchOpen(false);
-              }}
-            />
-          </div>
-
-          {open && (
-            <div className="absolute right-0 top-full z-10 mt-2">
-              <AccountMenu
-                authenticated={isAuthenticated}
-                user={isAuthenticated ? { name: user?.name ?? '' } : undefined}
-                items={accountItems}
-                onLogin={() => goTo(paths.login)}
-                onRegister={() => goTo(paths.register)}
-                onLogout={() => {
-                  setOpen(false);
-                  logout();
+          <div className="relative">
+            <div className="[&_button]:min-w-touch [&_button]:px-2 [&_span]:sr-only [&_svg:last-child]:hidden tablet:[&_button]:px-3 tablet:[&_span]:not-sr-only tablet:[&_svg:last-child]:block">
+              <AccountButton
+                label={isAuthenticated ? (user?.name ?? 'Conta') : 'Conta'}
+                open={open}
+                onClick={() => {
+                  setOpen((value) => !value);
+                  setMobileNavOpen(false);
+                  setMobileSearchOpen(false);
+                  setNotificationsOpen(false);
                 }}
               />
             </div>
-          )}
+
+            {open && (
+              <div className="absolute right-0 top-full z-10 mt-2">
+                <AccountMenu
+                  authenticated={isAuthenticated}
+                  user={isAuthenticated ? { name: user?.name ?? '' } : undefined}
+                  items={accountItems}
+                  onLogin={() => goTo(paths.login)}
+                  onRegister={() => goTo(paths.register)}
+                  onLogout={() => {
+                    setOpen(false);
+                    logout();
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </Container>
 

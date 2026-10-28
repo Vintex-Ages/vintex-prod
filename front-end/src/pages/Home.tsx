@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import BrandSignature from '@/components/common/BrandSignature';
@@ -11,14 +11,14 @@ import { CATEGORIES } from '@/components/catalog/categories';
 import { FilterChip } from '@/components/catalog/FilterChip';
 import FilterToggle from '@/components/catalog/FilterToggle';
 import { useAuth } from '@/context/useAuth';
+import { useFavorites } from '@/context/useFavorites';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { VintexSearchSpotlight } from '@/components/vintex-ai/VintexSearchSpotlight';
+import { useHomeFeed } from '@/hooks/useHomeFeed';
 import { paths, productDetail } from '@/routes/paths';
-import { getFeedWithDetails } from '@/services/catalogService';
 import { getPreferences, getStyles } from '@/services/preferenceService';
 import { formatPieceCount } from '@/utils/format';
 import type { Preference, StyleOption } from '@/types/preference';
-import type { Paginated, ProductDetail } from '@/types/product';
 
 /**
  * Termos que existem no catálogo — cada um devolve resultado tanto no mock
@@ -45,6 +45,14 @@ const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
  * - **Convite para vender (FE-US006-1, #212).** A Home logada usa o banner do
  *   Figma e oferece "Anunciar Peça" (`/sell`) a quem ainda não tem loja.
  *   Como no `Header`, a fonte é `user.is_seller`, sem requisição extra.
+ * - **"Garimpados para Você" vem das recomendações (FE-US029-1, #325).**
+ *   Logado e sem categoria, a grade é `getRecommendations` (RN-64); se ela
+ *   falhar, cai no feed sem aviso (RN-38). Com categoria ou deslogado, segue
+ *   o feed. Fonte, paginação e descarte de resposta velha moram no
+ *   `useHomeFeed`; aqui é só a tela.
+ *
+ * Usage:
+ *   <Route path={paths.home} element={<Home />} />
  */
 function Home() {
   const navigate = useNavigate();
@@ -53,28 +61,23 @@ function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
-  // ponytail: Home favorites are page-local toggles until a shared favorites service exists.
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [feed, setFeed] = useState<Paginated<ProductDetail> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState(false);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(false);
-    (selectedCategory ? getFeedWithDetails({ category: selectedCategory }) : getFeedWithDetails())
-      .then(setFeed)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [selectedCategory]);
-
-  useEffect(load, [load]);
+  // Favoritos vêm do contexto compartilhado (#328): o mesmo id marcado aqui
+  // aparece marcado no detalhe da peça, e vice-versa.
+  const { ids: favoriteIds, toggle: toggleFavorite } = useFavorites();
+  const {
+    feed,
+    loading,
+    loadingMore,
+    error,
+    hasItems,
+    hasMore,
+    loadMore,
+    reload: load,
+  } = useHomeFeed(isAuthenticated, selectedCategory);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setPreferenceLabels([]);
-      setFavorites([]);
       return;
     }
 
@@ -98,30 +101,16 @@ function Home() {
     };
   }, [isAuthenticated]);
 
-  async function loadMore() {
-    if (!feed || loading || loadingMore) return;
-    setLoadingMore(true);
-    setError(false);
-    try {
-      const next = await getFeedWithDetails({
-        page: feed.page + 1,
-        ...(selectedCategory ? { category: selectedCategory } : {}),
-      });
-      setFeed({ ...next, items: [...feed.items, ...next.items] });
-    } catch {
-      setError(true);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  const hasItems = Boolean(feed && feed.items.length > 0);
-  const hasMore = Boolean(feed && feed.items.length < feed.total);
-
-  function toggleFavorite(id: string) {
-    setFavorites((current) =>
-      current.includes(id) ? current.filter((favorite) => favorite !== id) : [...current, id],
-    );
+  /**
+   * Coração do card (FE-US013-1, #328). `toggle` é otimista e já desfaz o
+   * coração quando a API falha — inclusive no `404` de peça que deixou de
+   * existir. Por isso o erro morre aqui: a tela não mente nem mostra um erro
+   * genérico, o coração só volta ao que era.
+   */
+  function handleToggleFavorite(id: string) {
+    void toggleFavorite(id).catch(() => {
+      // Silencioso de propósito: o `FavoritesContext` desfez o coração.
+    });
   }
 
   function searchCatalog(term: string) {
@@ -369,8 +358,8 @@ function Home() {
               loading={loading}
               productPath={productDetail}
               compactCards={isAuthenticated}
-              onToggleFavorite={isAuthenticated ? toggleFavorite : undefined}
-              isFavorite={isAuthenticated ? (id) => favorites.includes(id) : undefined}
+              onToggleFavorite={isAuthenticated ? handleToggleFavorite : undefined}
+              isFavorite={isAuthenticated ? (id) => favoriteIds.has(id) : undefined}
               // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
               // aqui também empilharia duas entradas no histórico e o "voltar" não
               // sairia da peça; `onOpen` fica como ponto de telemetria.

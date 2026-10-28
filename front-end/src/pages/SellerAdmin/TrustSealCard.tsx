@@ -2,21 +2,21 @@ import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
 import { useToast } from '@/context/useToast';
-import { useStoreVerification } from '@/hooks/useStoreVerification';
+import { useStoreVerification, type StoreVerificationSource } from '@/hooks/useStoreVerification';
 
 /**
  * Card "Selo Confiável" do painel do vendedor (FE-US007-1, #224, RN-72/73):
  * mostra a situação do selo e, enquanto pendente, o botão "Validar meus
- * dados", que dispara a validação **simulada** (o texto diz isso). Validou,
- * o selo vira Confiável com um aviso de sucesso.
+ * dados", que dispara a validação **simulada** (o texto diz isso). O selo
+ * após validar segue a resposta da operação; HTTP 200 sozinho não concede selo.
  *
  * Usage:
  *   import TrustSealCard from '@/pages/SellerAdmin/TrustSealCard';
- *   <TrustSealCard />
+ *   <TrustSealCard storeSource={{ store, onStoreUpdated }} />
  */
-function TrustSealCard() {
+function TrustSealCard({ storeSource }: { storeSource?: StoreVerificationSource }) {
   const { toast } = useToast();
-  const { state, validating, validate, retry } = useStoreVerification();
+  const { state, validating, validate, retry } = useStoreVerification(storeSource);
 
   async function handleValidate() {
     if (await validate()) {

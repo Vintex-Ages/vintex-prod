@@ -9,6 +9,8 @@ interface VintexChatState {
   /** Id da mensagem que falhou, ou `null` se nenhuma. */
   errorMessageId: string | null;
   errorText: string | null;
+  /** `'quota'` quando a falha foi a cota do dia esgotada (FE-US027-5): não adianta tentar de novo. */
+  errorReason: 'quota' | undefined;
 }
 
 interface UseVintexChatResult extends VintexChatState {
@@ -40,6 +42,7 @@ let state: VintexChatState = {
   streamingMessageId: null,
   errorMessageId: null,
   errorText: null,
+  errorReason: undefined,
 };
 // Identidade da navegação cuja mensagem inicial já foi enviada. Era um
 // booleano, e por ser módulo-escopado como o resto do store ele nunca voltava
@@ -78,6 +81,15 @@ function fallbackFor(message: ChatMessage, question: string): Partial<ChatMessag
   if (count === 0) {
     return { text: 'Não achei peças para isso agora.', catalogQuery: question };
   }
+  // Alternativas (RN-61) não "combinam com o que você pediu": a frase diz o que são.
+  if (message.productsMatchType === 'fallback') {
+    return {
+      text:
+        count === 1
+          ? 'Não achei peça exata para isso. Separei 1 alternativa próxima do catálogo.'
+          : `Não achei peça exata para isso. Separei ${count} alternativas próximas do catálogo.`,
+    };
+  }
   return {
     text:
       count === 1
@@ -111,7 +123,9 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
         } else if (chunk.type === 'products') {
           setState((current) => ({
             messages: current.messages.map((message) =>
-              message.id === vintexMessageId ? { ...message, products: chunk.products } : message,
+              message.id === vintexMessageId
+                ? { ...message, products: chunk.products, productsMatchType: chunk.matchType }
+                : message,
             ),
           }));
         } else if (chunk.type === 'interpreted') {
@@ -124,7 +138,11 @@ function runStream(history: ChatMessage[], vintexMessageId: string, question: st
           }));
         } else if (chunk.type === 'error') {
           failed = true;
-          setState({ errorMessageId: vintexMessageId, errorText: chunk.message });
+          setState({
+            errorMessageId: vintexMessageId,
+            errorText: chunk.message,
+            errorReason: chunk.reason,
+          });
         }
       }
 
@@ -155,7 +173,15 @@ function sendMessage(text: string): void {
   const vintexMessage = createMessage('vintex', '');
   const history = [...state.messages, userMessage];
 
-  setState((current) => ({ messages: [...current.messages, userMessage, vintexMessage] }));
+  // Pergunta nova encerra o erro anterior por inteiro: limpar só parte dos
+  // três campos deixava a bolha antiga com o texto do erro e o "Tentar de
+  // novo" (inclusive numa bolha que era de cota esgotada).
+  setState((current) => ({
+    messages: [...current.messages, userMessage, vintexMessage],
+    errorMessageId: null,
+    errorText: null,
+    errorReason: undefined,
+  }));
   runStream(history, vintexMessage.id, trimmed);
 }
 
@@ -175,6 +201,7 @@ function retry(): void {
             ...message,
             text: '',
             products: undefined,
+            productsMatchType: undefined,
             interpreted: undefined,
             catalogQuery: undefined,
           }
@@ -182,6 +209,7 @@ function retry(): void {
     ),
     errorMessageId: null,
     errorText: null,
+    errorReason: undefined,
   }));
 
   runStream(history, failedId, lastUserText);
@@ -197,7 +225,13 @@ export function resetVintexChat(): void {
   abortController = null;
   bootstrappedKey = null;
   lastUserText = null;
-  state = { messages: [], streamingMessageId: null, errorMessageId: null, errorText: null };
+  state = {
+    messages: [],
+    streamingMessageId: null,
+    errorMessageId: null,
+    errorText: null,
+    errorReason: undefined,
+  };
   listeners.forEach((listener) => listener());
 }
 
@@ -215,13 +249,14 @@ export function resetVintexChat(): void {
  * histórico enviado ao service inclui toda a conversa até ali.
  *
  * Usage:
- *   const { messages, streamingMessageId, errorMessageId, errorText, sendMessage, retry } =
+ *   const { messages, streamingMessageId, errorMessageId, errorText, errorReason, sendMessage, retry } =
  *     useVintexChat(location.state?.message);
  *
  *   <ChatBubble
  *     message={message}
  *     streaming={message.id === streamingMessageId}
  *     error={message.id === errorMessageId ? errorText ?? undefined : undefined}
+ *     errorReason={message.id === errorMessageId ? errorReason : undefined}
  *     onRetry={retry}
  *   />
  */

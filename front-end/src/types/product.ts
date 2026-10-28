@@ -10,8 +10,12 @@ import type { StoreVerification } from '@/types/store';
  * Status da peça com os mesmos valores do JSON do back (decidido na
  * back-end#144) — é o que vai no corpo e no `?status=`. Os rótulos da tela
  * (`Anunciada`, `Já vendida`, `Pausada`) ficam só no `StatusBadge`.
+ *
+ * `reservado`: a peça tem um Pedido aberto e ainda sem comprovante aprovado
+ * (back-end#247); vira `vendido` na aprovação (back-end#251) e volta a `ativo`
+ * se o Pedido expirar (back-end#243).
  */
-export type ProductStatus = 'rascunho' | 'ativo' | 'vendido' | 'despublicado';
+export type ProductStatus = 'rascunho' | 'ativo' | 'reservado' | 'vendido' | 'despublicado';
 
 export interface Store {
   id: string;
@@ -69,6 +73,14 @@ export interface ProductDetail extends Product {
    */
   material?: string;
   measurements?: string;
+  /**
+   * Um dos 6 valores de `app/constants/styles.py` (mesmos de `StyleOption.value`
+   * em `@/types/preference`). Existia só em `ProductInput`/`SellerProduct`
+   * (cadastro do vendedor) — adicionado aqui porque a FE-SVC-recommendations
+   * (#313) é o primeiro consumidor do lado comprador. Opcional: peças
+   * cadastradas antes desse campo existir não têm valor.
+   */
+  style?: string;
 }
 
 /**
@@ -82,14 +94,20 @@ export interface Paginated<T> {
   total: number;
 }
 
+/**
+ * Valor de um filtro de múltipla escolha (#337): um valor ou vários. Vários
+ * valores no mesmo campo somam por OU (tamanho M ou G); campos diferentes, por E.
+ */
+export type FilterValue = string | string[];
+
 export interface FilterParams {
   category?: string;
   priceMin?: number;
   priceMax?: number;
-  size?: string;
-  brand?: string;
-  condition?: string;
-  color?: string;
+  size?: FilterValue;
+  brand?: FilterValue;
+  condition?: FilterValue;
+  color?: FilterValue;
   city?: string;
   state?: string;
   q?: string;
@@ -123,6 +141,8 @@ export interface ProductInput {
   brand?: string;
   condition?: string;
   style?: string;
+  /** Composição do tecido, lida da etiqueta (#318). Ex.: '100% algodão'. */
+  composition?: string;
   price: number;
   /** URLs na ordem de exibição; ≥ 1 para publicar (RN-47). */
   images: string[];
