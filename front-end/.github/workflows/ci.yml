@@ -59,11 +59,13 @@ jobs:
         run: pnpm format:check
       - name: Check types
         run: pnpm exec tsc --noEmit
-      - name: Test application
-        run: pnpm test
+      # `test:coverage` já roda a suíte inteira e falha se um teste falhar; rodar
+      # `pnpm test` antes executava os mesmos testes duas vezes (~80s a mais).
+      - name: Test braces security
+        run: pnpm test:braces-security
       - name: Test automation scripts
         run: node --test .github/scripts/lib/*.tests.mjs
-      - name: Test coverage
+      - name: Test application with coverage
         run: pnpm test:coverage
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
