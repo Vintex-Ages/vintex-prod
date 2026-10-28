@@ -8,4 +8,5 @@ import { paths } from '@/routes/paths';
 export const NAV_LINKS = [
   { label: 'Home', href: paths.home },
   { label: 'Catálogo', href: paths.catalog },
+  { label: 'Brechós', href: paths.stores },
 ] as const;

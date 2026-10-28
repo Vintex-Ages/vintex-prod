@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { MediaItem } from '@/components/common/MediaUploader';
 import { useAuth } from '@/context/useAuth';
 import { useToast } from '@/context/useToast';
+import { useAddressLookup, type CepStatus } from '@/hooks/useAddressLookup';
 import { useMyStore } from '@/hooks/useMyStore';
 import { paths } from '@/routes/paths';
-import { lookupAddress } from '@/services/cepService';
 import { createStore, StoreError } from '@/services/storeService';
-import type { StoreInput } from '@/types/store';
+import type { StoreAddress, StoreInput } from '@/types/store';
 import {
   formatCep,
   formatDocument,
@@ -15,6 +15,7 @@ import {
   onlyDigits,
   type DocumentType,
 } from '@/utils/document';
+import { CEP_NOT_FOUND_MESSAGE, validateStoreAddress } from '@/utils/storeAddress';
 
 /**
  * Estado e regras do "Quero vender" (FE-US006-1, #212). A tela `Sell` só
@@ -26,9 +27,8 @@ import {
  *    login não traz o papel, então o flag pode estar atrasado.
  * 2. **Máscara e validação do documento (RN-30).** A regra é de
  *    `utils/document.ts`; o hook só escolhe CPF ou CNPJ e aplica.
- * 3. **CEP → endereço.** Com 8 dígitos, consulta o `cepService` e preenche
- *    bairro, cidade e UF. Se a consulta cair, os campos seguem editáveis e o
- *    endereço pode ser digitado à mão — falha do ViaCEP não impede abrir loja.
+ * 3. **CEP → endereço.** A consulta fica em `useAddressLookup`; este hook
+ *    integra o endereço resolvido aos dados da loja e às mensagens do formulário.
  * 4. **Ordem do envio (RN-29, RN-31).** `createStore` → `refreshUser()` (para
  *    `is_seller` chegar ao menu) → toast de boas-vindas → `/seller`. Se só o
  *    `refreshUser` falhar, a loja já existe: segue para o painel mesmo assim,
@@ -63,7 +63,7 @@ export interface CreateStoreValues {
 
 export type CreateStoreField = keyof CreateStoreValues;
 export type CreateStoreErrors = Partial<Record<CreateStoreField, string>>;
-export type CepStatus = 'idle' | 'loading' | 'resolved' | 'not_found' | 'error';
+export type { CepStatus };
 /** `checking`/`error` da consulta de loja; `has-store` redireciona; `ready` mostra o formulário. */
 export type SellAccess = 'checking' | 'error' | 'has-store' | 'ready';
 
@@ -85,13 +85,17 @@ const INITIAL_VALUES: CreateStoreValues = {
   pixKey: '',
 };
 
-const CEP_NOT_FOUND_MESSAGE = 'CEP não encontrado.';
 const GENERIC_SUBMIT_ERROR = 'Não foi possível criar sua loja agora. Tente novamente.';
 
 const DOCUMENT_LABEL: Record<DocumentType, { name: string; digits: number }> = {
   cpf: { name: 'CPF', digits: 11 },
   cnpj: { name: 'CNPJ', digits: 14 },
 };
+
+function invalidDocumentMessage(type: DocumentType): string {
+  const document = DOCUMENT_LABEL[type];
+  return `${document.name} inválido. Confira os ${document.digits} dígitos.`;
+}
 
 function required(value: string | null, message: string): string | undefined {
   return value?.trim() ? undefined : message;
@@ -105,20 +109,8 @@ function validate(values: CreateStoreValues, cepStatus: CepStatus): CreateStoreE
       ? `Informe o ${document.name}.`
       : isValidDocument(values.documentType, values.documentNumber)
         ? undefined
-        : `${document.name} inválido. Confira os ${document.digits} dígitos.`,
-    cep:
-      onlyDigits(values.cep).length !== 8
-        ? 'Informe um CEP válido.'
-        : cepStatus === 'not_found'
-          ? CEP_NOT_FOUND_MESSAGE
-          : cepStatus === 'loading'
-            ? 'Aguarde a busca do CEP.'
-            : undefined,
-    street: required(values.street, 'Informe a rua.'),
-    number: required(values.number, 'Informe o número.'),
-    district: required(values.district, 'Informe o bairro.'),
-    city: required(values.city, 'Informe a cidade.'),
-    state: required(values.state, 'Selecione a UF.'),
+        : invalidDocumentMessage(values.documentType),
+    ...validateStoreAddress(values, cepStatus),
     pixKey: required(values.pixKey, 'Informe a chave Pix.'),
   };
 
@@ -139,7 +131,7 @@ function withoutErrors(
   return next;
 }
 
-function toStoreInput(values: CreateStoreValues): StoreInput {
+function toStoreInput(values: CreateStoreValues, acceptedContractVersion?: string): StoreInput {
   return {
     name: values.name.trim(),
     description: values.description.trim(),
@@ -156,9 +148,9 @@ function toStoreInput(values: CreateStoreValues): StoreInput {
       state: values.state ?? '',
     },
     pixKey: values.pixKey.trim(),
-    // FE-US003b-1 (#215, Should) — aceite do contrato de venda. Quando existir,
-    // a tela mostra o contrato antes do formulário e a versão aceita entra aqui
-    // como `acceptedContractVersion`. O service já aceita o campo como opcional.
+    // FE-US003b-1 (#215): versão do contrato de venda aceita antes do formulário
+    // (`useSellerContract`). Registro separado do aceite dos termos (RN-93).
+    acceptedContractVersion,
   };
 }
 
@@ -171,7 +163,12 @@ function toSubmitMessage(error: unknown): string {
   return GENERIC_SUBMIT_ERROR;
 }
 
-export function useCreateStore() {
+export interface UseCreateStoreOptions {
+  /** Versão do contrato de venda aceita no passo anterior (`useSellerContract`). */
+  acceptedContractVersion?: string;
+}
+
+export function useCreateStore({ acceptedContractVersion }: UseCreateStoreOptions = {}) {
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
   const { toast } = useToast();
@@ -179,8 +176,10 @@ export function useCreateStore() {
 
   const [values, setValues] = useState<CreateStoreValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<CreateStoreErrors>({});
-  const [cepStatus, setCepStatus] = useState<CepStatus>('idle');
   const [submitting, setSubmitting] = useState(false);
+  // O `submitting` do estado só muda no próximo render: dois `submit()` no
+  // mesmo tick liam `false` os dois e criavam a loja duas vezes (#283).
+  const submittingRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const access: SellAccess =
@@ -192,45 +191,28 @@ export function useCreateStore() {
           ? 'has-store'
           : 'ready';
 
-  const cepDigits = onlyDigits(values.cep);
+  const setLookupAddressField = useCallback((field: keyof StoreAddress, value: string) => {
+    setValues((current) => ({
+      ...current,
+      [field]: field === 'state' && value === '' ? null : value,
+    }));
+  }, []);
 
-  // Mesmo padrão do cadastro (FE-US002-1): consulta assim que o CEP completa e
-  // descarta a resposta de um CEP que já foi trocado.
+  const { cepStatus } = useAddressLookup(values.cep, setLookupAddressField);
+
   useEffect(() => {
-    if (cepDigits.length !== 8) {
-      setCepStatus('idle');
+    if (cepStatus === 'not_found') {
+      setErrors((current) => ({
+        ...current,
+        cep: CEP_NOT_FOUND_MESSAGE,
+      }));
       return;
     }
 
-    let active = true;
-    setCepStatus('loading');
-
-    lookupAddress(cepDigits)
-      .then((address) => {
-        if (!active) return;
-        if (!address) {
-          setCepStatus('not_found');
-          setErrors((current) => ({ ...current, cep: CEP_NOT_FOUND_MESSAGE }));
-          return;
-        }
-        setCepStatus('resolved');
-        setValues((current) => ({
-          ...current,
-          district: address.neighborhood,
-          city: address.city,
-          state: address.state,
-        }));
-        setErrors((current) => withoutErrors(current, 'cep', 'district', 'city', 'state'));
-      })
-      .catch(() => {
-        // Serviço fora do ar ou CEP recusado: a tela avisa e deixa digitar.
-        if (active) setCepStatus('error');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [cepDigits]);
+    if (cepStatus === 'resolved') {
+      setErrors((current) => withoutErrors(current, 'cep', 'street', 'district', 'city', 'state'));
+    }
+  }, [cepStatus]);
 
   const setField = useCallback(
     <K extends CreateStoreField>(field: K, value: CreateStoreValues[K]) => {
@@ -249,31 +231,45 @@ export function useCreateStore() {
     [],
   );
 
-  /** Troca CPF ↔ CNPJ: reaplica a máscara nova aos dígitos já digitados. */
-  const setDocumentType = useCallback((documentType: DocumentType) => {
-    setValues((current) => ({
-      ...current,
-      documentType,
-      documentNumber: formatDocument(documentType, current.documentNumber),
-    }));
-    setErrors((current) => withoutErrors(current, 'documentNumber'));
-  }, []);
+  /**
+   * Troca CPF ↔ CNPJ: reaplica a máscara nova aos dígitos já digitados e
+   * confere o número contra o tipo novo na hora. CNPJ → CPF corta para 11
+   * dígitos (é o limite do campo); o corte sempre acusa erro, mesmo que o que
+   * sobrou por acaso seja um CPF válido — não pode passar calado (#283).
+   */
+  const setDocumentType = useCallback(
+    (documentType: DocumentType) => {
+      const documentNumber = formatDocument(documentType, values.documentNumber);
+      const truncated =
+        onlyDigits(documentNumber).length < onlyDigits(values.documentNumber).length;
+
+      setValues((current) => ({ ...current, documentType, documentNumber }));
+      setErrors((current) =>
+        documentNumber && (truncated || !isValidDocument(documentType, documentNumber))
+          ? { ...current, documentNumber: invalidDocumentMessage(documentType) }
+          : withoutErrors(current, 'documentNumber'),
+      );
+    },
+    [values.documentNumber],
+  );
 
   const submit = useCallback(async () => {
-    if (submitting) return;
+    if (submittingRef.current) return;
 
     const nextErrors = validate(values, cepStatus);
     setErrors(nextErrors);
     setSubmitError(null);
     if (Object.keys(nextErrors).length > 0) return;
 
+    submittingRef.current = true;
     setSubmitting(true);
     let storeName: string;
     try {
-      const store = await createStore(toStoreInput(values));
+      const store = await createStore(toStoreInput(values, acceptedContractVersion));
       storeName = store.name;
     } catch (error) {
       setSubmitError(toSubmitMessage(error));
+      submittingRef.current = false;
       setSubmitting(false);
       return;
     }
@@ -286,7 +282,7 @@ export function useCreateStore() {
 
     toast(`Boas-vindas! Sua loja ${storeName} está aberta.`, { kind: 'success' });
     navigate(paths.seller, { replace: true });
-  }, [submitting, values, cepStatus, refreshUser, toast, navigate]);
+  }, [values, cepStatus, acceptedContractVersion, refreshUser, toast, navigate]);
 
   return {
     access,

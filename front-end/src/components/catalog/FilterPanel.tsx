@@ -4,8 +4,9 @@ import { CATEGORIES } from '@/components/catalog/categories';
 import FilterToggle from '@/components/catalog/FilterToggle';
 import Button from '@/components/common/Button';
 import IconButton from '@/components/common/IconButton';
+import Select, { type SelectOption } from '@/components/common/Select';
 import FilterCheckboxGroup from '@/components/catalog/FilterCheckboxGroup';
-import type { CatalogFilters } from '@/types/catalog';
+import type { CatalogFilters, StoreLocation } from '@/types/catalog';
 import { formatPieceCount } from '@/utils/format';
 
 type FilterPanelProps = {
@@ -15,9 +16,25 @@ type FilterPanelProps = {
   brandOptions?: string[];
   conditionOptions?: string[];
   colorOptions?: string[];
-  /** Quantas peças o filtro atual devolve — vira o rótulo da saída da folha no celular. */
+  /** Cidades e UFs que existem nas lojas; vazio deixa só "Todas"/"Todos". */
+  locationOptions?: StoreLocation[];
+  /** Quantas peças o filtro atual devolve; também indica carregamento quando omitido. */
   resultCount?: number;
 };
+
+/** Valores sem repetição, na ordem em que chegaram. */
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+/**
+ * Opções do select. O valor ativo que não está na lista (veio da URL, ou a loja
+ * saiu) continua como opção, para ficar visível e removível.
+ */
+function toOptions(values: string[], current: string | undefined): SelectOption[] {
+  const all = current && !values.includes(current) ? [...values, current] : values;
+  return all.map((value) => ({ value, label: value }));
+}
 
 /**
  * Painel de filtros do catálogo.
@@ -32,6 +49,7 @@ function FilterPanel({
   brandOptions = [],
   conditionOptions = [],
   colorOptions = [],
+  locationOptions = [],
   resultCount,
 }: FilterPanelProps) {
   const [open, setOpen] = useState(false);
@@ -65,6 +83,29 @@ function FilterPanel({
     updateFilter(key, next.length ? next : undefined);
   };
 
+  const stateOptions = unique(locationOptions.map((location) => location.state));
+  const cityOptions = unique(
+    locationOptions
+      .filter((location) => !filters.state || location.state === filters.state)
+      .map((location) => location.city),
+  );
+
+  /** Cidade escolhida leva a UF dela, para não misturar homônimas de outro estado. */
+  const changeCity = (city: string | undefined) => {
+    const state = locationOptions.find((location) => location.city === city)?.state;
+    onChange({ ...filters, city, state: state ?? filters.state });
+  };
+
+  /** Trocar a UF tira a cidade que não pertence a ela. */
+  const changeState = (state: string | undefined) => {
+    const keepsCity =
+      !state ||
+      locationOptions.some(
+        (location) => location.state === state && location.city === filters.city,
+      );
+    onChange({ ...filters, state, city: keepsCity ? filters.city : undefined });
+  };
+
   // Conta os sete grupos de filtros ativos.
   const activeCount = [
     filters.category,
@@ -78,7 +119,7 @@ function FilterPanel({
 
   return (
     <section aria-label="Filtros do catálogo">
-      <div className="flex items-center gap-2 overflow-x-auto">
+      <div className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:-mx-6 tablet:px-6 web:-mx-8 web:px-8">
         {CATEGORIES.map((category) => (
           <FilterChip
             key={category.label}
@@ -87,13 +128,17 @@ function FilterPanel({
             onToggle={() => updateFilter('category', category.value)}
           />
         ))}
-
         <FilterToggle
           open={open}
           count={activeCount}
           onClick={() => setOpen((current) => !current)}
         />
       </div>
+      <p aria-live="polite" className="mt-4 text-right font-ui text-body-sm text-texto-auxiliar">
+        {typeof resultCount === 'number'
+          ? `${formatPieceCount(resultCount)} ${resultCount === 1 ? 'encontrada' : 'encontradas'}`
+          : 'Buscando peças…'}
+      </p>
 
       {open && (
         <div
@@ -213,36 +258,33 @@ function FilterPanel({
                 onToggle={(value, checked) => toggleOption('color', value, checked)}
               />
 
-              <fieldset className="flex flex-col gap-2">
+              {/*
+                Localização (FE-US009-5, #336): escolha única, com as cidades e
+                UFs que existem nas lojas. Escolher a cidade leva a UF dela, e
+                trocar a UF tira a cidade que não é dela.
+              */}
+              <fieldset className="flex flex-col gap-3">
                 <legend className="mb-1 font-ui text-h4 font-semibold text-tinta">
                   Localização
                 </legend>
 
-                <div className="flex gap-3">
-                  <label className="flex flex-1 flex-col gap-1 text-label text-texto-auxiliar">
-                    Cidade
-                    <input
-                      aria-label="Cidade"
-                      type="text"
-                      placeholder="Porto Alegre"
-                      value={filters.city ?? ''}
-                      onChange={(event) => updateFilter('city', event.target.value || undefined)}
-                      className="min-h-touch w-full border border-linha bg-branco-quente px-3 py-2 text-body text-tinta placeholder:text-texto-auxiliar focus:border-tinta focus:outline-none focus:ring-1 focus:ring-tinta"
-                    />
-                  </label>
+                <Select
+                  id="filtro-estado"
+                  label="Estado"
+                  placeholder="Todos os estados"
+                  value={filters.state ?? null}
+                  options={toOptions(stateOptions, filters.state)}
+                  onChange={(state) => changeState(state ?? undefined)}
+                />
 
-                  <label className="flex w-24 flex-col gap-1 text-label text-texto-auxiliar">
-                    Estado
-                    <input
-                      aria-label="Estado"
-                      type="text"
-                      placeholder="RS"
-                      value={filters.state ?? ''}
-                      onChange={(event) => updateFilter('state', event.target.value || undefined)}
-                      className="min-h-touch w-full border border-linha bg-branco-quente px-3 py-2 text-body text-tinta placeholder:text-texto-auxiliar focus:border-tinta focus:outline-none focus:ring-1 focus:ring-tinta"
-                    />
-                  </label>
-                </div>
+                <Select
+                  id="filtro-cidade"
+                  label="Cidade"
+                  placeholder="Todas as cidades"
+                  value={filters.city ?? null}
+                  options={toOptions(cityOptions, filters.city)}
+                  onChange={(city) => changeCity(city ?? undefined)}
+                />
               </fieldset>
             </div>
 

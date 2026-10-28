@@ -119,6 +119,54 @@ describe('ChatBubble', () => {
     expect(screen.getByRole('link', { name: 'Ver peça: Vestido floral' })).toBeInTheDocument();
   });
 
+  // FE-US027-4 (#333): o back marca quando nada casou com o pedido (RN-61).
+  it('peças `fallback` aparecem sob "Alternativas próximas"', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+
+    render(
+      <MemoryRouter>
+        <ChatBubble
+          message={{ ...vintexMessage, products: [product], productsMatchType: 'fallback' }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Alternativas próximas' })).toBeInTheDocument();
+    expect(screen.getByText('Vestido floral')).toBeInTheDocument();
+  });
+
+  it('peças `exact` ou sem marcador aparecem sem o título de alternativas', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <ChatBubble
+          message={{ ...vintexMessage, products: [product], productsMatchType: 'exact' }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('heading', { name: 'Alternativas próximas' })).toBeNull();
+
+    rerender(
+      <MemoryRouter>
+        <ChatBubble message={{ ...vintexMessage, products: [product] }} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('heading', { name: 'Alternativas próximas' })).toBeNull();
+  });
+
   it('repassa onOpenProduct para o onOpen da ChatProductList', async () => {
     const user = userEvent.setup();
     const onOpenProduct = vi.fn();
@@ -177,6 +225,30 @@ describe('ChatBubble', () => {
 
     expect(screen.getByText('Falha ao responder.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
+  });
+
+  // FE-US027-5 (#357): cota do dia esgotada.
+  it('errorReason="quota" mostra o aviso como status, sem "Tentar de novo" mesmo com onRetry', () => {
+    render(
+      <ChatBubble
+        message={vintexMessage}
+        error="Você atingiu o limite de perguntas por hoje."
+        errorReason="quota"
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Você atingiu o limite de perguntas por hoje.',
+    );
+    expect(screen.queryByRole('button', { name: 'Tentar de novo' })).not.toBeInTheDocument();
+  });
+
+  it('erro sem errorReason continua sem role=status', () => {
+    render(<ChatBubble message={vintexMessage} error="Falha ao responder." onRetry={() => {}} />);
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
   });
 
   it('não usa nenhuma cor em hex cru em nenhum dos estados', () => {

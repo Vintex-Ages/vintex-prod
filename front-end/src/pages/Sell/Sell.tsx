@@ -1,56 +1,24 @@
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
+import AddressFields from '@/components/common/AddressFields';
 import Button from '@/components/common/Button';
+import DocumentModal from '@/components/common/DocumentModal';
 import ErrorState from '@/components/common/ErrorState';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
 import InputField from '@/components/common/InputField';
 import MediaUploader from '@/components/common/MediaUploader';
-import Select, { type SelectOption } from '@/components/common/Select';
 import TextArea from '@/components/common/TextArea';
 import Container from '@/components/layout/Container';
-import { DESCRIPTION_MAX_LENGTH, useCreateStore, type CepStatus } from '@/hooks/useCreateStore';
+import { DESCRIPTION_MAX_LENGTH, useCreateStore } from '@/hooks/useCreateStore';
+import { useSellerContract } from '@/hooks/useSellerContract';
 import { paths } from '@/routes/paths';
+import type { StoreAddress } from '@/types/store';
 import type { DocumentType } from '@/utils/document';
-
-const UFS = [
-  'AC',
-  'AL',
-  'AP',
-  'AM',
-  'BA',
-  'CE',
-  'DF',
-  'ES',
-  'GO',
-  'MA',
-  'MT',
-  'MS',
-  'MG',
-  'PA',
-  'PB',
-  'PR',
-  'PE',
-  'PI',
-  'RJ',
-  'RN',
-  'RS',
-  'RO',
-  'RR',
-  'SC',
-  'SP',
-  'SE',
-  'TO',
-];
-const UF_OPTIONS: SelectOption[] = UFS.map((uf) => ({ value: uf, label: uf }));
 
 const DOCUMENT_OPTIONS: { value: DocumentType; label: string; placeholder: string }[] = [
   { value: 'cpf', label: 'CPF', placeholder: '000.000.000-00' },
   { value: 'cnpj', label: 'CNPJ', placeholder: '00.000.000/0000-00' },
 ];
-
-const CEP_HELPER: Partial<Record<CepStatus, string>> = {
-  loading: 'Buscando endereço…',
-  error: 'Não foi possível consultar o CEP agora. Preencha o endereço abaixo.',
-};
 
 const legendClass = 'mb-4 font-display text-h4 text-tinta';
 
@@ -66,16 +34,17 @@ const legendClass = 'mb-4 font-display text-h4 text-tinta';
  * A rota é protegida por `RequireAuth` em `AppRoutes`; chega-se aqui pelo
  * "Quero vender" do menu da conta (`Header`) e pelo convite da Home logada.
  *
- * FE-US003b-1 (#215, Should) — aceite do contrato de venda: quando existir,
- * entra como um passo ANTES deste formulário (renderizado aqui quando
- * `access === 'ready'` e o contrato ainda não foi aceito), e a versão aceita
- * segue para `createStore` pelo `useCreateStore`. Hoje não bloqueia nada.
+ * Contrato de venda (FE-US003b-1, #215): quando `access === 'ready'`, o
+ * formulário só aparece depois do aceite no `DocumentModal` (com rolagem até o
+ * fim). O passo vive em `useSellerContract`; a versão aceita segue para
+ * `createStore` pelo `useCreateStore`. Não aceitar volta à Home, sem loja.
  *
  * Usage:
  *   import Sell from '@/pages/Sell/Sell';
  *   <Route path={paths.sell} element={<RequireAuth><Sell /></RequireAuth>} />
  */
 function Sell() {
+  const contract = useSellerContract();
   const {
     access,
     retryAccess,
@@ -87,7 +56,9 @@ function Sell() {
     setField,
     setDocumentType,
     submit,
-  } = useCreateStore();
+  } = useCreateStore({ acceptedContractVersion: contract.acceptedVersion });
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [submitCount, setSubmitCount] = useState(0);
 
   if (access === 'checking') {
     return (
@@ -109,19 +80,105 @@ function Sell() {
     return <Navigate to={paths.seller} replace />;
   }
 
+  const intro = (
+    <>
+      <h1 className="font-display text-h2 text-tinta">Quero vender</h1>
+      <p className="mt-2 font-ui text-body text-texto-auxiliar">
+        Abra sua loja na Vintex e comece a anunciar suas peças.
+      </p>
+    </>
+  );
+
+  if (contract.state.status !== 'accepted') {
+    return (
+      <Container as="main" width="narrow" className="py-8 tablet:py-12">
+        {intro}
+        <div className="mt-8">
+          {contract.state.status === 'loading' ? (
+            <p role="status" className="font-ui text-body text-texto-auxiliar">
+              Carregando o contrato de venda…
+            </p>
+          ) : contract.state.status === 'error' ? (
+            <ErrorState
+              message="Não foi possível carregar o contrato de venda."
+              onRetry={contract.retry}
+            />
+          ) : (
+            <p className="font-ui text-body text-texto-auxiliar">
+              Antes de abrir a loja, leia e aceite o contrato de venda.
+            </p>
+          )}
+        </div>
+        {contract.state.status === 'pending' ? (
+          <DocumentModal
+            open
+            document={contract.state.document}
+            requireScrollToEnd
+            onAccept={contract.accept}
+            onDecline={contract.decline}
+          />
+        ) : null}
+      </Container>
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmitCount((count) => count + 1);
     void submit();
   }
 
   const document = DOCUMENT_OPTIONS.find((option) => option.value === values.documentType)!;
 
+  const addressValue: StoreAddress = {
+    cep: values.cep,
+    street: values.street,
+    number: values.number,
+    complement: values.complement,
+    district: values.district,
+    city: values.city,
+    state: values.state ?? '',
+  };
+
+  const addressErrors: Partial<Record<keyof StoreAddress, string>> = {
+    cep: errors.cep,
+    street: errors.street,
+    number: errors.number,
+    complement: errors.complement,
+    district: errors.district,
+    city: errors.city,
+    state: errors.state,
+  };
+
+  function handleAddressChange(field: keyof StoreAddress, value: string) {
+    switch (field) {
+      case 'cep':
+        setField('cep', value);
+        break;
+      case 'street':
+        setField('street', value);
+        break;
+      case 'number':
+        setField('number', value);
+        break;
+      case 'complement':
+        setField('complement', value);
+        break;
+      case 'district':
+        setField('district', value);
+        break;
+      case 'city':
+        setField('city', value);
+        break;
+      case 'state':
+        setField('state', value || null);
+        break;
+    }
+  }
+
   return (
     <Container as="main" width="narrow" className="py-8 tablet:py-12">
-      <h1 className="font-display text-h2 text-tinta">Quero vender</h1>
-      <p className="mt-2 font-ui text-body text-texto-auxiliar">
-        Abra sua loja na Vintex e comece a anunciar suas peças.
-      </p>
+      {intro}
 
       <form className="mt-8 flex flex-col gap-10" onSubmit={handleSubmit} noValidate>
         <fieldset className="flex flex-col gap-5" disabled={submitting}>
@@ -191,72 +248,14 @@ function Sell() {
 
         <fieldset className="flex flex-col gap-5" disabled={submitting}>
           <legend className={legendClass}>Endereço</legend>
-          <InputField
-            id="store-cep"
-            label="CEP"
-            placeholder="00000-000"
-            value={values.cep}
-            onChange={(value) => setField('cep', value)}
-            error={errors.cep}
-            helperText={CEP_HELPER[cepStatus]}
+          <AddressFields
+            idPrefix="store"
+            value={addressValue}
+            onChange={handleAddressChange}
+            errors={addressErrors}
+            cepStatus={cepStatus}
             disabled={submitting}
           />
-          <InputField
-            id="store-street"
-            label="Rua"
-            value={values.street}
-            onChange={(value) => setField('street', value)}
-            error={errors.street}
-            disabled={submitting}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <InputField
-              id="store-number"
-              label="Número"
-              value={values.number}
-              onChange={(value) => setField('number', value)}
-              error={errors.number}
-              disabled={submitting}
-            />
-            <InputField
-              id="store-complement"
-              label="Complemento"
-              placeholder="Opcional"
-              value={values.complement}
-              onChange={(value) => setField('complement', value)}
-              disabled={submitting}
-            />
-          </div>
-          <InputField
-            id="store-district"
-            label="Bairro"
-            value={values.district}
-            onChange={(value) => setField('district', value)}
-            error={errors.district}
-            disabled={submitting}
-          />
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2">
-              <InputField
-                id="store-city"
-                label="Cidade"
-                value={values.city}
-                onChange={(value) => setField('city', value)}
-                error={errors.city}
-                disabled={submitting}
-              />
-            </div>
-            <Select
-              id="store-state"
-              label="UF"
-              placeholder="—"
-              options={UF_OPTIONS}
-              value={values.state}
-              onChange={(value) => setField('state', value)}
-              error={errors.state}
-              disabled={submitting}
-            />
-          </div>
         </fieldset>
 
         <fieldset className="flex flex-col gap-5" disabled={submitting}>
@@ -274,6 +273,22 @@ function Sell() {
         </fieldset>
 
         <div className="flex flex-col gap-4">
+          {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+          <FormErrorSummary
+            submitCount={submitCount}
+            items={[
+              { id: 'store-name', message: errors.name },
+              { id: 'store-document', message: errors.documentNumber },
+              { id: 'store-cep', message: errors.cep },
+              { id: 'store-street', message: errors.street },
+              { id: 'store-number', message: errors.number },
+              { id: 'store-district', message: errors.district },
+              { id: 'store-city', message: errors.city },
+              { id: 'store-state', message: errors.state },
+              { id: 'store-pix', message: errors.pixKey },
+            ]}
+          />
+
           {submitError ? (
             <p
               role="alert"

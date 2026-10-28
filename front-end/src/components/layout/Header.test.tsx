@@ -1,11 +1,78 @@
-﻿import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+﻿import { useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY, useAuth } from '@/context/useAuth';
+import { CartContext, type CartContextValue } from '@/context/useCart';
+import { paths, productDetail } from '@/routes/paths';
 import { me } from '@/services/authService';
 import type { AuthUser } from '@/types/auth';
+import type { Notification } from '@/types/notification';
 import Header from './Header';
+
+type HeaderNotificationsValue = {
+  available: boolean;
+  items: Notification[];
+  unreadCount: number;
+  loading: boolean;
+  error: string | null;
+  pendingIds: string[];
+  markingAll: boolean;
+  retry: () => void;
+  markAsRead: (id: string) => Promise<void>;
+  markAllAsRead: () => Promise<void>;
+};
+
+// Dublê da fronteira do contexto: os testes do provider exercitam o estado real.
+// Sem import de runtime do módulo futuro, o Header atual continua coletável no RED.
+const notificationSource = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const markAsRead = vi.fn<(id: string) => Promise<void>>();
+  const markAllAsRead = vi.fn<() => Promise<void>>();
+  let snapshot: HeaderNotificationsValue = {
+    available: true,
+    items: [],
+    unreadCount: 0,
+    loading: false,
+    error: null,
+    pendingIds: [],
+    markingAll: false,
+    retry: vi.fn(),
+    markAsRead,
+    markAllAsRead,
+  };
+  function setItems(items: Notification[]) {
+    snapshot = { ...snapshot, items, unreadCount: items.filter((item) => !item.isRead).length };
+    listeners.forEach((listener) => listener());
+  }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    setItems,
+    reset: () => {
+      setItems([]);
+      markAsRead.mockReset().mockImplementation(async (id) => {
+        setItems(snapshot.items.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
+      });
+      markAllAsRead.mockReset().mockImplementation(async () => {
+        setItems(snapshot.items.map((item) => ({ ...item, isRead: true })));
+      });
+    },
+  };
+});
+
+vi.mock('@/context/useNotifications', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    useNotifications: () =>
+      useSyncExternalStore(notificationSource.subscribe, notificationSource.getSnapshot),
+  };
+});
 
 // Só `me` é substituído: é o que `refreshUser()` consulta. O resto do
 // authService (logout etc.) segue o comportamento real do modo mock.
@@ -26,18 +93,54 @@ const SAMPLE_USER: AuthUser = {
 
 function PathProbe() {
   const location = useLocation();
-  return <span data-testid="path">{location.pathname}</span>;
+  return (
+    <span data-testid="path">
+      {location.pathname}
+      {location.search}
+    </span>
+  );
 }
 
-function renderHeader() {
+function createCartValue(count = 0): CartContextValue {
+  return {
+    cart: { groups: [] },
+    count,
+    loading: false,
+    error: null,
+    add: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function renderHeader(options?: { count?: number; initialEntry?: string }) {
   return render(
-    <MemoryRouter initialEntries={['/']}>
+    <MemoryRouter initialEntries={[options?.initialEntry ?? '/']}>
       <AuthProvider>
-        <Header />
-        <PathProbe />
+        <CartContext.Provider value={createCartValue(options?.count)}>
+          <Header />
+          <PathProbe />
+        </CartContext.Provider>
       </AuthProvider>
     </MemoryRouter>,
   );
+}
+
+function getMobileSearchToggle(): HTMLButtonElement {
+  const toggle = screen
+    .queryAllByRole('button', { name: 'Buscar' })
+    .find((button) => button.hasAttribute('aria-expanded') && button.hasAttribute('aria-controls'));
+
+  if (!(toggle instanceof HTMLButtonElement)) {
+    throw new Error('Lupa mobile acessível com aria-expanded e aria-controls não encontrada.');
+  }
+
+  return toggle;
+}
+
+function getControlledMobileSearch(toggle: HTMLButtonElement): HTMLElement | null {
+  const controlledId = toggle.getAttribute('aria-controls');
+  return controlledId ? document.getElementById(controlledId) : null;
 }
 
 /**
@@ -50,15 +153,42 @@ function RefreshProbe() {
   return null;
 }
 
-function renderHeaderLoggedIn(user: AuthUser = SAMPLE_USER) {
+function renderHeaderLoggedIn(user: AuthUser = SAMPLE_USER, options?: { count?: number }) {
   window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
   window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
   return render(
     <MemoryRouter initialEntries={['/']}>
       <AuthProvider>
-        <Header />
-        <PathProbe />
-        <RefreshProbe />
+        <CartContext.Provider value={createCartValue(options?.count)}>
+          <Header />
+          <PathProbe />
+          <RefreshProbe />
+        </CartContext.Provider>
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+}
+
+function ReactiveCartHeader() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <CartContext.Provider value={createCartValue(count)}>
+      <Header />
+      <PathProbe />
+      <button onClick={() => setCount(3)}>Atualizar contagem</button>
+    </CartContext.Provider>
+  );
+}
+
+function renderReactiveHeaderLoggedIn() {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-1');
+
+  return render(
+    <MemoryRouter initialEntries={['/']}>
+      <AuthProvider>
+        <ReactiveCartHeader />
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -67,6 +197,96 @@ function renderHeaderLoggedIn(user: AuthUser = SAMPLE_USER) {
 describe('<Header />', () => {
   afterEach(() => {
     window.sessionStorage.clear();
+  });
+
+  describe('FE-FND-6: navegação da Sprint 3', () => {
+    it.each(['Meus pedidos', 'Meus favoritos'])(
+      'logado: exibe %s no menu da conta',
+      async (label) => {
+        renderHeaderLoggedIn();
+
+        fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      },
+    );
+
+    it.each([
+      ['Meus pedidos', (): string => paths.orders],
+      ['Meus favoritos', (): string => paths.favorites],
+    ] as const)('logado: %s navega para sua rota e fecha o menu', async (label, destination) => {
+      renderHeaderLoggedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+      fireEvent.click(screen.getByRole('button', { name: label }));
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(destination()));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it('admin: exibe Painel admin no menu da conta', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_admin: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+      expect(screen.getByRole('button', { name: 'Painel admin' })).toBeInTheDocument();
+    });
+
+    it('admin: Painel admin navega para paths.adminReceipts e fecha o menu', async () => {
+      renderHeaderLoggedIn({ ...SAMPLE_USER, is_admin: true });
+
+      fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+      fireEvent.click(screen.getByRole('button', { name: 'Painel admin' }));
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe(paths.adminReceipts));
+      expect(screen.queryByRole('button', { name: 'Sair' })).not.toBeInTheDocument();
+    });
+
+    it.each([false, true])(
+      'não-admin com is_seller=%s não exibe Painel admin',
+      async (is_seller) => {
+        renderHeaderLoggedIn({ ...SAMPLE_USER, is_seller, is_admin: false });
+
+        fireEvent.click(await screen.findByRole('button', { name: SAMPLE_USER.name }));
+
+        expect(screen.getByRole('button', { name: 'Sair' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Painel admin' })).not.toBeInTheDocument();
+      },
+    );
+
+    it('anônimo: não exibe pedidos, favoritos ou painel admin no menu da conta', () => {
+      renderHeader();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Conta' }));
+
+      expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
+      for (const label of ['Meus pedidos', 'Meus favoritos', 'Painel admin']) {
+        expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+      }
+    });
+
+    it('exibe Brechós na navegação principal com href /stores', () => {
+      renderHeader();
+
+      const nav = screen.getByRole('navigation', { name: 'Principal' });
+      expect(within(nav).getByRole('link', { name: 'Brechós' })).toHaveAttribute('href', '/stores');
+    });
+
+    it('exibe Brechós no menu mobile e navega para /stores ao selecionar', async () => {
+      renderHeader({ initialEntry: '/sell' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+
+      const nav = screen.getByRole('navigation', { name: 'Principal mobile' });
+      const link = within(nav).getByRole('link', { name: 'Brechós' });
+      expect(link).toHaveAttribute('href', '/stores');
+      fireEvent.click(link);
+
+      await waitFor(() => expect(screen.getByTestId('path').textContent).toBe('/stores'));
+      expect(
+        screen.queryByRole('navigation', { name: 'Principal mobile' }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   /**
@@ -110,14 +330,240 @@ describe('<Header />', () => {
     expect(screen.getByRole('link', { name: 'Catálogo' })).toHaveAttribute('href', '/catalog');
   });
 
-  it('mantém a navegação principal visível em todo tamanho de tela', () => {
-    renderHeader();
+  it('usa a barra compacta do produto com voltar, compartilhar e sacola', async () => {
+    renderHeader({ initialEntry: '/product/1', count: 3 });
 
-    // Antes a navegacao era `hidden tablet:flex`: abaixo de 720px os dois links
-    // sumiam e o catalogo so era alcancavel pelo rodape. Com a marca em `h3` em
-    // vez de `h2`, os dois cabem — e dois links nao justificam um menu sanfonado.
-    const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(nav).not.toHaveClass('hidden');
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sacola (3)' })).toHaveAttribute('href', '/cart');
+    expect(screen.queryByRole('button', { name: 'Abrir menu principal' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/'));
+  });
+
+  it('abre o menu mobile com Home e Catálogo e fecha ao selecionar uma opção', async () => {
+    renderHeader({ initialEntry: '/sell' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+
+    const mobileNav = screen.getByRole('navigation', { name: 'Principal mobile' });
+    expect(screen.getByRole('button', { name: 'Fechar menu principal' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(within(mobileNav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+    fireEvent.click(within(mobileNav).getByRole('link', { name: 'Catálogo' }));
+
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/catalog'));
+    expect(screen.queryByRole('navigation', { name: 'Principal mobile' })).not.toBeInTheDocument();
+  });
+
+  it('fecha o menu mobile com Escape', () => {
+    renderHeader({ initialEntry: '/sell' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+    expect(screen.getByRole('navigation', { name: 'Principal mobile' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('navigation', { name: 'Principal mobile' })).not.toBeInTheDocument();
+  });
+
+  it('permite abrir e percorrer a navegação mobile pelo teclado', async () => {
+    const user = userEvent.setup();
+    renderHeader({ initialEntry: '/sell' });
+
+    const toggle = screen.getByRole('button', { name: 'Abrir menu principal' });
+    toggle.focus();
+    await user.keyboard('{Enter}');
+
+    const mobileNav = screen.getByRole('navigation', { name: 'Principal mobile' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    await user.tab();
+    expect(within(mobileNav).getByRole('link', { name: 'Home' })).toHaveFocus();
+  });
+
+  describe('busca mobile expansível', () => {
+    it('inicia recolhida e associa a lupa à região controlada', () => {
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle).toHaveAttribute('aria-controls');
+      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
+    });
+
+    it('abre o SearchBar existente ao clicar na lupa e fecha ao clicar novamente', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+
+      const mobileSearch = getControlledMobileSearch(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(mobileSearch).toBeInTheDocument();
+      expect(within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' })).toBeInTheDocument();
+
+      await user.click(toggle);
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
+    });
+
+    it('move o foco para o campo de pesquisa ao expandir', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+
+      const mobileSearch = getControlledMobileSearch(toggle);
+      expect(within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' })).toHaveFocus();
+    });
+
+    it('digita e envia pelo Enter, navegando para o catálogo com o termo', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      const mobileSearch = getControlledMobileSearch(toggle);
+      await user.type(
+        within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' }),
+        'camiseta{Enter}',
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId('path')).toHaveTextContent('/catalog?q=camiseta'),
+      );
+    });
+
+    it('remove espaços externos e codifica caracteres especiais', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      const mobileSearch = getControlledMobileSearch(toggle);
+      await user.type(
+        within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' }),
+        '  vestido & verão  {Enter}',
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId('path')).toHaveTextContent(
+          '/catalog?q=vestido%20%26%20ver%C3%A3o',
+        ),
+      );
+    });
+
+    it('pesquisa vazia navega para o catálogo sem o parâmetro q', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      const mobileSearch = getControlledMobileSearch(toggle);
+      await user.type(
+        within(mobileSearch!).getByRole('searchbox', { name: 'Buscar' }),
+        '   {Enter}',
+      );
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(/^\/catalog$/));
+    });
+
+    it('Escape fecha a busca e devolve o foco à lupa', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      expect(getControlledMobileSearch(toggle)).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+
+      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
+      expect(toggle).toHaveFocus();
+    });
+
+    it.each([
+      ['Enter', '{Enter}'],
+      ['Space', ' '],
+    ])('permite abrir a busca com %s', async (_keyName, key) => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      toggle.focus();
+      await user.keyboard(key);
+
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(getControlledMobileSearch(toggle)).toBeInTheDocument();
+    });
+
+    it('abrir a busca fecha a navegação mobile e o AccountMenu', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      await user.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+      expect(screen.getByRole('navigation', { name: 'Principal mobile' })).toBeInTheDocument();
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      expect(
+        screen.queryByRole('navigation', { name: 'Principal mobile' }),
+      ).not.toBeInTheDocument();
+
+      await user.click(toggle);
+      await user.click(screen.getByRole('button', { name: 'Conta' }));
+      expect(screen.getByRole('button', { name: 'Criar conta' })).toBeInTheDocument();
+
+      await user.click(toggle);
+      expect(screen.queryByRole('button', { name: 'Criar conta' })).not.toBeInTheDocument();
+      expect(getControlledMobileSearch(toggle)).toBeInTheDocument();
+    });
+
+    it('abrir a navegação mobile ou o AccountMenu fecha a busca', async () => {
+      const user = userEvent.setup();
+      renderHeader({ initialEntry: '/sell' });
+
+      const toggle = getMobileSearchToggle();
+      await user.click(toggle);
+      await user.click(screen.getByRole('button', { name: 'Abrir menu principal' }));
+      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Fechar menu principal' }));
+      await user.click(toggle);
+      await user.click(screen.getByRole('button', { name: 'Conta' }));
+      expect(getControlledMobileSearch(toggle)).not.toBeInTheDocument();
+    });
+
+    it('preserva a busca desktop existente nas rotas sem busca própria', () => {
+      renderHeader({ initialEntry: '/sell' });
+
+      const desktopSearch = screen.getByPlaceholderText('Busque por peça, marca ou brechó…');
+      const responsiveWrapper = desktopSearch.closest('form')?.parentElement?.parentElement;
+
+      expect(desktopSearch).toBeInTheDocument();
+      expect(responsiveWrapper).toHaveClass('hidden', 'tablet:flex');
+    });
+
+    it.each([paths.home, paths.catalog])(
+      'mantém os controles mobile ocultos em %s, onde a página oferece busca própria',
+      (initialEntry) => {
+        renderHeader({ initialEntry });
+
+        expect(screen.queryByRole('searchbox', { name: 'Buscar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Buscar' })).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'Abrir menu principal' }),
+        ).not.toBeInTheDocument();
+      },
+    );
   });
 
   it('anônimo: mostra o botão "Conta" fechado, sem o menu visível', () => {
@@ -204,6 +650,47 @@ describe('<Header />', () => {
     expect(await screen.findByRole('button', { name: 'Conta' })).toBeInTheDocument();
   });
 
+  describe('contador do carrinho (FE-US021-1, #225)', () => {
+    it('anônimo: não mostra o CartBadge', () => {
+      renderHeader({ count: 3 });
+
+      expect(screen.queryByRole('button', { name: /Carrinho/ })).not.toBeInTheDocument();
+    });
+
+    it('logado: mostra o CartBadge mesmo quando count é zero', async () => {
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 0 });
+
+      expect(await screen.findByRole('button', { name: 'Carrinho, 0 itens' })).toBeInTheDocument();
+    });
+
+    it('apresenta no CartBadge a contagem fornecida por useCart', async () => {
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 3 });
+
+      expect(await screen.findByRole('button', { name: 'Carrinho, 3 itens' })).toBeInTheDocument();
+      expect(screen.getByText('3')).toBeInTheDocument();
+    });
+
+    it('navega para paths.cart ao clicar no CartBadge', async () => {
+      renderHeaderLoggedIn(SAMPLE_USER, { count: 1 });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Carrinho, 1 itens' }));
+
+      await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent(paths.cart));
+    });
+
+    it('atualiza a contagem sem recarregar ou remontar o Header', async () => {
+      renderReactiveHeaderLoggedIn();
+
+      const accountButton = await screen.findByRole('button', { name: SAMPLE_USER.name });
+      expect(screen.getByRole('button', { name: 'Carrinho, 0 itens' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Atualizar contagem' }));
+
+      expect(await screen.findByRole('button', { name: 'Carrinho, 3 itens' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: SAMPLE_USER.name })).toBe(accountButton);
+    });
+  });
+
   describe('itens de vendedor no menu (FE-US006-2, #213)', () => {
     it('logado sem loja: mostra "Quero vender" e não os atalhos da loja', async () => {
       renderHeaderLoggedIn();
@@ -277,3 +764,204 @@ describe('<Header />', () => {
     });
   });
 });
+
+function headerNotification(id: string, isRead = false): Notification {
+  return {
+    id,
+    type: 'sale',
+    recipientUserId: SAMPLE_USER.id,
+    productName: `Peça fictícia ${id}`,
+    createdAt: '2026-10-21T15:00:00.000Z',
+    isRead,
+  };
+}
+
+function renderNotificationHeader(initialEntry: string = paths.home) {
+  window.sessionStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(SAMPLE_USER));
+  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'tok-notifications');
+  return renderHeader({ initialEntry });
+}
+
+describe('FE-US036-1 — sino integrado ao Header', () => {
+  beforeEach(() => {
+    notificationSource.reset();
+    vi.mocked(me).mockResolvedValue(SAMPLE_USER);
+  });
+
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it('não mostra sino ou dados de notificações para deslogado', () => {
+    notificationSource.setItems([headerNotification('privada')]);
+    renderHeader();
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Peça fictícia privada')).not.toBeInTheDocument();
+  });
+
+  it('mostra o sino para usuário autenticado no Header geral', async () => {
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeEnabled();
+  });
+
+  it('não mostra o sino na barra de produto quando deslogado', () => {
+    renderHeader({ initialEntry: productDetailForHeaderTest });
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+  });
+
+  it('mostra o sino autenticado também na barra compacta do produto', async () => {
+    renderNotificationHeader(productDetailForHeaderTest);
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Compartilhar produto' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Voltar' })).toBeInTheDocument();
+  });
+
+  it('com zero não lidas mantém o sino sem contador', async () => {
+    notificationSource.setItems([headerNotification('lida', true)]);
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.queryByText('0', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('1', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it.each([1, 3])('mostra contador %i de não lidas, sem somar as já lidas', async (count) => {
+    notificationSource.setItems([
+      ...Array.from({ length: count }, (_, index) => headerNotification(`nova-${index}`)),
+      headerNotification('já-lida', true),
+    ]);
+    renderNotificationHeader();
+
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.getByText(String(count), { exact: true })).toBeInTheDocument();
+  });
+
+  it('mostra 99+ visualmente e anuncia a contagem lógica completa', async () => {
+    notificationSource.setItems(
+      Array.from({ length: 105 }, (_, index) => headerNotification(`nova-${index}`)),
+    );
+    renderNotificationHeader();
+
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    expect(screen.getByText('99+')).toBeInTheDocument();
+    expect(bell).toHaveAccessibleDescription(/105 notificações não lidas/i);
+  });
+
+  it('anuncia uma não lida sem alterar o nome acessível Notificações', async () => {
+    notificationSource.setItems([headerNotification('uma')]);
+    renderNotificationHeader();
+
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    expect(bell).toHaveAccessibleName('Notificações');
+    expect(bell).toHaveAccessibleDescription(/1 notificação não lida/i);
+  });
+
+  it('remove o badge após ler a última notificação sem remontar o Header', async () => {
+    const user = userEvent.setup();
+    notificationSource.setItems([headerNotification('última')]);
+    renderNotificationHeader();
+    await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /Sua peça Peça fictícia última foi vendida/i }),
+    );
+
+    await waitFor(() => expect(screen.queryByText('1', { exact: true })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+  });
+
+  it('logout remove imediatamente sino e conteúdo privado', async () => {
+    const user = userEvent.setup();
+    notificationSource.setItems([headerNotification('privada')]);
+    renderNotificationHeader();
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: SAMPLE_USER.name }));
+    await user.click(screen.getByRole('button', { name: 'Sair' }));
+
+    expect(screen.queryByRole('button', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sua peça Peça fictícia privada/)).not.toBeInTheDocument();
+  });
+
+  it('reflete alteração de contagem do contexto sem reload', async () => {
+    renderNotificationHeader();
+    expect(await screen.findByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+
+    act(() => notificationSource.setItems([headerNotification('nova')]));
+
+    expect(screen.getByText('1', { exact: true })).toBeInTheDocument();
+  });
+
+  it.each(['conta', 'navegação', 'busca'] as const)(
+    'abrir notificações fecha %s que já estava aberta',
+    async (menu) => {
+      const user = userEvent.setup();
+      renderNotificationHeader(paths.sell);
+      await screen.findByRole('button', { name: SAMPLE_USER.name });
+      const opener =
+        menu === 'conta'
+          ? screen.getByRole('button', { name: SAMPLE_USER.name })
+          : menu === 'navegação'
+            ? screen.getByRole('button', { name: 'Abrir menu principal' })
+            : getMobileSearchToggle();
+      await user.click(opener);
+      expect(opener).toHaveAttribute('aria-expanded', 'true');
+
+      await user.click(screen.getByRole('button', { name: 'Notificações' }));
+
+      expect(screen.getByRole('region', { name: 'Notificações' })).toBeInTheDocument();
+      expect(opener).toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it.each(['conta', 'navegação', 'busca'] as const)(
+    'abrir %s fecha notificações sem bloquear o controle',
+    async (menu) => {
+      const user = userEvent.setup();
+      renderNotificationHeader(paths.sell);
+      await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+      const opener =
+        menu === 'conta'
+          ? screen.getByRole('button', { name: SAMPLE_USER.name })
+          : menu === 'navegação'
+            ? screen.getByRole('button', { name: 'Abrir menu principal' })
+            : getMobileSearchToggle();
+
+      await user.click(opener);
+
+      expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+      expect(opener).toHaveAttribute('aria-expanded', 'true');
+    },
+  );
+
+  it('mudar de rota fecha o painel de notificações', async () => {
+    const user = userEvent.setup();
+    renderNotificationHeader();
+    await user.click(await screen.findByRole('button', { name: 'Notificações' }));
+
+    await user.click(screen.getByRole('link', { name: 'Catálogo' }));
+
+    expect(screen.getByTestId('path')).toHaveTextContent(paths.catalog);
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+  });
+
+  it('Escape fecha notificações e devolve o foco ao sino', async () => {
+    const user = userEvent.setup();
+    renderNotificationHeader();
+    const bell = await screen.findByRole('button', { name: 'Notificações' });
+    await user.click(bell);
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('region', { name: 'Notificações' })).not.toBeInTheDocument();
+    expect(bell).toHaveFocus();
+    expect(bell).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
+const productDetailForHeaderTest = productDetail('produto-ficticio-341');

@@ -10,7 +10,7 @@ import {
 } from '@/styles/tokens';
 
 /**
- * Sample page that renders every design token side by side (Style Guide v.1).
+ * Sample page that renders every design token side by side (Style Guide v.2).
  * Used as a visual check that the Tailwind theme carries the official palette,
  * type scale, spacing rhythm and breakpoints.
  *
@@ -68,7 +68,7 @@ function StyleGuide() {
     <main className="mx-auto max-w-6xl px-4 py-12 tablet:px-6 web:px-8">
       <header className="pb-8">
         <p className="text-label uppercase tracking-wide text-texto-auxiliar">Vintex</p>
-        <h1 className="mt-2 font-display text-h1 text-tinta">Tokens · Style Guide v.1</h1>
+        <h1 className="mt-2 font-display text-h1 text-tinta">Tokens · Style Guide v.2</h1>
         <p className="mt-4 max-w-prose text-body text-texto-auxiliar">
           Todas as cores, a escala tipográfica, o ritmo de espaçamento e os breakpoints oficiais,
           consumidos apenas por classes de token.

@@ -11,6 +11,7 @@ export type StatusBadgeProps = {
 const defaultLabels: Record<ProductStatus, string> = {
   rascunho: 'Rascunho',
   ativo: 'Anunciada',
+  reservado: 'Reservada',
   vendido: 'Já vendida',
   despublicado: 'Pausada',
 };
@@ -19,7 +20,9 @@ const defaultLabels: Record<ProductStatus, string> = {
  * Selo de status utilizado para identificar o estado de uma peça.
  *
  * É apenas apresentacional: quem decide quando e onde exibir o status
- * é o componente ou a tela que utiliza o StatusBadge.
+ * é o componente ou a tela que utiliza o StatusBadge. Sem `role="status"`:
+ * o selo é rótulo fixo, não aviso — numa lista, cada linha virava uma
+ * região live anunciada pelo leitor de tela (#297).
  *
  * Usage:
  *   <StatusBadge status="ativo" />
@@ -29,12 +32,12 @@ const defaultLabels: Record<ProductStatus, string> = {
 function StatusBadge({ status, size = 'md', label }: StatusBadgeProps) {
   return (
     <span
-      role="status"
       className={clsx('inline-flex items-center justify-center rounded-full border font-semibold', {
         'px-2 py-0.5 text-label': size === 'sm',
         'px-3 py-1 text-label': size === 'md',
         'border-linha bg-papel-profundo text-texto-auxiliar': status === 'rascunho',
         'border-linha bg-branco-quente text-tinta': status === 'ativo',
+        'border-verde-rs bg-branco-quente text-verde-rs': status === 'reservado',
         'border-verde-rs bg-verde-rs text-branco-quente': status === 'vendido',
         'border-dourado bg-branco-quente text-dourado': status === 'despublicado',
       })}

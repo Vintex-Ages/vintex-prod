@@ -14,22 +14,16 @@ import Header from './Header';
  * Onboarding), e dois landmarks aninhados deixariam a página sem um `main`
  * inequívoco para leitor de tela.
  *
- * `bottomSpacer` reserva uma faixa no fim do documento, abaixo do rodapé, para
- * páginas que ancoram uma barra `fixed` no rodapé da viewport — hoje só o
- * detalhe da peça, abaixo de `web`. Sem isso a barra cobre as últimas linhas do
- * rodapé quando a pessoa rola até o fim: compensação dentro do `<main>` não
- * resolve, porque o rodapé é irmão posterior do conteúdo.
+ * `productDetailLayout` aplica o cabeçalho e a barra de compra próprios do
+ * detalhe do produto; também retira o rodapé e o botão flutuante da Vintex,
+ * que não aparecem nesse frame.
  *
- * Duas adições da revisão visual:
+ * Composição compartilhada:
  *
  * - **Link de pulo.** Com a navegação e a busca fixas no topo, quem usa teclado
  *   ou leitor de tela atravessava a barra inteira a cada troca de rota.
- * - **A assistente ganha porta de entrada.** O `VintexAIButton` estava pronto,
- *   testado e mergeado, e não era alcançável de tela nenhuma — só existia a
- *   rota `/vintex`, digitada na mão. A IA é prioridade declarada da
- *   stakeholder; sem o botão, a frente inteira ficava invisível no produto.
- *   Na rota da peça, abaixo de `web`, o botão sobe para não cobrir a barra de
- *   comprar/favoritar.
+ * - **A assistente ganha porta de entrada.** O botão leva à rota `/vintex` nas
+ *   páginas do app; no detalhe, a curadoria inline ocupa esse espaço.
  *
  * Usage:
  *   import Layout from '@/components/layout/Layout';
@@ -37,10 +31,10 @@ import Header from './Header';
  */
 function Layout({
   children,
-  bottomSpacer = false,
+  productDetailLayout = false,
 }: {
   children: ReactNode;
-  bottomSpacer?: boolean;
+  productDetailLayout?: boolean;
 }) {
   const navigate = useNavigate();
 
@@ -59,15 +53,11 @@ function Layout({
         {children}
       </div>
 
-      <Footer />
+      {!productDetailLayout && <Footer />}
 
-      {bottomSpacer && <div aria-hidden className="h-28 web:hidden" />}
-
-      <VintexAIButton
-        onClick={() => navigate(paths.vintex)}
-        raised={bottomSpacer}
-        className="tablet:hidden"
-      />
+      {!productDetailLayout && (
+        <VintexAIButton onClick={() => navigate(paths.vintex)} className="tablet:hidden" />
+      )}
     </div>
   );
 }

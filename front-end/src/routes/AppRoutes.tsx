@@ -10,12 +10,22 @@ import StyleGuide from '@/pages/StyleGuide/StyleGuide';
 import StyleSelection from '@/pages/Onboarding/StyleSelection';
 import VintexAI from '@/pages/VintexAI/VintexAI';
 import Sell from '@/pages/Sell/Sell';
+import EditStore from '@/pages/Sell/EditStore';
 import SellerAdmin from '@/pages/SellerAdmin/SellerAdmin';
+import Review from '@/pages/SellerProduct/Review';
+import SellerProductFlow from '@/pages/SellerProduct/SellerProductFlow';
 import SellerProductForm from '@/pages/SellerProduct/SellerProductForm';
 import Cart from '@/pages/Cart/Cart';
 import SellerProfile from '@/pages/SellerProfile/SellerProfile';
+import Stores from '@/pages/Stores/Stores';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
-import { RequireAuth, RequireStore } from './guards';
+import Favorites from '@/pages/Profile/Favorites';
+import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
+import OrderDetail from '@/pages/Orders/OrderDetail';
+import OrderPayment from '@/pages/Orders/OrderPayment';
+import Orders from '@/pages/Orders/Orders';
+import Checkout from '@/pages/Checkout/Checkout';
+import { RequireAuth, RequireRole, RequireStore } from './guards';
 import { paths } from './paths';
 
 /**
@@ -25,35 +35,40 @@ import { paths } from './paths';
  * Ficam DE FORA, de propósito:
  * - `/login` e `/register`: telas de autenticação de página inteira, com a
  *   própria volta e o próprio título.
+ * - `/onboarding`: a tela mobile tem cabeçalho e fluxo próprios do Figma.
  * - `/vintex`: a conversa tem cabeçalho próprio e é `h-screen overflow-hidden`;
  *   dentro do Layout a página ganharia dois `banner` e o campo de mensagem
  *   cairia abaixo da dobra.
  * - `/style-guide`: documentação interna, não é tela de produto.
+ * - `/admin/receipts`: a fila de comprovantes (FE-US032-1) tem o cabeçalho da
+ *   área administrativa e não usa o rodapé do app.
  */
 function WithLayout() {
   const { pathname } = useLocation();
-  // O detalhe da peça ancora a barra de favoritar/comprar no rodapé da
-  // viewport abaixo de `web`. Só ela precisa da faixa extra no fim.
-  const hasFixedBottomBar = matchPath(paths.product, pathname) !== null;
+  // O detalhe da peça usa a composição própria do frame do Figma.
+  const isProductDetail = matchPath(paths.product, pathname) !== null;
 
   return (
-    <Layout bottomSpacer={hasFixedBottomBar}>
+    <Layout productDetailLayout={isProductDetail}>
       <Outlet />
     </Layout>
   );
 }
 
 /**
- * Rotas da Sprint 1 (FE-FND-1c, #106) e Sprint 2 (FE-FND-4, #205).
+ * Rotas das Sprints 1 (FE-FND-1c, #106), 2 (FE-FND-4, #205) e 3 (FE-FND-6, #302).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
- * exigem sessão (`RequireAuth`); `/seller` e as duas rotas de peça exigem
+ * exigem sessão (`RequireAuth`); `/seller` e as três rotas de peça exigem
  * loja (`RequireStore`, FE-US006-2 #213 — sem loja, vai a `/sell` com aviso);
  * `/store/:id` é pública, de propósito
  * (perfil da loja é vitrine, não área do vendedor).
  *
- * Todas as rotas novas entram dentro do `WithLayout`, com placeholder mínimo
- * até a task de tela correspondente substituir o `element`.
+ * Na Sprint 3, checkout, pedidos e favoritos exigem sessão; `/stores` é
+ * pública. Entram dentro do `WithLayout` e todas já têm tela: favoritos
+ * (FE-US013-2, #329), pagamento do pedido (FE-US022-2, #320) e brechós
+ * (FE-US011-1, #330). Comprovantes exigem papel admin e já têm tela (fila,
+ * FE-US032-1), fora do `WithLayout`.
  */
 function AppRoutes() {
   return (
@@ -62,7 +77,6 @@ function AppRoutes() {
         <Route path={paths.home} element={<Home />} />
         <Route path={paths.catalog} element={<Catalog />} />
         <Route path={paths.product} element={<ProductDetail />} />
-        <Route path={paths.onboarding} element={<StyleSelection />} />
         <Route
           path={paths.sell}
           element={
@@ -75,26 +89,32 @@ function AppRoutes() {
           path={paths.seller}
           element={
             <RequireStore>
-              <SellerAdmin />
+              {(store, onStoreUpdated) => <SellerAdmin storeSource={{ store, onStoreUpdated }} />}
             </RequireStore>
           }
         />
         <Route
-          path={paths.sellerProductNew}
+          path={paths.sellerStore}
           element={
             <RequireStore>
-              <SellerProductForm />
+              <EditStore />
             </RequireStore>
           }
         />
+        {/* Cadastro de peça (#216, #217) e revisão (#218) sob uma rota-pai:
+            o `SellerProductFlow` mantém o mesmo estado entre formulário e
+            revisão, e a guarda roda uma vez para o fluxo todo. */}
         <Route
-          path={paths.sellerProduct}
           element={
             <RequireStore>
-              <SellerProductForm />
+              <SellerProductFlow />
             </RequireStore>
           }
-        />
+        >
+          <Route path={paths.sellerProductNew} element={<SellerProductForm />} />
+          <Route path={paths.sellerProduct} element={<SellerProductForm />} />
+          <Route path={paths.sellerProductReview} element={<Review />} />
+        </Route>
         <Route
           path={paths.cart}
           element={
@@ -112,11 +132,61 @@ function AppRoutes() {
             </RequireAuth>
           }
         />
+        <Route
+          path={paths.checkout}
+          element={
+            <RequireAuth>
+              <Checkout />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orders}
+          element={
+            <RequireAuth>
+              <Orders />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orderDetail}
+          element={
+            <RequireAuth>
+              <OrderDetail />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.orderPayment}
+          element={
+            <RequireAuth>
+              <OrderPayment />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.favorites}
+          element={
+            <RequireAuth>
+              <Favorites />
+            </RequireAuth>
+          }
+        />
+        <Route path={paths.stores} element={<Stores />} />
       </Route>
+      <Route path={paths.onboarding} element={<StyleSelection />} />
       <Route path={paths.vintex} element={<VintexAI />} />
       <Route path={paths.login} element={<Login />} />
       <Route path={paths.register} element={<Register />} />
       <Route path={paths.styleGuide} element={<StyleGuide />} />
+      <Route
+        path={paths.adminReceipts}
+        element={
+          <RequireRole role="admin">
+            <ReceiptQueue />
+          </RequireRole>
+        }
+      />
       {/*
         O 404 fica DENTRO do esqueleto: a página é só um título, e sem
         cabeçalho quem erra a URL não tem nenhum caminho de volta.

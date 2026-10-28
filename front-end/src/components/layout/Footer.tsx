@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import logoVintex from '@/assets/images/logo-vintex.svg';
 import { paths } from '@/routes/paths';
 import Container from './Container';
 import { NAV_LINKS } from './navLinks';
@@ -24,9 +25,9 @@ function Footer() {
         <div className="flex flex-col gap-1">
           <Link
             to={paths.home}
-            className="font-display text-h3 leading-none text-tinta hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
+            className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-vermelho-escuro"
           >
-            vintex
+            <img src={logoVintex} alt="Vintex" className="block h-5 w-auto" />
           </Link>
           <p className="font-ui text-body-sm text-texto-auxiliar">Recicle roupas, não ex</p>
         </div>

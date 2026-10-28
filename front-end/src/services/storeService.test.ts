@@ -6,9 +6,11 @@ import {
   getStore,
   getStoreProducts,
   requestVerification,
+  searchStores,
 } from './storeService';
 import { logout, me, register } from './authService';
 import type { StoreInput, StoreProfile } from '@/types/store';
+import { products as mockProducts } from '@/mocks/products';
 
 const input: StoreInput = {
   name: 'Brechó da Ceci',
@@ -24,6 +26,106 @@ const input: StoreInput = {
   },
   pixKey: 'ceci@vintex.com',
 };
+
+describe('#359 — storeService: selo na resposta da própria loja', () => {
+  let client: (typeof import('./httpClient'))['httpClient'];
+  let originalAdapter: typeof client.defaults.adapter;
+  let service: typeof import('./storeService');
+  const calls: string[] = [];
+
+  // StoreResponse previsto no PR backend #279, incluindo verified.
+  const privateStore = {
+    id: 11,
+    seller_id: 7,
+    name: 'Brechó Aurora',
+    description: 'Peças selecionadas.',
+    logo_url: 'https://cdn.test/aurora.png',
+    pix_key: 'aurora@pix.test',
+    verified: true,
+    document_type: 'CPF',
+    document_value: '52998224725',
+    terms_version: '2026-09',
+    terms_accepted_at: '2026-09-01T12:00:00Z',
+    address: {
+      street: 'Rua dos Andradas',
+      number: '100',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90020000',
+    },
+  };
+
+  function respondWith(data: unknown) {
+    client.defaults.adapter = async (config) => {
+      calls.push(`${config.method} ${config.url}`);
+      return { data, status: 200, statusText: 'OK', headers: {}, config };
+    };
+  }
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    client = (await import('./httpClient')).httpClient;
+    originalAdapter = client.defaults.adapter;
+    service = await import('./storeService');
+    calls.length = 0;
+  });
+
+  afterEach(() => {
+    client.defaults.adapter = originalAdapter;
+    vi.unstubAllEnvs();
+  });
+
+  it('verified true na rota privada vira confiavel', async () => {
+    respondWith(privateStore);
+
+    expect((await service.getMyStore())?.verification).toBe('confiavel');
+  });
+
+  it('verified false na rota privada vira pendente', async () => {
+    respondWith({ ...privateStore, verified: false });
+
+    expect((await service.getMyStore())?.verification).toBe('pendente');
+  });
+
+  it('verified ausente na fixture antiga mantém fallback pendente', async () => {
+    const legacy: Partial<typeof privateStore> = { ...privateStore };
+    delete legacy.verified;
+    respondWith(legacy);
+
+    expect((await service.getMyStore())?.verification).toBe('pendente');
+    expect(calls).toEqual(['get /users/me/store']);
+  });
+
+  it('preserva os demais dados da loja privada', async () => {
+    respondWith(privateStore);
+
+    const store = await service.getMyStore();
+
+    expect(store).toMatchObject({
+      id: '11',
+      name: 'Brechó Aurora',
+      description: 'Peças selecionadas.',
+      logoUrl: 'https://cdn.test/aurora.png',
+      city: 'Porto Alegre',
+      state: 'RS',
+      createdAt: '2026-09-01T12:00:00Z',
+    });
+  });
+
+  it.each([true, false])(
+    'lê a loja com verified=%s sem buscar o perfil público',
+    async (verified) => {
+      respondWith({ ...privateStore, verified });
+
+      await service.getMyStore();
+
+      expect(calls).toEqual(['get /users/me/store']);
+    },
+  );
+});
 
 /** O mock de auth vive em memória entre os testes: cada cadastro precisa de e-mail novo. */
 let userSeq = 0;
@@ -138,9 +240,11 @@ describe('storeService', () => {
   });
 
   it('getStoreProducts devolve só peças ativas da loja', async () => {
-    // Loja '1' tem 2 peças 'ativo' no mock de catálogo (ids 1 e 8).
+    const activeCount = mockProducts.filter(
+      (product) => product.store.id === '1' && product.status === 'ativo',
+    ).length;
     const activeStore = await getStoreProducts('1', {});
-    expect(activeStore.items.length).toBe(2);
+    expect(activeStore.items.length).toBe(Math.min(activeCount, activeStore.pageSize));
     expect(activeStore.items.every((product) => product.store.id === '1')).toBe(true);
 
     // Loja '4' só tem uma peça, com status 'vendido' — não deve aparecer.
@@ -278,6 +382,46 @@ describe('storeService (API real) — loja pública', () => {
     expect(loja.createdAt).toBe('2026-03-27T00:00:00');
     expect(loja.metrics?.activeProducts).toBe(12);
     expect(loja.metrics?.soldProducts).toBe(4);
+  });
+
+  // FE-US007-1: a rota privada não traz `verified`; o selo vem do retrato público.
+  it('getMyVerification lê a loja privada e o selo do retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(config.url ?? '');
+      const data =
+        config.url === '/users/me/store'
+          ? {
+              id: 3,
+              seller_id: 9,
+              name: 'Segunda Chance Modas',
+              description: null,
+              logo_url: null,
+              pix_key: null,
+              document_type: 'CPF',
+              document_value: '529.982.247-25',
+              terms_version: 'v1',
+              terms_accepted_at: '2026-09-27T23:00:00',
+              address: null,
+            }
+          : LOJA;
+      return Promise.resolve({ data, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await expect(getMyVerification()).resolves.toBe('confiavel');
+    expect(urls).toEqual(['/users/me/store', '/stores/3']);
+  });
+
+  it('getMyVerification devolve null sem loja, sem consultar o retrato público', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMyVerification } = await import('./storeService');
+
+    httpClient.defaults.adapter = () => Promise.reject({ response: { status: 404, data: {} } });
+
+    await expect(getMyVerification()).resolves.toBeNull();
   });
 
   it('loja sem selo vira pendente, e sem endereço não quebra', async () => {
@@ -439,17 +583,393 @@ describe('storeService (API real) — rotas privadas de escrita', () => {
   });
 
   /**
-   * `POST /api/users/me/store/verification` devolve `{ verified: boolean }`
-   * (`SellerVerificationResponse`, no `back-end#195`) — uma terceira forma,
-   * que não dá para virar `StoreProfile`. Enquanto a rota não existe na
-   * `develop`, falhar com mensagem é melhor que estourar em `metrics`.
+   * `POST /api/users/me/store/verification` devolve `{ verified: boolean }` --
+   * `SellerVerificationResponse`, do `back-end#195`, que mergeou depois do
+   * `#274` ser escrito. O `#274` tinha deixado a funcao lancando erro fixo com
+   * o comentario "a rota ainda nao existe na develop", que ficou falso.
+   *
+   * Como o `{ verified }` nao da para virar `StoreProfile` sozinho, o perfil sai
+   * de `getMyStore` e so o selo vem da resposta.
    */
-  it('requestVerification falha com mensagem, e não com TypeError de metrics', async () => {
+  it('requestVerification le o selo da rota e o resto do perfil da loja', async () => {
     const { httpClient } = await import('@/services/httpClient');
     const { requestVerification: apiRequestVerification } = await import('./storeService');
 
-    httpClient.defaults.adapter = responder({ verified: true });
+    const chamadas: string[] = [];
+    httpClient.defaults.adapter = ((config: { url?: string }) => {
+      chamadas.push(config.url ?? '');
+      const corpo = String(config.url).includes('/verification')
+        ? { verified: true }
+        : {
+            id: 5,
+            seller_id: 2,
+            name: 'Brecho do Mauro',
+            description: null,
+            logo_url: null,
+            pix_key: null,
+            document_type: 'CPF',
+            document_value: '52998224725',
+            terms_version: null,
+            terms_accepted_at: '2026-09-27T23:00:00',
+            address: null,
+          };
+      return Promise.resolve({
+        data: corpo,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    }) as never;
 
-    await expect(apiRequestVerification()).rejects.toThrow(/contrato|indisponível/i);
+    const loja = await apiRequestVerification();
+
+    expect(chamadas).toEqual(['/users/me/store/verification', '/users/me/store']);
+    expect(loja.verification).toBe('confiavel');
+    expect(loja.name).toBe('Brecho do Mauro');
+  });
+});
+
+/**
+ * Contrato de escrita da loja (FE-FIX-1, #276). O `createStore` dava 422 sempre
+ * na API real: mandava `document_number` (o back quer `document_value`),
+ * `document_type` minúsculo, sem `terms_version`, e com `pix_key`/`address` que
+ * o `StoreCreate` descartava em silêncio por `extra="ignore"`.
+ *
+ * O fixture de resposta é `model_dump_json()` do `StoreResponse` em
+ * `back-end develop@b95fe6d`, não texto escrito à mão — foi fixture inventado
+ * que deixou a rodada anterior de correção deste arquivo passar com o contrato
+ * quebrado.
+ */
+describe('storeService (API real) — o que createStore manda', () => {
+  const RESPOSTA = {
+    id: 7,
+    seller_id: 3,
+    name: 'Brecho Aurora',
+    description: 'Pecas garimpadas',
+    logo_url: 'http://localhost:8000/api/media/stores/logos/59749fb0',
+    pix_key: 'aurora@vintex.com',
+    document_type: 'CPF',
+    document_value: '52998224725',
+    terms_version: null,
+    terms_accepted_at: '2026-03-14T12:00:00Z',
+    address: {
+      street: 'Rua Ali',
+      number: '120',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90010000',
+    },
+  };
+
+  /** Os campos que o `StoreCreate` conhece. Qualquer outro é descartado. */
+  const CAMPOS_DO_SCHEMA = [
+    'name',
+    'description',
+    'logo_url',
+    'pix_key',
+    'address',
+    'document_type',
+    'document_value',
+    'terms_version',
+  ];
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  async function capturar(entrada: StoreInput) {
+    const { httpClient } = await import('@/services/httpClient');
+    const { createStore: apiCreateStore } = await import('./storeService');
+    const enviados: { url: string; corpo: unknown }[] = [];
+
+    httpClient.defaults.adapter = ((config: { url?: string; data?: unknown }) => {
+      enviados.push({ url: config.url ?? '', corpo: config.data });
+      const corpo = String(config.url).includes('/media')
+        ? { kind: 'logo', items: [{ key: 'stores/logos/59749fb0', url: RESPOSTA.logo_url }] }
+        : RESPOSTA;
+      return Promise.resolve({
+        data: corpo,
+        status: 201,
+        statusText: 'Created',
+        headers: {},
+        config,
+      });
+    }) as never;
+
+    const loja = await apiCreateStore(entrada);
+    return { loja, enviados };
+  }
+
+  it('manda document_value em maiúscula e só com dígitos, e nada fora do schema', async () => {
+    const { enviados } = await capturar({
+      ...input,
+      document: { type: 'cpf', number: '529.982.247-25' },
+    });
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo.document_type).toBe('CPF');
+    expect(corpo.document_value).toBe('52998224725');
+    expect(corpo).not.toHaveProperty('document_number');
+    expect(Object.keys(corpo).filter((k) => !CAMPOS_DO_SCHEMA.includes(k))).toEqual([]);
+  });
+
+  it('manda o endereço com os nomes do back, e o CEP só com dígitos', async () => {
+    const { enviados } = await capturar(input);
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo.address).toEqual({
+      street: 'Rua das Flores',
+      number: '123',
+      complement: null,
+      neighborhood: 'Centro',
+      city: 'Porto Alegre',
+      state: 'RS',
+      zip_code: '90000000',
+    });
+    expect(corpo.pix_key).toBe('ceci@vintex.com');
+  });
+
+  it('não manda terms_version quando não houve aceite do contrato', async () => {
+    const { enviados } = await capturar(input);
+
+    const corpo = JSON.parse(String(enviados[0].corpo));
+
+    expect(corpo).not.toHaveProperty('terms_version');
+  });
+
+  it('manda terms_version quando houve aceite', async () => {
+    const { enviados } = await capturar({ ...input, acceptedContractVersion: 'v0' });
+
+    expect(JSON.parse(String(enviados[0].corpo)).terms_version).toBe('v0');
+  });
+
+  it('descrição vazia vai como null, porque o back aceita nulo', async () => {
+    const { enviados } = await capturar({ ...input, description: '   ' });
+
+    expect(JSON.parse(String(enviados[0].corpo)).description).toBeNull();
+  });
+
+  /**
+   * A rota da loja recebe `logo_url`, não arquivo: `multipart/form-data` nela
+   * devolvia `422 {"body": "Input should be a valid dictionary"}`.
+   */
+  it('sobe a logo por /users/me/media com kind=logo antes de criar a loja', async () => {
+    const logo = new File(['x'], 'logo.png', { type: 'image/png' });
+    const { enviados } = await capturar({ ...input, logo });
+
+    expect(enviados).toHaveLength(2);
+    expect(enviados[0].url).toBe('/users/me/media');
+    expect((enviados[0].corpo as FormData).get('kind')).toBe('logo');
+
+    expect(enviados[1].url).toBe('/users/me/store');
+    expect(JSON.parse(String(enviados[1].corpo)).logo_url).toBe(RESPOSTA.logo_url);
+  });
+
+  it('sem logo, não chama a rota de mídia', async () => {
+    const { enviados } = await capturar(input);
+
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].url).toBe('/users/me/store');
+  });
+
+  it('lê a cidade do endereço que a rota privada passou a devolver', async () => {
+    const { loja } = await capturar(input);
+
+    expect(loja.city).toBe('Porto Alegre');
+    expect(loja.state).toBe('RS');
+  });
+});
+
+// FE-SVC-store-search (#317): busca de brechós pelo nome (RN-42, back-end#256).
+describe('searchStores (mock)', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it('q="reden" acha o Garimpo da Redenção, sem diferenciar maiúscula', async () => {
+    const { items } = await searchStores('REDEN');
+
+    expect(items.map((store) => store.name)).toEqual(['Garimpo da Redenção']);
+  });
+
+  it('q vazio lista todas as lojas do catálogo, uma vez cada', async () => {
+    const { items, total } = await searchStores();
+    const ids = new Set(mockProducts.map((product) => product.store.id));
+
+    expect(total).toBe(ids.size);
+    expect(new Set(items.map((store) => store.id))).toEqual(ids);
+  });
+
+  it('q casa só o nome da loja, não a cidade', async () => {
+    expect((await searchStores('Caxias')).items).toEqual([]);
+  });
+
+  it('activeCount conta só peças ativas da loja, como getStoreProducts', async () => {
+    const { items } = await searchStores();
+    for (const store of items) {
+      const { total } = await getStoreProducts(store.id);
+      expect(store.activeCount).toBe(total);
+    }
+  });
+
+  it('a loja criada no mock também aparece na busca', async () => {
+    await logout();
+    await registerNewUser('Lojista');
+    await createStore(input);
+
+    const { items } = await searchStores('ceci');
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        name: 'Brechó da Ceci',
+        description: 'Peças vintage selecionadas a dedo.',
+        city: 'Porto Alegre',
+        state: 'RS',
+        activeCount: 0,
+      }),
+    ]);
+  });
+});
+
+describe('searchStores (API real)', () => {
+  /** Envelope `Page` do back-end#256, com uma loja sem endereço. */
+  const PAGINA = {
+    items: [
+      {
+        id: 7,
+        name: 'Brechó da Redenção',
+        description: 'Garimpo no Bom Fim.',
+        logo_url: 'https://cdn.test/logo.png',
+        verified: true,
+        city: 'Porto Alegre',
+        state: 'RS',
+        active_count: 5,
+      },
+      {
+        id: 8,
+        name: 'Brechó Sem Endereço',
+        description: null,
+        logo_url: null,
+        verified: false,
+        city: null,
+        state: null,
+        active_count: 0,
+      },
+    ],
+    page: 2,
+    page_size: 20,
+    total: 22,
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('chama GET /stores com q e page e mapeia o envelope Page', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores } = await import('./storeService');
+    const chamadas: { url?: string; params?: unknown }[] = [];
+    httpClient.defaults.adapter = (config) => {
+      chamadas.push({ url: config.url, params: config.params });
+      return Promise.resolve({ data: PAGINA, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    const resultado = await searchStores('reden', 2);
+
+    expect(chamadas).toEqual([{ url: '/stores', params: { q: 'reden', page: 2 } }]);
+    expect(resultado).toEqual({
+      items: [
+        {
+          id: '7',
+          name: 'Brechó da Redenção',
+          description: 'Garimpo no Bom Fim.',
+          logoUrl: 'https://cdn.test/logo.png',
+          city: 'Porto Alegre',
+          state: 'RS',
+          verified: true,
+          activeCount: 5,
+        },
+        {
+          id: '8',
+          name: 'Brechó Sem Endereço',
+          description: null,
+          logoUrl: null,
+          city: '',
+          state: '',
+          verified: false,
+          activeCount: 0,
+        },
+      ],
+      page: 2,
+      pageSize: 20,
+      total: 22,
+    });
+  });
+
+  it('q vazio não vai na chamada', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores } = await import('./storeService');
+    let params: unknown;
+    httpClient.defaults.adapter = (config) => {
+      params = config.params;
+      return Promise.resolve({ data: PAGINA, status: 200, statusText: 'OK', headers: {}, config });
+    };
+
+    await searchStores('  ');
+
+    expect(params).toEqual({ q: undefined, page: 1 });
+  });
+
+  it('erro da rota vira StoreError', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { searchStores, StoreError } = await import('./storeService');
+    httpClient.defaults.adapter = () => Promise.reject(new Error('rede fora'));
+
+    await expect(searchStores('x')).rejects.toBeInstanceOf(StoreError);
+  });
+
+  it('o perfil lê active_count quando o back manda a contagem corrigida', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getStore: apiGetStore } = await import('./storeService');
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          id: 3,
+          name: 'Segunda Chance Modas',
+          description: null,
+          logo_url: null,
+          verified: true,
+          address: null,
+          metrics: {
+            created_at: '2026-03-27T00:00:00',
+            products_listed: 12,
+            products_sold: 4,
+            active_count: 7,
+          },
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const loja = await apiGetStore('3');
+
+    expect(loja.metrics?.activeProducts).toBe(7);
   });
 });

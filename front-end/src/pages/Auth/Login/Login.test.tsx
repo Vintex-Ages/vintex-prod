@@ -48,7 +48,7 @@ describe('Login', () => {
   it('renderiza cabecalho, abas, campos e o botao Entrar', () => {
     renderLogin();
 
-    expect(screen.getByText('vintex')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Vintex' })).toBeInTheDocument();
     expect(screen.getByText('Entre na Vintex')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Criar conta' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Já tenho conta' })).toBeInTheDocument();
@@ -68,6 +68,7 @@ describe('Login', () => {
         is_admin: false,
       },
       access_token: 'tok-123',
+      refresh_token: 'refresh-tok-123',
     });
     renderLogin();
 
@@ -90,6 +91,7 @@ describe('Login', () => {
         is_admin: false,
       },
       access_token: 'tok-123',
+      refresh_token: 'refresh-tok-123',
     });
     renderLogin([{ pathname: '/login', state: { from: '/catalogo?q=jaqueta' } }]);
 

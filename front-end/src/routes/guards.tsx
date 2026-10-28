@@ -4,6 +4,7 @@ import ErrorState from '@/components/common/ErrorState';
 import { useAuth } from '@/context/useAuth';
 import { useToast } from '@/context/useToast';
 import { useMyStore } from '@/hooks/useMyStore';
+import type { StoreProfile } from '@/types/store';
 import { paths } from './paths';
 
 /**
@@ -76,8 +77,11 @@ export function RequireRole({ role, children }: { role: Role; children: ReactNod
 
 const NO_STORE_MESSAGE = 'Para anunciar, crie sua loja';
 
-function StoreGate({ children }: { children: ReactNode }) {
-  const { state, retry } = useMyStore();
+type StoreChildren =
+  ReactNode | ((store: StoreProfile, onStoreUpdated: (store: StoreProfile) => void) => ReactNode);
+
+function StoreGate({ children }: { children: StoreChildren }) {
+  const { state, retry, updateStore } = useMyStore();
   const { toast } = useToast();
   const hasNoStore = state.status === 'ready' && state.store === null;
 
@@ -102,14 +106,15 @@ function StoreGate({ children }: { children: ReactNode }) {
     return <ErrorState message="Não foi possível verificar sua loja." onRetry={retry} />;
   }
 
-  if (hasNoStore) {
+  if (state.store === null) {
     return <Navigate to={paths.sell} replace />;
   }
 
-  return <>{children}</>;
+  return <>{typeof children === 'function' ? children(state.store, updateStore) : children}</>;
 }
 
-export function RequireStore({ children }: { children: ReactNode }) {
+/** Filhos comuns continuam válidos; o painel pode reutilizar a loja já carregada. */
+export function RequireStore({ children }: { children: StoreChildren }) {
   return (
     <RequireAuth>
       <StoreGate>{children}</StoreGate>

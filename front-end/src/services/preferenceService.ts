@@ -77,12 +77,15 @@ export async function getPreferences(): Promise<Preference[]> {
     return [...mockPreferences];
   }
 
-  const { data } = await httpClient.get<Preference[]>('/users/me/preferences');
-  return data;
+  // Envelope `{ preferences: [...] }` nos dois sentidos (`PreferencesResponse` e
+  // `PreferencesRequest`, back-end#80). Ler como lista era o mesmo defeito do
+  // `/styles` acima (#287).
+  const { data } = await httpClient.get<{ preferences?: Preference[] }>('/users/me/preferences');
+  return data.preferences ?? [];
 }
 
 /**
- * Substitui todas as preferências atuais do usuário.
+ * Substitui todas as preferências atuais do usuário. Lista vazia limpa o perfil.
  */
 export async function savePreferences(prefs: Preference[]): Promise<void> {
   if (useMocks) {
@@ -90,5 +93,5 @@ export async function savePreferences(prefs: Preference[]): Promise<void> {
     return;
   }
 
-  await httpClient.put('/users/me/preferences', prefs);
+  await httpClient.put('/users/me/preferences', { preferences: prefs });
 }

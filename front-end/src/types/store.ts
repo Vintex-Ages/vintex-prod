@@ -52,3 +52,47 @@ export interface StoreInput {
   /** VS-003b (Should) — opcional até esse fluxo existir. */
   acceptedContractVersion?: string;
 }
+
+/**
+ * Resumo da loja na listagem "Brechós do RS" (FE-CMP-38, FE-SVC-store-search).
+ * `activeCount` = peças `ativo` (back-end#256). Loja sem endereço vem com
+ * `city` e `state` vazios, como no `StoreProfile`.
+ */
+export interface StoreSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  logoUrl: string | null;
+  city: string;
+  state: string;
+  verified: boolean;
+  activeCount: number;
+}
+
+/**
+ * A própria loja como o dono vê, para a tela de edição (FE-US006-4, #335):
+ * inclui o que não sai no perfil público (documento, chave Pix, endereço
+ * completo). `address` é `null` em loja criada sem endereço.
+ */
+export interface MyStoreDetails {
+  id: string;
+  name: string;
+  description: string;
+  logoUrl: string | null;
+  pixKey: string;
+  document: StoreDocument;
+  address: StoreAddress | null;
+}
+
+/**
+ * Envio parcial da edição (back-end#221): campo ausente não muda. O documento
+ * não está aqui de propósito: não é alterável por esta rota.
+ */
+export interface StoreUpdate {
+  name?: string;
+  description?: string;
+  /** Logo nova; `null` tira a logo. */
+  logo?: File | null;
+  address?: StoreAddress;
+  pixKey?: string;
+}

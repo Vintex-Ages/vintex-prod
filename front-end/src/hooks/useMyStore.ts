@@ -20,7 +20,11 @@ export type MyStoreState =
  *   const { state, retry } = useMyStore();
  *   if (state.status === 'error') return <ErrorState message="…" onRetry={retry} />;
  */
-export function useMyStore(): { state: MyStoreState; retry: () => void } {
+export function useMyStore(): {
+  state: MyStoreState;
+  retry: () => void;
+  updateStore: (store: StoreProfile) => void;
+} {
   const [state, setState] = useState<MyStoreState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
@@ -47,5 +51,15 @@ export function useMyStore(): { state: MyStoreState; retry: () => void } {
     setAttempt((current) => current + 1);
   }, []);
 
-  return { state, retry };
+  // Atualiza o mesmo objeto usado pela guarda após uma operação autoritativa,
+  // sem outra consulta inicial nem um estado separado para o selo (#359).
+  const updateStore = useCallback((store: StoreProfile) => {
+    setState((current) =>
+      current.status === 'ready' && current.store?.id === store.id
+        ? { status: 'ready', store }
+        : current,
+    );
+  }, []);
+
+  return { state, retry, updateStore };
 }

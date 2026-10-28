@@ -1,5 +1,5 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { AUTH_REQUIRED } from '@/types/auth';
 import type { ApiError, AuthUser } from '@/types/auth';
 
@@ -326,5 +326,159 @@ describe('authService (API real, VITE_USE_MOCKS=false)', () => {
 
   it('markCurrentAccountAsSeller: no modo API real é um no-op (o backend marca is_seller ao criar a loja)', async () => {
     await expect(authService.markCurrentAccountAsSeller()).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Renovação de sessão (#275).
+ *
+ * `POST /auth/refresh` é o que o interceptor de 401 dispara, então ele **não
+ * passa pelo `httpClient`**: se passasse, um refresh recusado faria o
+ * interceptor tentar renovar a própria renovação. Por isso estes testes
+ * trocam o adapter do `axios` cru, e não o do `httpClient`.
+ */
+describe('authService.refresh', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    axios.defaults.adapter = undefined;
+  });
+
+  it('API real: manda o refresh no corpo, sem Authorization, e devolve o par novo', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.resetModules();
+    const servico = await import('./authService');
+
+    const chamadas: { url?: string; corpo: unknown; auth: unknown }[] = [];
+    axios.defaults.adapter = (config) => {
+      chamadas.push({
+        url: config.url,
+        corpo: JSON.parse((config.data as string) ?? 'null'),
+        auth: config.headers?.Authorization,
+      });
+      return Promise.resolve({
+        data: {
+          user: { id: 7, name: 'Ana', email: 'ana@exemplo.com', is_admin: false },
+          access_token: 'jwt-novo',
+          refresh_token: 'refresh-novo',
+          token_type: 'bearer',
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    const resultado = await servico.refresh('refresh-velho');
+
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].url).toContain('/auth/refresh');
+    expect(chamadas[0].corpo).toEqual({ refresh_token: 'refresh-velho' });
+    // O refresh token é a única credencial da renovação; um access token morto
+    // no header não ajuda e, se o backend passar a validá-lo, atrapalha.
+    expect(chamadas[0].auth).toBeUndefined();
+    expect(resultado).toMatchObject({
+      access_token: 'jwt-novo',
+      refresh_token: 'refresh-novo',
+    });
+    expect(resultado.user).toMatchObject({ id: '7', email: 'ana@exemplo.com' });
+  });
+
+  it('API real: refresh recusado rejeita com ApiError', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.resetModules();
+    const servico = await import('./authService');
+
+    axios.defaults.adapter = (config) =>
+      Promise.reject(
+        new AxiosError('Request failed', 'ERR_BAD_REQUEST', config, null, {
+          data: { error: { code: 'AUTH_REQUIRED', message: 'Sessão expirada.' } },
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          config,
+        }),
+      );
+
+    await expect(servico.refresh('morto')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+  });
+
+  it('mock: sem sessão aberta, recusa', async () => {
+    vi.resetModules();
+    const servico = await import('./authService');
+
+    await expect(servico.refresh('qualquer')).rejects.toMatchObject({ code: 'AUTH_REQUIRED' });
+  });
+
+  it('mock: com sessão aberta, devolve par novo a cada chamada', async () => {
+    vi.resetModules();
+    const servico = await import('./authService');
+
+    const aberta = await servico.register({
+      name: 'Ana',
+      email: 'ana.refresh@exemplo.com',
+      password: 'senha123',
+    });
+
+    const primeira = await servico.refresh(aberta.refresh_token);
+    const segunda = await servico.refresh(primeira.refresh_token);
+
+    // Rotação: dois refresh seguidos nunca devolvem o mesmo token, como na API
+    // real. Um mock que repetisse o valor esconderia o bug de usar o anterior.
+    expect(primeira.refresh_token).not.toBe(aberta.refresh_token);
+    expect(segunda.refresh_token).not.toBe(primeira.refresh_token);
+  });
+});
+
+describe('authService.logout — revogação da sessão (#275)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('API real: com refresh token, manda ele no corpo para o backend revogar', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.resetModules();
+    const servico = await import('./authService');
+    const { httpClient } = await import('./httpClient');
+
+    let corpo: unknown = 'nao chamado';
+    httpClient.defaults.adapter = (config) => {
+      corpo = config.data === undefined ? undefined : JSON.parse(config.data as string);
+      return Promise.resolve({
+        data: null,
+        status: 204,
+        statusText: 'No Content',
+        headers: {},
+        config,
+      });
+    };
+
+    await servico.logout('refresh-vivo');
+
+    expect(corpo).toEqual({ refresh_token: 'refresh-vivo' });
+  });
+
+  it('API real: sem refresh token, segue sem corpo', async () => {
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+    vi.resetModules();
+    const servico = await import('./authService');
+    const { httpClient } = await import('./httpClient');
+
+    let tinhaCorpo = true;
+    httpClient.defaults.adapter = (config) => {
+      tinhaCorpo = config.data !== undefined;
+      return Promise.resolve({
+        data: null,
+        status: 204,
+        statusText: 'No Content',
+        headers: {},
+        config,
+      });
+    };
+
+    await servico.logout();
+
+    // `RefreshTokenRequest | None` no back: corpo ausente continua valendo.
+    expect(tinhaCorpo).toBe(false);
   });
 });

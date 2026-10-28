@@ -1,5 +1,6 @@
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
+import { filterValues } from '@/utils/catalogQuery';
 import type {
   FilterParams,
   Paginated,
@@ -28,6 +29,7 @@ interface FeedParams {
   page?: number;
   pageSize?: number;
   sort?: 'recent';
+  category?: string;
 }
 
 /**
@@ -70,13 +72,19 @@ function normalize(value: string): string {
  * lojas do seed são do RS — só descarta quando outro estado é pedido
  * explicitamente.
  */
+/** Campo de múltipla escolha: sem valor, não filtra; com vários, basta casar um (OU). */
+function matchesAny(value: string, wanted: FilterParams['size']): boolean {
+  const values = filterValues(wanted);
+  return values.length === 0 || values.includes(value);
+}
+
 function matchesFilters(product: ProductDetail, filters: FilterParams): boolean {
   if (product.status !== 'ativo') return false;
   if (filters.category && product.category !== filters.category) return false;
-  if (filters.size && product.size !== filters.size) return false;
-  if (filters.brand && product.brand !== filters.brand) return false;
-  if (filters.condition && product.condition !== filters.condition) return false;
-  if (filters.color && product.color !== filters.color) return false;
+  if (!matchesAny(product.size, filters.size)) return false;
+  if (!matchesAny(product.brand, filters.brand)) return false;
+  if (!matchesAny(product.condition, filters.condition)) return false;
+  if (!matchesAny(product.color, filters.color)) return false;
   if (filters.city && product.store.city !== filters.city) return false;
   if (filters.state && filters.state.toUpperCase() !== 'RS') return false;
   if (filters.priceMin !== undefined && product.price < filters.priceMin) return false;
@@ -97,8 +105,14 @@ function productNotFound(id: string): CatalogError {
 
 // ---- mock ----
 
-function mockGetFeed({ page = 1, pageSize = DEFAULT_PAGE_SIZE }: FeedParams): Paginated<Product> {
-  const active = mockProducts.filter((product) => product.status === 'ativo');
+function mockGetFeed({
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  category,
+}: FeedParams): Paginated<Product> {
+  const active = mockProducts.filter(
+    (product) => product.status === 'ativo' && (!category || product.category === category),
+  );
   const recent = [...active].reverse();
   return paginate(recent.map(toProduct), page, pageSize);
 }
@@ -106,8 +120,11 @@ function mockGetFeed({ page = 1, pageSize = DEFAULT_PAGE_SIZE }: FeedParams): Pa
 function mockGetFeedWithDetails({
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
+  category,
 }: FeedParams): Paginated<ProductDetail> {
-  const active = mockProducts.filter((product) => product.status === 'ativo');
+  const active = mockProducts.filter(
+    (product) => product.status === 'ativo' && (!category || product.category === category),
+  );
   const recent = [...active].reverse();
   return paginate(recent, page, pageSize);
 }
@@ -236,6 +253,7 @@ function mapStore(store: ApiStore, city?: string): Store {
   };
 }
 
+/** Exportada para `recommendationService` (#313) reaproveitar "mesma forma da vitrine". */
 export function mapFeedItem(item: ApiFeedItem): Product {
   return {
     id: String(item.id),
@@ -277,15 +295,23 @@ function mapPage<TApi, T>(page: ApiPage<TApi>, mapItem: (item: TApi) => T): Pagi
   };
 }
 
-function toApiParams(filters: FilterParams): Record<string, string | number> {
-  const params: Record<string, string | number> = {};
+const MULTI_VALUE_FILTERS = ['size', 'brand', 'condition', 'color'] as const;
+
+/**
+ * `FilterParams` -> query da API. Campo de múltipla escolha vira lista e sai
+ * como parâmetro repetido (`size=M&size=G`, ver `REPEATED_PARAMS`), que é como
+ * o FastAPI recebe lista (#337).
+ */
+function toApiParams(filters: FilterParams): Record<string, string | number | string[]> {
+  const params: Record<string, string | number | string[]> = {};
   if (filters.category) params.category = filters.category;
   if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
   if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
-  if (filters.size) params.size = filters.size;
-  if (filters.brand) params.brand = filters.brand;
-  if (filters.condition) params.condition = filters.condition;
-  if (filters.color) params.color = filters.color;
+  for (const key of MULTI_VALUE_FILTERS) {
+    const values = filterValues(filters[key]);
+    if (values.length === 1) params[key] = values[0];
+    else if (values.length > 1) params[key] = values;
+  }
   if (filters.city) params.city = filters.city;
   if (filters.state) params.state = filters.state;
   if (filters.q) params.q = filters.q;
@@ -306,9 +332,10 @@ async function apiGetFeed({
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   sort = 'recent',
+  category,
 }: FeedParams): Promise<Paginated<Product>> {
   const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
-    params: { page, page_size: pageSize, sort },
+    params: { page, page_size: pageSize, sort, ...(category ? { category } : {}) },
   });
   return mapPage(data, mapFeedItem);
 }
@@ -340,9 +367,16 @@ async function apiGetFeedWithDetails(params: FeedParams): Promise<Paginated<Prod
   return { ...feedPage, items };
 }
 
+/**
+ * Lista sai como `size=M&size=G`. O padrão do axios é `size[]=M&size[]=G`, que
+ * o FastAPI não lê como o mesmo parâmetro (#337).
+ */
+const REPEATED_PARAMS = { indexes: null } as const;
+
 async function apiGetProducts(filters: FilterParams): Promise<Paginated<Product>> {
   const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
     params: toApiParams(filters),
+    paramsSerializer: REPEATED_PARAMS,
   });
   return mapPage(data, mapFeedItem);
 }
@@ -359,6 +393,7 @@ async function apiGetProduct(id: string): Promise<ProductDetail> {
 async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult> {
   const { data } = await httpClient.get<ApiSearchResponse>('/products', {
     params: toApiParams({ ...filters, q }),
+    paramsSerializer: REPEATED_PARAMS,
   });
 
   if (data.match_type !== 'exact' && data.match_type !== 'fallback') {
@@ -377,7 +412,121 @@ async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult
       : undefined,
   };
 }
+// ---- busca por imagem (FE-SVC-image-search, #315) ----
+// Contrato: `POST /api/products/search-by-image` (back-end#255), multipart com
+// `image` + os mesmos filtros do catálogo (RN-40). Rota pública (RN-26), e o
+// back não guarda a foto. A rota ainda não existe no back: a fixture dos testes
+// segue o exemplo da issue, não uma resposta real.
 
+/** O que a IA leu da foto (RN-60). Campo vazio vira `undefined`. */
+export interface ImageInterpretation {
+  category?: string;
+  color?: string;
+  brand?: string;
+}
+
+export interface ImageSearchResult extends Paginated<Product> {
+  interpreted: ImageInterpretation;
+}
+
+/** Limites do back: recusar aqui evita um upload que voltaria 415/413. */
+const IMAGE_SEARCH_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+const IMAGE_SEARCH_MAX_BYTES = 8 * 1024 * 1024;
+
+interface ApiImageSearchItem extends Omit<ApiFeedItem, 'price'> {
+  /** `number` quando o back serializa; `string` quando o `Decimal` do Pydantic sai cru. */
+  price: number | string;
+}
+
+interface ApiImageSearchResponse extends ApiPage<ApiImageSearchItem> {
+  interpreted?: { category?: string | null; color?: string | null; brand?: string | null } | null;
+}
+
+function validateImage(image: File): CatalogError | null {
+  if (!IMAGE_SEARCH_TYPES.includes(image.type)) {
+    return new CatalogError('UNSUPPORTED_IMAGE_TYPE', 'Use uma foto JPEG, PNG, WebP ou HEIC.');
+  }
+  if (image.size > IMAGE_SEARCH_MAX_BYTES) {
+    return new CatalogError('IMAGE_TOO_LARGE', 'A foto passa de 8 MB. Escolha uma menor.');
+  }
+  return null;
+}
+
+export function toReais(price: number | string): number {
+  const value = typeof price === 'string' ? Number(price) : price;
+  if (!Number.isFinite(value)) {
+    throw new CatalogError(
+      'INVALID_RESPONSE',
+      'Resposta inválida da busca por imagem: preço ilegível.',
+    );
+  }
+  return value;
+}
+
+function mapImageSearch(data: ApiImageSearchResponse): ImageSearchResult {
+  const { category, color, brand } = data.interpreted ?? {};
+  return {
+    ...mapPage(data, (item) => mapFeedItem({ ...item, price: toReais(item.price) })),
+    interpreted: {
+      category: category || undefined,
+      color: color || undefined,
+      brand: brand || undefined,
+    },
+  };
+}
+
+function toImageSearchError(error: unknown): CatalogError {
+  if (error instanceof CatalogError) return error;
+
+  const status = (error as { response?: { status?: number } }).response?.status;
+  if (status === 415) {
+    return new CatalogError('UNSUPPORTED_IMAGE_TYPE', 'Use uma foto JPEG, PNG, WebP ou HEIC.');
+  }
+  if (status === 413) {
+    return new CatalogError('IMAGE_TOO_LARGE', 'A foto passa de 8 MB. Escolha uma menor.');
+  }
+  if (status === 503) {
+    return new CatalogError(
+      'AI_UNAVAILABLE',
+      'A busca por foto está indisponível agora. Tente de novo em instantes.',
+    );
+  }
+  return toCatalogError(error);
+}
+
+function mockSearchByImage(filters: FilterParams, page = 1): ImageSearchResult {
+  const matches = mockProducts.filter((product) => matchesFilters(product, filters));
+  const [top] = matches;
+  return {
+    ...paginate(matches.map(toProduct), page, DEFAULT_PAGE_SIZE),
+    interpreted: top ? { category: top.category, color: top.color, brand: top.brand } : {},
+  };
+}
+
+async function apiSearchByImage(
+  image: File,
+  filters: FilterParams,
+  page?: number,
+): Promise<ImageSearchResult> {
+  const form = new FormData();
+  form.append('image', image);
+  // `q` e `sort` não existem nessa rota: o contrato aceita só os filtros do catálogo.
+  const params = toApiParams({ ...filters, q: undefined, sort: undefined });
+  for (const [key, value] of Object.entries(params)) {
+    for (const item of Array.isArray(value) ? value : [value]) form.append(key, String(item));
+  }
+  if (page !== undefined) form.append('page', String(page));
+
+  try {
+    const { data } = await httpClient.post<ApiImageSearchResponse>(
+      '/products/search-by-image',
+      form,
+    );
+    return mapImageSearch(data);
+  } catch (error) {
+    throw toImageSearchError(error);
+  }
+}
 // ---- API pública do service ----
 
 export function getFeed(params: FeedParams = {}): Promise<Paginated<Product>> {
@@ -399,4 +548,21 @@ export function getProducts(filters: FilterParams = {}): Promise<Paginated<Produ
 
 export function search(q: string, filters: FilterParams = {}): Promise<SearchResult> {
   return useMocks ? Promise.resolve(mockSearch(q, filters)) : apiSearch(q, filters);
+}
+/**
+ * Busca por foto combinável com os filtros do catálogo (VS-031, RN-60). Tipo e
+ * tamanho são conferidos antes de qualquer requisição, no mock e na API.
+ * `interpreted` traz o que a IA leu na foto, pra tela mostrar.
+ */
+export function searchByImage(
+  image: File,
+  filters: FilterParams = {},
+  page?: number,
+): Promise<ImageSearchResult> {
+  const invalid = validateImage(image);
+  if (invalid) return Promise.reject(invalid);
+
+  return useMocks
+    ? Promise.resolve(mockSearchByImage(filters, page))
+    : apiSearchByImage(image, filters, page);
 }

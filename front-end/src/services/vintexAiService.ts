@@ -1,6 +1,9 @@
-import { getAuthToken, handleAuthRequired } from '@/services/httpClient';
+import axios from 'axios';
+import { getAuthToken, handleAuthRequired, httpClient } from '@/services/httpClient';
 import { mapFeedItem, type ApiFeedItem } from '@/services/catalogService';
+import { uploadMedia } from '@/services/sellerProductService';
 import { products as mockProducts } from '@/mocks/products';
+import type { FilterParams } from '@/types/product';
 import type {
   ChatChunk,
   ChatMessage,
@@ -9,6 +12,8 @@ import type {
   ListingSuggestion,
   ListingSuggestionField,
   ListingSuggestionResult,
+  PriceSuggestion,
+  PriceSuggestionInput,
 } from '@/types/vintex-ai';
 
 /**
@@ -72,9 +77,15 @@ const CAMPOS_SUGERIVEIS: ListingSuggestionField[] = [
   'condition',
   'description',
   'brand',
+  'composition',
 ];
 
 const SEM_MARCA = 'Marca não identificada: etiqueta ilegível ou ausente.';
+// RN-59: marca e composição saem da mesma etiqueta; ilegível, nenhuma das duas.
+const ETIQUETA_ILEGIVEL =
+  'Marca e composição não identificadas: a foto da etiqueta está ilegível. Preencha à mão ou tente outra foto.';
+const ETIQUETA_NAO_ENVIADA =
+  'Não foi possível enviar a foto da etiqueta. Tente de novo ou preencha os campos à mão.';
 const NADA_IDENTIFICADO =
   'Não identificamos nada nas fotos. Preencha os campos à mão ou tente outra foto.';
 
@@ -146,6 +157,12 @@ export interface SuggestListingInput {
    * chamar a rota síncrona (ver o comentário do `realSuggestListing`).
    */
   productId?: string;
+  /**
+   * Foto da etiqueta, separada das fotos da peça (#318). O service sobe ela à
+   * parte, marcada como etiqueta (fora da galeria pública), e a IA lê dela a
+   * marca e a composição.
+   */
+  labelImage?: File;
 }
 
 export interface SuggestListingOptions {
@@ -205,6 +222,14 @@ function shouldMockFail(): boolean {
   return new URLSearchParams(window.location.search).get('mockFail') === '1';
 }
 
+/** Mesmo esquema do `shouldMockFail`, para a cota do dia esgotada (`?mockQuota=1`). */
+function shouldMockQuota(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('mockQuota') === '1';
+}
+
+const MOCK_COTA_ESGOTADA = 'Você atingiu o limite de perguntas por hoje. Volta amanhã.';
+
 /** `setTimeout` que resolve na hora se `signal` já abortou, ou ao ser abortado. */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -227,6 +252,13 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   const { signal } = request;
+
+  if (shouldMockQuota()) {
+    if (signal?.aborted) return;
+    yield { type: 'error', reason: 'quota', message: MOCK_COTA_ESGOTADA };
+    return;
+  }
+
   const words = MOCK_RESPONSE_TEXT.split(' ');
   const failAtWordIndex = shouldMockFail() ? Math.floor(words.length / 2) : -1;
 
@@ -247,7 +279,7 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   await sleep(MOCK_STEP_DELAY_MS, signal);
   if (signal?.aborted) return;
 
-  yield { type: 'products', products: mockProducts.slice(0, 3) };
+  yield { type: 'products', products: mockProducts.slice(0, 3), matchType: 'exact' };
 
   if (signal?.aborted) return;
   await sleep(MOCK_WORD_DELAY_MS, signal);
@@ -278,9 +310,10 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
 //      `catalogService` em vez de um segundo mapeamento paralelo.
 //   3. `interpreted`: o back manda `filters`/`similarity` soltos no evento;
 //      aqui eles voltam para dentro de `interpreted`, como o tipo do front
-//      declara. Os *nomes* das chaves de `filters` continuam os do back
-//      (`price_max`): converter isso é de quem for renderizar os chips
-//      (#210), e o back ainda não emite esse chunk.
+//      declara. `filters` vem com os nomes do feed do back (`price_max`,
+//      preço em texto) e vira `FilterParams` (`priceMax`, número) em
+//      `toFilterParams`: sem isso o chip de preço sumia e o "Ver no catálogo"
+//      abria sem o limite de preço.
 // ---------------------------------------------------------------------------
 
 /**
@@ -383,6 +416,29 @@ function parseSseEvent(raw: string): ChatChunk | null {
   return toChatChunk(payload);
 }
 
+/** Filtros que o back interpreta, com o nome que o front usa em `FilterParams`. */
+const TEXT_FILTERS = ['category', 'size', 'brand', 'condition', 'color'] as const;
+const PRICE_FILTERS = { price_min: 'priceMin', price_max: 'priceMax' } as const;
+
+/**
+ * `filters` do evento `interpreted` (nomes do feed do back, tudo em texto) ->
+ * `FilterParams`. Preço que não for número fica de fora; chave desconhecida
+ * também, para um filtro novo no back não virar chip quebrado.
+ */
+function toFilterParams(filters: Record<string, unknown> = {}): FilterParams {
+  const params: FilterParams = {};
+  for (const key of TEXT_FILTERS) {
+    const value = filters[key];
+    if (typeof value === 'string' && value.trim()) params[key] = value;
+  }
+  for (const [apiKey, key] of Object.entries(PRICE_FILTERS)) {
+    const value = filters[apiKey];
+    const price = typeof value === 'number' || typeof value === 'string' ? Number(value) : NaN;
+    if (value !== '' && Number.isFinite(price)) params[key] = price;
+  }
+  return params;
+}
+
 /**
  * Evento do back -> `ChatChunk` do front. Não é cast: `products` e
  * `interpreted` têm shape diferente dos dois lados (ver o bloco de contrato
@@ -399,26 +455,44 @@ function toChatChunk(payload: unknown): ChatChunk | null {
       return typeof delta === 'string' ? { type: 'text', delta } : null;
     }
     case 'products': {
-      const { products } = payload as { products?: ApiFeedItem[] };
-      return { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      // `match_type` (back-end#260), o mesmo nome do feed. Valor fora do
+      // contrato é ignorado: a lista aparece como antes, sem marcador.
+      const { products, match_type } = payload as {
+        products?: ApiFeedItem[];
+        match_type?: unknown;
+      };
+      const chunk: ChatChunk = { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      if (match_type === 'exact' || match_type === 'fallback') chunk.matchType = match_type;
+      return chunk;
     }
     case 'interpreted': {
       const { filters, similarity } = payload as {
-        filters?: Record<string, string>;
+        filters?: Record<string, unknown>;
         similarity?: string | null;
       };
       return {
         type: 'interpreted',
-        interpreted: { filters: filters ?? {}, similarity: similarity ?? undefined },
+        interpreted: { filters: toFilterParams(filters), similarity: similarity ?? undefined },
       };
     }
     case 'done':
       return { type: 'done' };
     case 'error': {
-      const { message } = payload as { message?: unknown };
+      // Cota esgotada (back-end#258, `ChatQuotaEvent`): `error` com
+      // `code: 'quota_exceeded'` e `retry_at` (ISO 8601). Sem esse `code`, o
+      // erro sai igual a antes, sem `reason`.
+      const { message, code, retry_at } = payload as {
+        message?: unknown;
+        code?: unknown;
+        retry_at?: unknown;
+      };
+      const texto = typeof message === 'string' ? message : FALHA_DE_CONEXAO;
+      if (code !== 'quota_exceeded') return { type: 'error', message: texto };
       return {
         type: 'error',
-        message: typeof message === 'string' ? message : FALHA_DE_CONEXAO,
+        reason: 'quota',
+        message: texto,
+        ...(typeof retry_at === 'string' ? { retryAt: retry_at } : {}),
       };
     }
     default:
@@ -430,6 +504,10 @@ function toChatChunk(payload: unknown): ChatChunk | null {
  * Sugestão de anúncio sem backend, para as telas do cadastro rodarem antes de
  * o flag virar. `brand` só aparece quando o nome de algum arquivo tem
  * `etiqueta`, simulando o RN-58: a IA não chuta marca, ela lê a etiqueta.
+ *
+ * Com `labelImage` (#318), quem decide é a foto da etiqueta: nome com
+ * `ilegivel` simula etiqueta ilegível (RN-59), sem marca nem composição;
+ * qualquer outro nome traz as duas.
  */
 async function mockSuggestListing(
   input: SuggestListingInput,
@@ -452,19 +530,40 @@ async function mockSuggestListing(
     return { ok: false, reason: 'unavailable', message: IA_INDISPONIVEL };
   }
 
+  const pecaSugerida: ApiImageAnalysisResult = {
+    category: { value: 'Jaquetas', confidence: 0.94 },
+    color: { value: 'Preto', confidence: 0.91 },
+    size: { value: 'M', confidence: 0.72 },
+    condition: { value: 'Seminovo', confidence: 0.68 },
+    description: {
+      value: 'Jaqueta de couro sintético preta, forro interno e zíper prateado.',
+      confidence: 0.8,
+    },
+  };
+
+  if (input.labelImage) {
+    if (input.labelImage.name.toLowerCase().includes('ilegivel')) {
+      return {
+        ok: true,
+        suggestion: { ...montarSugestao(pecaSugerida), notes: [ETIQUETA_ILEGIVEL] },
+      };
+    }
+    return {
+      ok: true,
+      suggestion: montarSugestao({
+        ...pecaSugerida,
+        brand: { value: 'Zara', confidence: 0.77 },
+        composition: { value: '100% algodão', confidence: 0.83 },
+      }),
+    };
+  }
+
   const temEtiqueta = input.imageUrls.some((url) => url.toLowerCase().includes('etiqueta'));
 
   return {
     ok: true,
     suggestion: montarSugestao({
-      category: { value: 'Jaquetas', confidence: 0.94 },
-      color: { value: 'Preto', confidence: 0.91 },
-      size: { value: 'M', confidence: 0.72 },
-      condition: { value: 'Seminovo', confidence: 0.68 },
-      description: {
-        value: 'Jaqueta de couro sintético preta, forro interno e zíper prateado.',
-        confidence: 0.8,
-      },
+      ...pecaSugerida,
       brand: temEtiqueta ? { value: 'Zara', confidence: 0.77 } : null,
     }),
   };
@@ -475,7 +574,8 @@ async function mockSuggestListing(
  *
  * - **sem `productId`**: `POST /api/ai/listing-suggestions` com as URLs, que
  *   responde na hora. É o caminho do cadastro, porque as fotos existem antes
- *   da peça.
+ *   da peça. Com `labelImage`, a etiqueta sobe antes e vai como
+ *   `label_image_url` (#318, back-end#257).
  * - **com `productId`**: o pipeline assíncrono já ligado à peça
  *   (`GET /api/users/me/products/{id}/ai-status`), consultado até `done` ou
  *   `failed` dentro do orçamento de tempo.
@@ -496,15 +596,65 @@ async function realSuggestListing(
     return aguardarPipeline(input.productId, prazo, opts.signal);
   }
 
+  let labelImageUrl: string | undefined;
+  if (input.labelImage) {
+    const etiqueta = await subirEtiqueta(input.labelImage, prazo, opts.signal);
+    if (!etiqueta.ok) return etiqueta.erro;
+    labelImageUrl = etiqueta.url;
+  }
+
   const resposta = await pedir<ApiImageAnalysisResult>(
     '/ai/listing-suggestions',
-    { image_urls: input.imageUrls },
+    {
+      image_urls: input.imageUrls,
+      ...(labelImageUrl ? { label_image_url: labelImageUrl } : {}),
+    },
     prazo,
     opts.signal,
   );
 
   if (!resposta.ok) return resposta.erro;
   return { ok: true, suggestion: montarSugestao(resposta.dados) };
+}
+
+type EtiquetaEnviada = { ok: true; url?: string } | { ok: false; erro: ListingSuggestionResult };
+
+/**
+ * Sobe a foto da etiqueta marcada como etiqueta (fora da galeria pública),
+ * gastando do mesmo `prazo` da análise: o orçamento de tempo é da operação
+ * inteira, upload incluso. Falha vira resultado, nunca exceção (RN-57).
+ */
+async function subirEtiqueta(
+  foto: File,
+  prazo: number,
+  signal?: AbortSignal,
+): Promise<EtiquetaEnviada> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelar: (() => void) | undefined;
+  const interrupcao = new Promise<'prazo' | 'cancelado'>((resolve) => {
+    timer = setTimeout(() => resolve('prazo'), prazo - Date.now());
+    cancelar = () => resolve('cancelado');
+    signal?.addEventListener('abort', cancelar);
+  });
+
+  try {
+    const resultado = await Promise.race([uploadMedia([foto], 'label'), interrupcao]);
+    if (resultado === 'prazo') {
+      return { ok: false, erro: { ok: false, reason: 'timeout', message: ANALISE_DEMOROU } };
+    }
+    if (resultado === 'cancelado') {
+      return {
+        ok: false,
+        erro: { ok: false, reason: 'unavailable', message: ANALISE_INTERROMPIDA },
+      };
+    }
+    return { ok: true, url: resultado[0] };
+  } catch {
+    return { ok: false, erro: { ok: false, reason: 'unavailable', message: ETIQUETA_NAO_ENVIADA } };
+  } finally {
+    clearTimeout(timer);
+    if (cancelar) signal?.removeEventListener('abort', cancelar);
+  }
 }
 
 /**
@@ -669,4 +819,179 @@ export async function getOutfitSuggestion(prompt: string): Promise<ChatMessage> 
       note: 'Conteúdo sintético para visualizar a ideia. A curadoria real poderá cruzar suas preferências com peças disponíveis.',
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// suggestPrice: comparação com o catálogo, sem modelo de IA ou persistência
+// ---------------------------------------------------------------------------
+
+export type PriceSuggestionErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'VALIDATION_ERROR'
+  | 'NETWORK_ERROR'
+  | 'SERVER_ERROR'
+  | 'INVALID_RESPONSE'
+  | 'HTTP_ERROR';
+
+export class PriceSuggestionError extends Error {
+  constructor(
+    public readonly code: PriceSuggestionErrorCode,
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'PriceSuggestionError';
+  }
+}
+
+/** Fixtures em reais, sem consulta ao catálogo. Fallback: Roupas / Seminovo. */
+const MOCK_PRICE_RANGES = {
+  Roupas: {
+    basedOn: 6,
+    'Novo com etiqueta': [109.9, 179.9],
+    Seminovo: [89.9, 149.9],
+    Usado: [69.9, 119.9],
+    'Marcas de uso': [49.9, 89.9],
+  },
+  Acessórios: {
+    basedOn: 4,
+    'Novo com etiqueta': [59.9, 129.9],
+    Seminovo: [49.9, 99.9],
+    Usado: [39.9, 79.9],
+    'Marcas de uso': [29.9, 59.9],
+  },
+  Sapatos: {
+    basedOn: 5,
+    'Novo com etiqueta': [149.9, 229.9],
+    Seminovo: [119.9, 189.9],
+    Usado: [89.9, 149.9],
+    'Marcas de uso': [69.9, 109.9],
+  },
+} as const;
+
+async function mockSuggestPrice(input: PriceSuggestionInput): Promise<PriceSuggestion> {
+  await sleep(400);
+
+  if (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('mockPriceNoBase') === '1'
+  ) {
+    return {
+      min: null,
+      max: null,
+      justification: 'Simulação: não há peças comparáveis suficientes.',
+      basedOn: 0,
+    };
+  }
+
+  const category =
+    input.category === 'Acessórios' || input.category === 'Sapatos' ? input.category : 'Roupas';
+  const condition =
+    input.condition === 'Novo com etiqueta' ||
+    input.condition === 'Usado' ||
+    input.condition === 'Marcas de uso'
+      ? input.condition
+      : 'Seminovo';
+  const fixture = MOCK_PRICE_RANGES[category];
+  const [min, max] = fixture[condition];
+
+  return {
+    min,
+    max,
+    justification: `Faixa simulada para ${category} (${condition}), com ${fixture.basedOn} peças fictícias.`,
+    basedOn: fixture.basedOn,
+  };
+}
+
+function invalidPriceResponse(status: number): PriceSuggestionError {
+  return new PriceSuggestionError(
+    'INVALID_RESPONSE',
+    'Resposta inválida da sugestão de preço.',
+    status,
+  );
+}
+
+function toPriceBound(value: unknown, status: number): number | null {
+  if (value === null) return null;
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && value.trim().length === 0)
+  ) {
+    throw invalidPriceResponse(status);
+  }
+
+  const amount = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(amount)) throw invalidPriceResponse(status);
+  return amount;
+}
+
+function mapPriceSuggestion(data: unknown, status: number): PriceSuggestion {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    throw invalidPriceResponse(status);
+  }
+
+  const { min, max, justification, based_on: basedOn } = data as Record<string, unknown>;
+  if (
+    typeof justification !== 'string' ||
+    justification.trim().length === 0 ||
+    typeof basedOn !== 'number' ||
+    !Number.isInteger(basedOn) ||
+    basedOn < 0
+  ) {
+    throw invalidPriceResponse(status);
+  }
+
+  return {
+    min: toPriceBound(min, status),
+    max: toPriceBound(max, status),
+    justification,
+    basedOn,
+  };
+}
+
+function toPriceSuggestionError(error: unknown): PriceSuggestionError {
+  if (error instanceof PriceSuggestionError) return error;
+
+  if (!axios.isAxiosError(error) || !error.response) {
+    return new PriceSuggestionError('NETWORK_ERROR', FALHA_DE_CONEXAO);
+  }
+
+  const { status, data } = error.response;
+  const message = (data as { error?: { message?: unknown } } | null)?.error?.message;
+  let code: PriceSuggestionErrorCode;
+  if (status === 401) code = 'AUTH_REQUIRED';
+  else if (status === 422) code = 'VALIDATION_ERROR';
+  else if (status >= 500 && status <= 599) code = 'SERVER_ERROR';
+  else code = 'HTTP_ERROR';
+
+  return new PriceSuggestionError(
+    code,
+    typeof message === 'string' && message.trim().length > 0
+      ? message
+      : 'Não foi possível sugerir um preço agora.',
+    status,
+  );
+}
+
+/**
+ * Faixa em reais baseada no catálogo (back-end#254). Não salva a sugestão.
+ * Sem comparáveis é sucesso com limites nulos; falhas rejeitam com PriceSuggestionError.
+ */
+export async function suggestPrice(input: PriceSuggestionInput): Promise<PriceSuggestion> {
+  if (isUsingMocks()) return mockSuggestPrice(input);
+
+  const { name, category, brand, condition, size, description } = input;
+  try {
+    const { data, status } = await httpClient.post<unknown>('/ai/price-suggestions', {
+      name,
+      category,
+      brand,
+      condition,
+      size,
+      description,
+    });
+    return mapPriceSuggestion(data, status);
+  } catch (error) {
+    throw toPriceSuggestionError(error);
+  }
 }
