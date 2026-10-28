@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDraft,
+  discardDraft,
   getById,
   getMine,
   getSalesSummary,
@@ -44,6 +45,27 @@ describe('sellerProductService', () => {
   });
 
   // Teste 1 da #202 — RN-47 na camada certa.
+  // FE-US019-6 (#345): a aba de rascunhos lista com `?status=rascunho` e
+  // descarta apagando a peça (back-end#271).
+  it('getMine com status rascunho lista só os rascunhos', async () => {
+    const page = await getMine({ status: 'rascunho' });
+
+    expect(page.items.map((item) => item.id)).toEqual([DRAFT_WITHOUT_IMAGE]);
+  });
+
+  it('discardDraft apaga o rascunho', async () => {
+    await discardDraft(DRAFT_WITHOUT_IMAGE);
+
+    expect((await getMine({ status: 'rascunho' })).items).toEqual([]);
+    await expectErrorCode(getById(DRAFT_WITHOUT_IMAGE), 'PRODUCT_NOT_FOUND');
+  });
+
+  it('discardDraft recusa peça que não é rascunho, como o back', async () => {
+    await expectErrorCode(discardDraft(ACTIVE), 'PRODUCT_NOT_EDITABLE');
+    await expectErrorCode(discardDraft(SOLD), 'PRODUCT_SOLD');
+    expect((await getById(ACTIVE)).status).toBe('ativo');
+  });
+
   it('publish sem imagem devolve NO_IMAGE', async () => {
     await expectErrorCode(publish(DRAFT_WITHOUT_IMAGE), 'NO_IMAGE');
     expect((await getById(DRAFT_WITHOUT_IMAGE)).status).toBe('rascunho');
@@ -151,6 +173,23 @@ describe('sellerProductService', () => {
     expect(firstPage.items).toHaveLength(3);
   });
 
+  // #358: a listagem leva a capa (foto de posição 0) das peças publicadas e
+  // deixa `null` no rascunho sem foto — o `SellerProductRow` mostra o placeholder.
+  it('getMine devolve a capa das peças publicadas e null no rascunho sem foto', async () => {
+    const byId = new Map((await getMine()).items.map((item) => [item.id, item]));
+
+    expect(byId.get(ACTIVE)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-2/600/800',
+    );
+    expect(byId.get(SOLD)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-3/600/800',
+    );
+    expect(byId.get(UNPUBLISHED)?.coverImageUrl).toBe(
+      'https://picsum.photos/seed/vintex-seller-4/600/800',
+    );
+    expect(byId.get(DRAFT_WITHOUT_IMAGE)?.coverImageUrl).toBeNull();
+  });
+
   it('getSalesSummary soma as vendidas em reais e desconta a comissão de 9%', async () => {
     expect(await getSalesSummary('month')).toEqual({
       period: 'month',
@@ -205,6 +244,50 @@ describe('sellerProductService', () => {
   });
 });
 
+/**
+ * Fixture serializado de `ProductManagementPage`/`ProductManagementResponse`
+ * em `back-end@c5bce0d` (back-end#265): `cover_image_url` é a foto de posição 0
+ * e vem nula no rascunho sem foto (RN-47). `price` vem número por causa do
+ * `@field_serializer("price") -> float` do schema.
+ */
+const BACKEND_MANAGEMENT_PAGE = {
+  items: [
+    {
+      id: 41,
+      name: 'Jaqueta Jeans Oversized',
+      description: 'Jaqueta jeans com lavagem clara.',
+      category: 'Roupas',
+      style: 'casual',
+      brand: "Levi's",
+      color: 'Azul',
+      size: 'G',
+      condition: 'Usado',
+      price: 199.9,
+      quantity: 1,
+      status: 'ativo',
+      cover_image_url: 'https://api.test/capa.jpg',
+    },
+    {
+      id: 42,
+      name: 'Saia Plissada',
+      description: null,
+      category: 'Roupas',
+      style: null,
+      brand: null,
+      color: null,
+      size: null,
+      condition: null,
+      price: 59.9,
+      quantity: 1,
+      status: 'rascunho',
+      cover_image_url: null,
+    },
+  ],
+  page: 1,
+  page_size: 20,
+  total: 2,
+};
+
 describe('sellerProductService com a API real', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -213,6 +296,89 @@ describe('sellerProductService com a API real', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  // #358: a listagem do back traz a capa (back-end#265); o mapeador leva a URL
+  // pra `coverImageUrl` e mantém `null` quando a peça não tem foto.
+  it('getMine mapeia cover_image_url e mantém null no rascunho sem capa', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMine: apiGetMine } = await import('./sellerProductService');
+    const urls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      urls.push(`${config.method} ${config.url}`);
+      return Promise.resolve({
+        data: BACKEND_MANAGEMENT_PAGE,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    const page = await apiGetMine();
+
+    expect(urls).toEqual(['get /users/me/products']);
+    expect(page).toMatchObject({ page: 1, pageSize: 20, total: 2 });
+    expect(page.items[0]).toMatchObject({
+      id: '41',
+      status: 'ativo',
+      price: 199.9,
+      coverImageUrl: 'https://api.test/capa.jpg',
+    });
+    expect(page.items[1]).toMatchObject({
+      id: '42',
+      status: 'rascunho',
+      coverImageUrl: null,
+    });
+  });
+
+  // FE-US019-6 (#345): rotas do back-end#271 (PR back-end#323).
+  it('lista rascunhos com ?status=rascunho e descarta com DELETE', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMine: apiGetMine, discardDraft: apiDiscardDraft } =
+      await import('./sellerProductService');
+    const calls: string[] = [];
+
+    httpClient.defaults.adapter = (config) => {
+      calls.push(`${config.method} ${config.url} ${JSON.stringify(config.params ?? {})}`);
+      const data =
+        config.method === 'delete' ? '' : { items: [], page: 1, page_size: 20, total: 0 };
+      return Promise.resolve({
+        data,
+        status: config.method === 'delete' ? 204 : 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+    };
+
+    await apiGetMine({ status: 'rascunho' });
+    await apiDiscardDraft('42');
+
+    expect(calls[0]).toContain('get /users/me/products');
+    expect(calls[0]).toContain('"status":"rascunho"');
+    expect(calls[1]).toBe('delete /users/me/products/42 {}');
+  });
+
+  it('descartar peça que não é rascunho devolve o código do back (409)', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { discardDraft: apiDiscardDraft, SellerProductError: ApiError } =
+      await import('./sellerProductService');
+
+    httpClient.defaults.adapter = () =>
+      Promise.reject({
+        response: {
+          status: 409,
+          data: {
+            error: { code: 'PRODUCT_NOT_EDITABLE', message: 'Só rascunho pode ser descartado.' },
+          },
+        },
+      });
+
+    const error = await apiDiscardDraft('41').catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as InstanceType<typeof ApiError>).code).toBe('PRODUCT_NOT_EDITABLE');
   });
 
   // FE-US019-2 (#221): a rota é a declarada na back-end#234.

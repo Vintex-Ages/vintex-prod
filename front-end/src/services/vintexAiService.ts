@@ -279,7 +279,7 @@ async function* mockChat(request: ChatRequest): AsyncGenerator<ChatChunk> {
   await sleep(MOCK_STEP_DELAY_MS, signal);
   if (signal?.aborted) return;
 
-  yield { type: 'products', products: mockProducts.slice(0, 3) };
+  yield { type: 'products', products: mockProducts.slice(0, 3), matchType: 'exact' };
 
   if (signal?.aborted) return;
   await sleep(MOCK_WORD_DELAY_MS, signal);
@@ -455,8 +455,15 @@ function toChatChunk(payload: unknown): ChatChunk | null {
       return typeof delta === 'string' ? { type: 'text', delta } : null;
     }
     case 'products': {
-      const { products } = payload as { products?: ApiFeedItem[] };
-      return { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      // `match_type` (back-end#260), o mesmo nome do feed. Valor fora do
+      // contrato é ignorado: a lista aparece como antes, sem marcador.
+      const { products, match_type } = payload as {
+        products?: ApiFeedItem[];
+        match_type?: unknown;
+      };
+      const chunk: ChatChunk = { type: 'products', products: (products ?? []).map(mapFeedItem) };
+      if (match_type === 'exact' || match_type === 'fallback') chunk.matchType = match_type;
+      return chunk;
     }
     case 'interpreted': {
       const { filters, similarity } = payload as {
@@ -471,10 +478,9 @@ function toChatChunk(payload: unknown): ChatChunk | null {
     case 'done':
       return { type: 'done' };
     case 'error': {
-      // PALPITE: `code` e `retry_at` são a melhor aposta para os nomes dos
-      // campos de cota, que o back ainda não fixou (back-end#258). Ajustar
-      // aqui (e nos testes) quando ele fechar. Sem `code === 'quota_exceeded'`
-      // o erro sai igual a antes, sem `reason`.
+      // Cota esgotada (back-end#258, `ChatQuotaEvent`): `error` com
+      // `code: 'quota_exceeded'` e `retry_at` (ISO 8601). Sem esse `code`, o
+      // erro sai igual a antes, sem `reason`.
       const { message, code, retry_at } = payload as {
         message?: unknown;
         code?: unknown;
@@ -569,7 +575,7 @@ async function mockSuggestListing(
  * - **sem `productId`**: `POST /api/ai/listing-suggestions` com as URLs, que
  *   responde na hora. É o caminho do cadastro, porque as fotos existem antes
  *   da peça. Com `labelImage`, a etiqueta sobe antes e vai como
- *   `label_image_url` (#318, back-end#257 — rota ainda fora da `develop`).
+ *   `label_image_url` (#318, back-end#257).
  * - **com `productId`**: o pipeline assíncrono já ligado à peça
  *   (`GET /api/users/me/products/{id}/ai-status`), consultado até `done` ou
  *   `failed` dentro do orçamento de tempo.

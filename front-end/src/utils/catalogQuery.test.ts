@@ -31,6 +31,17 @@ describe('catalogQuery', () => {
     });
   });
 
+  // FE-US009-4 (#337): o link carrega todos os valores marcados, não só o primeiro.
+  it('ida e volta com vários valores no mesmo campo', () => {
+    const search = toCatalogSearch({ size: ['M', 'G'], color: 'Preto' });
+
+    expect(search).toBe('?size=M&size=G&color=Preto');
+    expect(fromCatalogSearch(new URLSearchParams(search))).toEqual({
+      size: ['M', 'G'],
+      color: ['Preto'],
+    });
+  });
+
   it('ignora preço que não é número e deixa q de fora dos filtros', () => {
     expect(fromCatalogSearch(new URLSearchParams('?q=jaqueta&priceMax=abc'))).toEqual({});
   });

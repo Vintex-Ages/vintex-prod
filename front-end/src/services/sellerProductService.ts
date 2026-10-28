@@ -111,7 +111,22 @@ function roundMoney(value: number): number {
 function toSellerProduct(detail: SellerProductDetail): SellerProduct {
   const { id, name, price, status, description, category, size, color, brand, condition, style } =
     detail;
-  return { id, name, price, status, description, category, size, color, brand, condition, style };
+  // Mesma regra do back na listagem (back-end#265): a capa é a foto de posição 0,
+  // e `null` só sobra no rascunho sem foto (RN-47).
+  return {
+    id,
+    name,
+    price,
+    status,
+    coverImageUrl: detail.images[0] ?? null,
+    description,
+    category,
+    size,
+    color,
+    brand,
+    condition,
+    style,
+  };
 }
 
 // ---- mock ----
@@ -322,6 +337,25 @@ async function mockUnpublish(id: string): Promise<SellerProductDetail> {
   return save({ ...product, status: 'despublicado' });
 }
 
+/**
+ * Descartar é apagar (back-end#271): o rascunho nunca foi público, não há
+ * histórico a guardar. Só rascunho pode ser descartado, como no back.
+ */
+async function mockDiscardDraft(id: string): Promise<void> {
+  const user = await me();
+  const products = await readProducts(user.id);
+  const product = products.find((item) => item.id === id);
+  if (!product) throw productNotFound(id);
+  if (product.status === 'vendido') throw productSold();
+  if (product.status !== 'rascunho') {
+    throw productNotEditable('Só rascunho pode ser descartado.');
+  }
+  writeProducts(
+    user.id,
+    products.filter((item) => item.id !== id),
+  );
+}
+
 async function mockGetMine({
   status,
   page = 1,
@@ -381,6 +415,12 @@ interface ApiSellerProduct {
   price: number | string;
   quantity: number;
   status: ProductStatus;
+  /**
+   * Foto de posição 0, a mesma regra do feed (back-end#265). Nula só em
+   * rascunho sem foto (RN-47). Opcional porque payloads gerados antes do
+   * campo existir chegam sem ele.
+   */
+  cover_image_url?: string | null;
 }
 
 /** `ProductDraftResponse` (back-end#159). */
@@ -422,6 +462,7 @@ function mapSellerProduct(item: ApiSellerProduct): SellerProduct {
     name: item.name,
     price: Number(item.price),
     status: item.status,
+    coverImageUrl: item.cover_image_url ?? null,
     description: optional(item.description),
     category: optional(item.category),
     size: optional(item.size),
@@ -552,6 +593,19 @@ async function apiGetMine({
 }
 
 /**
+ * `DELETE /users/me/products/{id}` (back-end#271, PR back-end#323): 204 sem
+ * corpo; 404 `PRODUCT_NOT_FOUND` (inclusive peça de outro vendedor) e 409
+ * `PRODUCT_NOT_EDITABLE`/`PRODUCT_SOLD` para peça que não é rascunho.
+ */
+async function apiDiscardDraft(id: string): Promise<void> {
+  try {
+    await httpClient.delete(`/users/me/products/${id}`);
+  } catch (error) {
+    throw toSellerProductError(error);
+  }
+}
+
+/**
  * Rota proposta na #202; a back-end#146 ainda não tem branch. Sem a rota, a
  * tela mostra "ainda não disponível" em vez de erro (`docs/adr/0002`).
  */
@@ -613,6 +667,11 @@ export async function unpublish(id: string): Promise<SellerProductDetail> {
 
 export async function getMine(params: GetMineParams = {}): Promise<Paginated<SellerProduct>> {
   return useMocks ? mockGetMine(params) : apiGetMine(params);
+}
+
+/** Apaga um rascunho e as fotos dele (FE-US019-6, #345). Peça que não é rascunho é recusada. */
+export async function discardDraft(id: string): Promise<void> {
+  return useMocks ? mockDiscardDraft(id) : apiDiscardDraft(id);
 }
 
 export async function getSalesSummary(period: SalesPeriod): Promise<SalesSummary> {

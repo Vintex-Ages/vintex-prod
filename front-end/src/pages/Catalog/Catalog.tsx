@@ -11,6 +11,7 @@ import ErrorState from '@/components/common/ErrorState';
 import IconButton from '@/components/common/IconButton';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
+import { useStoreLocations } from '@/hooks/useStoreLocations';
 import { paths, productDetail } from '@/routes/paths';
 import { search, searchByImage } from '@/services/catalogService';
 import type { ImageInterpretation } from '@/services/catalogService';
@@ -23,21 +24,19 @@ const STALE_IMAGE_NOTICE =
 const INVALID_IMAGE_NOTICE = 'Não foi possível usar essa foto. Escolha outra imagem.';
 
 /**
- * Converte os filtros do painel (múltipla escolha) para o formato aceito
- * pelo catalogService (um valor só por campo). Limitação conhecida: quando
- * o usuário marca mais de um valor no mesmo campo (ex.: tamanho M e G), só
- * o primeiro é enviado à API. Ajustar quando `FilterParams` suportar
- * arrays — débito técnico.
+ * Converte os filtros do painel para o formato do catalogService. Os campos de
+ * múltipla escolha vão com todos os valores marcados (#337): tamanho M e G
+ * busca peças M ou G.
  */
 function toFilterParams(filters: CatalogFilters): FilterParams {
   return {
     category: filters.category,
     priceMin: filters.minPrice,
     priceMax: filters.maxPrice,
-    size: filters.size?.[0],
-    brand: filters.brand?.[0],
-    condition: filters.condition?.[0],
-    color: filters.color?.[0],
+    size: filters.size,
+    brand: filters.brand,
+    condition: filters.condition,
+    color: filters.color,
     city: filters.city,
     state: filters.state,
   };
@@ -91,6 +90,8 @@ function getEmptyCopy(searching: boolean, byImage: boolean) {
  *   enviar texto sai do modo imagem, porque a rota de imagem não aceita `q`.
  */
 function Catalog() {
+  // Cidades e UFs das lojas para o filtro de localização (FE-US009-5, #336).
+  const { locations } = useStoreLocations();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const query = searchParams.get('q') ?? '';
@@ -503,6 +504,7 @@ function Catalog() {
         sizeOptions={[...SIZES]}
         conditionOptions={[...CONDITIONS]}
         colorOptions={[...COLORS]}
+        locationOptions={locations}
         resultCount={loading ? undefined : total}
       />
 

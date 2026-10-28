@@ -38,6 +38,27 @@ vi.mock('@/services/catalogService', () => ({
   searchByImage: vi.fn(),
 }));
 
+// As opções de cidade e estado saem das lojas (FE-US009-5, #336).
+vi.mock('@/services/storeService', () => ({
+  searchStores: vi.fn().mockResolvedValue({
+    items: [
+      {
+        id: '7',
+        name: 'Ateliê Reviver',
+        description: null,
+        logoUrl: null,
+        city: 'Canoas',
+        state: 'RS',
+        verified: false,
+        activeCount: 3,
+      },
+    ],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+  }),
+}));
+
 // Dublês de SearchResult para a UI, não fixtures reais do backend.
 const mockResult: SearchResult = {
   match_type: 'exact',
@@ -138,6 +159,27 @@ describe('Catalog', () => {
     });
     expect(screen.getByRole('searchbox')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Roupas' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // FE-US009-4 (#337): marcar M e G mandava só M, sem aviso.
+  it('marcar dois tamanhos envia os dois, junto com outro filtro', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    await user.click(screen.getByRole('button', { name: /Mais filtros/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await user.click(screen.getByRole('checkbox', { name: 'G' }));
+
+    await waitFor(() => {
+      expect(search).toHaveBeenLastCalledWith(
+        '',
+        expect.objectContaining({ category: 'Roupas', size: ['M', 'G'] }),
+      );
+    });
   });
 
   it('atualiza a busca conforme o usuário digita', async () => {
@@ -351,6 +393,29 @@ describe('Catalog', () => {
   });
 
   // FE-US027-3: "Ver no catálogo" da Vintex chega com os filtros na URL.
+  // FE-US009-5 (#336): cidade soma com os outros filtros (interseção, back-end#108).
+  it('escolher uma cidade busca por ela junto com a categoria', async () => {
+    vi.mocked(search).mockResolvedValue(mockResult);
+    const user = userEvent.setup();
+
+    renderCatalog();
+    await waitFor(() => expect(search).toHaveBeenCalled());
+
+    await user.click(screen.getByRole('button', { name: 'Roupas' }));
+    await user.click(screen.getByRole('button', { name: /Mais filtros/ }));
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: 'Cidade' }),
+      await screen.findByRole('option', { name: 'Canoas' }),
+    );
+
+    await waitFor(() => {
+      expect(search).toHaveBeenLastCalledWith(
+        '',
+        expect.objectContaining({ category: 'Roupas', city: 'Canoas', state: 'RS' }),
+      );
+    });
+  });
+
   it('abre com os filtros da URL já aplicados na busca', async () => {
     vi.mocked(search).mockResolvedValue(mockResult);
 
@@ -359,7 +424,8 @@ describe('Catalog', () => {
     await waitFor(() => expect(search).toHaveBeenCalled());
     expect(search).toHaveBeenLastCalledWith(
       '',
-      expect.objectContaining({ category: 'Casacos', color: 'Preto', priceMax: 100 }),
+      // Múltipla escolha chega como lista, mesmo com um valor só (#337).
+      expect.objectContaining({ category: 'Casacos', color: ['Preto'], priceMax: 100 }),
     );
   });
 });
@@ -413,7 +479,7 @@ describe('Catalog: busca por imagem', () => {
     await waitFor(() =>
       expect(searchByImage).toHaveBeenCalledWith(
         file,
-        expect.objectContaining({ category: 'Casacos', color: 'Preto' }),
+        expect.objectContaining({ category: 'Casacos', color: ['Preto'] }),
       ),
     );
     expect(await screen.findByText('Jaqueta parecida')).toBeInTheDocument();

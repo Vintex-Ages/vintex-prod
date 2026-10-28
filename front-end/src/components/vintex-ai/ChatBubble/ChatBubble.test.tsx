@@ -119,6 +119,54 @@ describe('ChatBubble', () => {
     expect(screen.getByRole('link', { name: 'Ver peça: Vestido floral' })).toBeInTheDocument();
   });
 
+  // FE-US027-4 (#333): o back marca quando nada casou com o pedido (RN-61).
+  it('peças `fallback` aparecem sob "Alternativas próximas"', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+
+    render(
+      <MemoryRouter>
+        <ChatBubble
+          message={{ ...vintexMessage, products: [product], productsMatchType: 'fallback' }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Alternativas próximas' })).toBeInTheDocument();
+    expect(screen.getByText('Vestido floral')).toBeInTheDocument();
+  });
+
+  it('peças `exact` ou sem marcador aparecem sem o título de alternativas', () => {
+    const product: Product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <ChatBubble
+          message={{ ...vintexMessage, products: [product], productsMatchType: 'exact' }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('heading', { name: 'Alternativas próximas' })).toBeNull();
+
+    rerender(
+      <MemoryRouter>
+        <ChatBubble message={{ ...vintexMessage, products: [product] }} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('heading', { name: 'Alternativas próximas' })).toBeNull();
+  });
+
   it('repassa onOpenProduct para o onOpen da ChatProductList', async () => {
     const user = userEvent.setup();
     const onOpenProduct = vi.fn();

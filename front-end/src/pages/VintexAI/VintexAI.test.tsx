@@ -509,6 +509,24 @@ describe('VintexAI page', () => {
       expect(screen.queryByRole('button', { name: 'Buscar no catálogo' })).toBeNull();
     });
 
+    // FE-US027-4 (#333): sem texto do back, a frase de reserva não pode dizer
+    // que as alternativas "combinam com o que você pediu".
+    it('com alternativas (`fallback`), a frase e o título dizem que são alternativas', async () => {
+      fakeChat([
+        { type: 'products', products: mockProducts.slice(0, 2), matchType: 'fallback' },
+        { type: 'done' },
+      ]);
+      renderPage();
+      perguntar('vestido floral');
+
+      expect(
+        await screen.findByText(
+          'Não achei peça exata para isso. Separei 2 alternativas próximas do catálogo.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Alternativas próximas' })).toBeInTheDocument();
+    });
+
     it('sem peças, avisa e oferece buscar a pergunta no catálogo', async () => {
       fakeChat([{ type: 'products', products: [] }, { type: 'done' }]);
 

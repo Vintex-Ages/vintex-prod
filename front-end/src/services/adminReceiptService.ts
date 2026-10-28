@@ -24,9 +24,10 @@ import type { Paginated } from '@/types/product';
  *   `POST /admin/payments/{order_id}/approve` → resposta PARCIAL (#251)
  *   `POST /admin/payments/{order_id}/reject` { reason } → resposta PARCIAL (#251)
  *   `GET  /admin/payments/{order_id}/receipt` (arquivo; vira `receiptUrl`)
- *   `GET  /admin/payments/{order_id}` → ReceiptReviewResponse (relê um item;
- *        rota PROPOSTA, não confirmada no contrato: usada no 409 e quando o
- *        item não está guardado)
+ *
+ * Não existe rota de detalhe (`GET /admin/payments/{order_id}`): para reler um
+ * item (no 409, ou quando a fila não o carregou), o service o procura na
+ * própria fila — primeiro pelo nome da loja que já conhece (#332).
  *
  * Resposta parcial de aprovar/rejeitar: `{ order_id, status, payment {
  * status, validated_by, validated_at[, rejection_reason] } }`. Sem comprador,
@@ -409,7 +410,7 @@ async function validate(
   } catch (error) {
     throw toAdminError(error);
   }
-  // Item que a fila não carregou: relê (rota proposta) para ter o item completo.
+  // Item que a fila não carregou: relê pela fila para ter o item completo.
   const base = loadedReviews.get(orderId) ?? (await apiGetReceiptReview(orderId));
   return mergeValidation(base, partial);
 }
@@ -470,11 +471,40 @@ function apiRejectReceipt(orderId: string, reason: string): Promise<ReceiptRevie
   return validate(orderId, 'reject', { reason });
 }
 
+/** Teto de páginas ao procurar um Pedido na fila: evita laço sem fim se `total` vier errado. */
+const MAX_LOOKUP_PAGES = 50;
+
+/** Percorre a fila (com `q`, se houver) até achar o Pedido; `null` se ele não estiver lá. */
+async function findInQueue(orderId: string, q?: string): Promise<ApiReceiptReview | null> {
+  let seen = 0;
+  for (let page = 1; page <= MAX_LOOKUP_PAGES; page += 1) {
+    const { data } = await httpClient.get<ApiPage<ApiReceiptReview>>('/admin/payments', {
+      params: { q, page },
+    });
+    const found = data.items.find((item) => String(item.order_id) === orderId);
+    if (found) return found;
+    seen += data.items.length;
+    if (data.items.length === 0 || seen >= data.total) return null;
+  }
+  return null;
+}
+
+/**
+ * Relê um item pela fila (o back não tem rota de detalhe). O `q` da fila casa
+ * nome do comprador ou da loja, não o número do Pedido: com a loja já conhecida,
+ * a busca fica em poucas páginas; sem ela, percorre a fila inteira.
+ */
 async function apiGetReceiptReview(orderId: string): Promise<ReceiptReview> {
+  const storeName = loadedReviews.get(orderId)?.store.name;
   try {
-    const { data } = await httpClient.get<ApiReceiptReview>(`/admin/payments/${orderId}`);
-    return remember(mapApiReview(data));
+    const found =
+      (storeName ? await findInQueue(orderId, storeName) : null) ?? (await findInQueue(orderId));
+    if (!found) {
+      throw new AdminReceiptError('ORDER_NOT_FOUND', `Pedido ${orderId} não está na fila.`);
+    }
+    return remember(mapApiReview(found));
   } catch (error) {
+    if (error instanceof AdminReceiptError) throw error;
     throw toAdminError(error);
   }
 }

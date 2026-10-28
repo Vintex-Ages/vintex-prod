@@ -30,7 +30,7 @@ let lastToggle: Promise<void> | null = null;
 
 function Probe() {
   const { login, logout } = useAuth();
-  const { ids, toggle, loading } = useFavorites();
+  const { ids, toggle, setFavorite, loading } = useFavorites();
 
   return (
     <div>
@@ -44,6 +44,20 @@ function Probe() {
         }}
       >
         favoritar 1
+      </button>
+      <button
+        onClick={() => {
+          lastToggle = setFavorite('1', true).catch(() => undefined);
+        }}
+      >
+        marcar 1
+      </button>
+      <button
+        onClick={() => {
+          lastToggle = setFavorite('1', false).catch(() => undefined);
+        }}
+      >
+        desmarcar 1
       </button>
     </div>
   );
@@ -225,5 +239,53 @@ describe('FavoritesContext', () => {
     await entrar();
 
     expect(screen.getByTestId('ids')).toHaveTextContent('vazio');
+  });
+
+  // Bug do #396: com `ids` vazio (carga falhou), "Remover" virava `PUT`.
+  it('setFavorite(false) chama DELETE mesmo com ids vazio por falha na carga', async () => {
+    mockedListIds.mockRejectedValue({ code: 'API_ERROR', message: 'x' });
+    renderApp();
+    await entrar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'desmarcar 1' }));
+    await act(() => lastToggle!);
+
+    expect(mockedRemove).toHaveBeenCalledWith(USER.id, '1');
+    expect(mockedAdd).not.toHaveBeenCalled();
+    expect(screen.getByTestId('ids')).toHaveTextContent('vazio');
+  });
+
+  it('setFavorite(true) chama PUT mesmo se a peça já está em ids', async () => {
+    mockedListIds.mockResolvedValue(new Set(['1']));
+    renderApp();
+    await entrar();
+    await waitFor(() => expect(screen.getByTestId('ids')).toHaveTextContent('1'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'marcar 1' }));
+    await act(() => lastToggle!);
+
+    expect(mockedAdd).toHaveBeenCalledWith(USER.id, '1');
+    expect(mockedRemove).not.toHaveBeenCalled();
+    expect(screen.getByTestId('ids')).toHaveTextContent('1');
+  });
+
+  // Bug do #398: a ação retomada depois do login favorita enquanto a carga
+  // corre; a lista do back, lida antes do PUT, não pode apagar o coração.
+  it('escrita feita durante a carga sobrevive ao resultado da carga', async () => {
+    let concluirCarga!: (ids: Set<string>) => void;
+    mockedListIds.mockReturnValue(new Promise<Set<string>>((resolve) => (concluirCarga = resolve)));
+    renderApp();
+    fireEvent.click(screen.getByRole('button', { name: 'entrar' }));
+    expect(screen.getByTestId('loading')).toHaveTextContent('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'marcar 1' }));
+    await act(() => lastToggle!);
+
+    await act(async () => {
+      concluirCarga(new Set(['3']));
+    });
+
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+    expect(screen.getByTestId('ids')).toHaveTextContent('1,3');
   });
 });

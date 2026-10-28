@@ -269,6 +269,29 @@ describe('vintexAiService.chat (API real)', () => {
     });
   });
 
+  // FE-US027-4 (#333): `match_type` do evento `products` (back-end#260), o
+  // mesmo nome do feed. Sem o campo (back antigo), o chunk sai sem marcador.
+  it('lê `match_type` do evento `products` como `matchType`', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          respostaOk(
+            sse(
+              { type: 'products', products: [PECA_DO_BACK], match_type: 'fallback' },
+              { type: 'products', products: [PECA_DO_BACK] },
+            ),
+          ),
+        ),
+    );
+
+    const chunks = await coletar({ messages: [{ role: 'user', text: 'jaqueta' }] });
+
+    expect(chunks[0]).toMatchObject({ type: 'products', matchType: 'fallback' });
+    expect(chunks[1]).not.toHaveProperty('matchType');
+  });
+
   it('devolve o evento `interpreted` aninhado, como o tipo do front declara', async () => {
     vi.stubGlobal(
       'fetch',

@@ -1,5 +1,6 @@
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
+import { filterValues } from '@/utils/catalogQuery';
 import type {
   FilterParams,
   Paginated,
@@ -71,13 +72,19 @@ function normalize(value: string): string {
  * lojas do seed são do RS — só descarta quando outro estado é pedido
  * explicitamente.
  */
+/** Campo de múltipla escolha: sem valor, não filtra; com vários, basta casar um (OU). */
+function matchesAny(value: string, wanted: FilterParams['size']): boolean {
+  const values = filterValues(wanted);
+  return values.length === 0 || values.includes(value);
+}
+
 function matchesFilters(product: ProductDetail, filters: FilterParams): boolean {
   if (product.status !== 'ativo') return false;
   if (filters.category && product.category !== filters.category) return false;
-  if (filters.size && product.size !== filters.size) return false;
-  if (filters.brand && product.brand !== filters.brand) return false;
-  if (filters.condition && product.condition !== filters.condition) return false;
-  if (filters.color && product.color !== filters.color) return false;
+  if (!matchesAny(product.size, filters.size)) return false;
+  if (!matchesAny(product.brand, filters.brand)) return false;
+  if (!matchesAny(product.condition, filters.condition)) return false;
+  if (!matchesAny(product.color, filters.color)) return false;
   if (filters.city && product.store.city !== filters.city) return false;
   if (filters.state && filters.state.toUpperCase() !== 'RS') return false;
   if (filters.priceMin !== undefined && product.price < filters.priceMin) return false;
@@ -288,15 +295,23 @@ function mapPage<TApi, T>(page: ApiPage<TApi>, mapItem: (item: TApi) => T): Pagi
   };
 }
 
-function toApiParams(filters: FilterParams): Record<string, string | number> {
-  const params: Record<string, string | number> = {};
+const MULTI_VALUE_FILTERS = ['size', 'brand', 'condition', 'color'] as const;
+
+/**
+ * `FilterParams` -> query da API. Campo de múltipla escolha vira lista e sai
+ * como parâmetro repetido (`size=M&size=G`, ver `REPEATED_PARAMS`), que é como
+ * o FastAPI recebe lista (#337).
+ */
+function toApiParams(filters: FilterParams): Record<string, string | number | string[]> {
+  const params: Record<string, string | number | string[]> = {};
   if (filters.category) params.category = filters.category;
   if (filters.priceMin !== undefined) params.price_min = filters.priceMin;
   if (filters.priceMax !== undefined) params.price_max = filters.priceMax;
-  if (filters.size) params.size = filters.size;
-  if (filters.brand) params.brand = filters.brand;
-  if (filters.condition) params.condition = filters.condition;
-  if (filters.color) params.color = filters.color;
+  for (const key of MULTI_VALUE_FILTERS) {
+    const values = filterValues(filters[key]);
+    if (values.length === 1) params[key] = values[0];
+    else if (values.length > 1) params[key] = values;
+  }
   if (filters.city) params.city = filters.city;
   if (filters.state) params.state = filters.state;
   if (filters.q) params.q = filters.q;
@@ -352,9 +367,16 @@ async function apiGetFeedWithDetails(params: FeedParams): Promise<Paginated<Prod
   return { ...feedPage, items };
 }
 
+/**
+ * Lista sai como `size=M&size=G`. O padrão do axios é `size[]=M&size[]=G`, que
+ * o FastAPI não lê como o mesmo parâmetro (#337).
+ */
+const REPEATED_PARAMS = { indexes: null } as const;
+
 async function apiGetProducts(filters: FilterParams): Promise<Paginated<Product>> {
   const { data } = await httpClient.get<ApiPage<ApiFeedItem>>('/products', {
     params: toApiParams(filters),
+    paramsSerializer: REPEATED_PARAMS,
   });
   return mapPage(data, mapFeedItem);
 }
@@ -371,6 +393,7 @@ async function apiGetProduct(id: string): Promise<ProductDetail> {
 async function apiSearch(q: string, filters: FilterParams): Promise<SearchResult> {
   const { data } = await httpClient.get<ApiSearchResponse>('/products', {
     params: toApiParams({ ...filters, q }),
+    paramsSerializer: REPEATED_PARAMS,
   });
 
   if (data.match_type !== 'exact' && data.match_type !== 'fallback') {
@@ -489,7 +512,9 @@ async function apiSearchByImage(
   form.append('image', image);
   // `q` e `sort` não existem nessa rota: o contrato aceita só os filtros do catálogo.
   const params = toApiParams({ ...filters, q: undefined, sort: undefined });
-  for (const [key, value] of Object.entries(params)) form.append(key, String(value));
+  for (const [key, value] of Object.entries(params)) {
+    for (const item of Array.isArray(value) ? value : [value]) form.append(key, String(item));
+  }
   if (page !== undefined) form.append('page', String(page));
 
   try {

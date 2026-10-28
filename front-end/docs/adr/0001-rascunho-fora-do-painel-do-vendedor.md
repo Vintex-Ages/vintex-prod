@@ -1,6 +1,7 @@
 ---
-status: accepted (front) · proposta (back)
+status: superseded em parte por 0004 (rascunhos em aba própria) · era accepted (front) · proposta (back)
 date: 2026-09-30
+updated: 2026-10-26
 ---
 
 # Rascunho fica fora do painel do vendedor e é descartado pelo back
