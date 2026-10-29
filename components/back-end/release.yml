@@ -2,6 +2,6 @@ schema_version: 1
 component: back-end
 source_repository: Vintex-Ages/back-end
 source_branch: deploy
-source_sha: aeaba6204a2955236f413ede508797acbff960b4
-promoted_at: 2026-08-25T04:32:59.608Z
-source_run_url: https://github.com/Vintex-Ages/back-end/actions/runs/32809375435
+source_sha: 267ac0f06d1f0998f1dd7b8edca2da863673b7cb
+promoted_at: 2026-08-25T17:05:49.250Z
+source_run_url: https://github.com/Vintex-Ages/back-end/actions/runs/32875844151
