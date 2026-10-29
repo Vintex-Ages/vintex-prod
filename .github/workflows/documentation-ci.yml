@@ -1,0 +1,25 @@
+name: Documentation CI
+
+on:
+  pull_request:
+    branches: [develop, main, deploy]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [develop, main, deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Documentation generator tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Testar gerador e páginas do mapa
+        run: node --test scripts/docs/generate-draft.test.mjs
