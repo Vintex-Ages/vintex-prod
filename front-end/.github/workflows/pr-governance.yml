@@ -1,0 +1,23 @@
+name: PR Governance
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+    branches: [develop, main, deploy]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: PR Governance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: node .github/scripts/validate-pr.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -1,0 +1,310 @@
+import { useState, type FormEvent } from 'react';
+import { Navigate } from 'react-router-dom';
+import AddressFields from '@/components/common/AddressFields';
+import Button from '@/components/common/Button';
+import DocumentModal from '@/components/common/DocumentModal';
+import ErrorState from '@/components/common/ErrorState';
+import FormErrorSummary from '@/components/common/FormErrorSummary';
+import InputField from '@/components/common/InputField';
+import MediaUploader from '@/components/common/MediaUploader';
+import TextArea from '@/components/common/TextArea';
+import Container from '@/components/layout/Container';
+import { DESCRIPTION_MAX_LENGTH, useCreateStore } from '@/hooks/useCreateStore';
+import { useSellerContract } from '@/hooks/useSellerContract';
+import { paths } from '@/routes/paths';
+import type { StoreAddress } from '@/types/store';
+import type { DocumentType } from '@/utils/document';
+
+const DOCUMENT_OPTIONS: { value: DocumentType; label: string; placeholder: string }[] = [
+  { value: 'cpf', label: 'CPF', placeholder: '000.000.000-00' },
+  { value: 'cnpj', label: 'CNPJ', placeholder: '00.000.000/0000-00' },
+];
+
+const legendClass = 'mb-4 font-display text-h4 text-tinta';
+
+/**
+ * `/sell` — "Quero vender" (FE-US006-1, #212): o comprador logado abre a
+ * própria loja. Só apresentação: estado, validação, CEP e envio vivem em
+ * `useCreateStore`; as regras de CPF/CNPJ (RN-30), em `utils/document.ts`.
+ *
+ * Estados: conferindo a loja (carregando), falha na conferência (erro com
+ * "tentar de novo"), já tem loja (vai ao painel, P-06) e o formulário — que
+ * nasce vazio, com cada campo dizendo o que espera.
+ *
+ * A rota é protegida por `RequireAuth` em `AppRoutes`; chega-se aqui pelo
+ * "Quero vender" do menu da conta (`Header`) e pelo convite da Home logada.
+ *
+ * Contrato de venda (FE-US003b-1, #215): quando `access === 'ready'`, o
+ * formulário só aparece depois do aceite no `DocumentModal` (com rolagem até o
+ * fim). O passo vive em `useSellerContract`; a versão aceita segue para
+ * `createStore` pelo `useCreateStore`. Não aceitar volta à Home, sem loja.
+ *
+ * Usage:
+ *   import Sell from '@/pages/Sell/Sell';
+ *   <Route path={paths.sell} element={<RequireAuth><Sell /></RequireAuth>} />
+ */
+function Sell() {
+  const contract = useSellerContract();
+  const {
+    access,
+    retryAccess,
+    values,
+    errors,
+    cepStatus,
+    submitting,
+    submitError,
+    setField,
+    setDocumentType,
+    submit,
+  } = useCreateStore({ acceptedContractVersion: contract.acceptedVersion });
+  // Gatilho do foco no primeiro campo inválido (`FormErrorSummary`).
+  const [submitCount, setSubmitCount] = useState(0);
+
+  if (access === 'checking') {
+    return (
+      <p role="status" className="px-4 py-12 text-center font-ui text-body text-texto-auxiliar">
+        Verificando sua loja…
+      </p>
+    );
+  }
+
+  if (access === 'error') {
+    return (
+      <Container as="main" width="narrow" className="py-8">
+        <ErrorState message="Não foi possível verificar sua loja." onRetry={retryAccess} />
+      </Container>
+    );
+  }
+
+  if (access === 'has-store') {
+    return <Navigate to={paths.seller} replace />;
+  }
+
+  const intro = (
+    <>
+      <h1 className="font-display text-h2 text-tinta">Quero vender</h1>
+      <p className="mt-2 font-ui text-body text-texto-auxiliar">
+        Abra sua loja na Vintex e comece a anunciar suas peças.
+      </p>
+    </>
+  );
+
+  if (contract.state.status !== 'accepted') {
+    return (
+      <Container as="main" width="narrow" className="py-8 tablet:py-12">
+        {intro}
+        <div className="mt-8">
+          {contract.state.status === 'loading' ? (
+            <p role="status" className="font-ui text-body text-texto-auxiliar">
+              Carregando o contrato de venda…
+            </p>
+          ) : contract.state.status === 'error' ? (
+            <ErrorState
+              message="Não foi possível carregar o contrato de venda."
+              onRetry={contract.retry}
+            />
+          ) : (
+            <p className="font-ui text-body text-texto-auxiliar">
+              Antes de abrir a loja, leia e aceite o contrato de venda.
+            </p>
+          )}
+        </div>
+        {contract.state.status === 'pending' ? (
+          <DocumentModal
+            open
+            document={contract.state.document}
+            requireScrollToEnd
+            onAccept={contract.accept}
+            onDecline={contract.decline}
+          />
+        ) : null}
+      </Container>
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitCount((count) => count + 1);
+    void submit();
+  }
+
+  const document = DOCUMENT_OPTIONS.find((option) => option.value === values.documentType)!;
+
+  const addressValue: StoreAddress = {
+    cep: values.cep,
+    street: values.street,
+    number: values.number,
+    complement: values.complement,
+    district: values.district,
+    city: values.city,
+    state: values.state ?? '',
+  };
+
+  const addressErrors: Partial<Record<keyof StoreAddress, string>> = {
+    cep: errors.cep,
+    street: errors.street,
+    number: errors.number,
+    complement: errors.complement,
+    district: errors.district,
+    city: errors.city,
+    state: errors.state,
+  };
+
+  function handleAddressChange(field: keyof StoreAddress, value: string) {
+    switch (field) {
+      case 'cep':
+        setField('cep', value);
+        break;
+      case 'street':
+        setField('street', value);
+        break;
+      case 'number':
+        setField('number', value);
+        break;
+      case 'complement':
+        setField('complement', value);
+        break;
+      case 'district':
+        setField('district', value);
+        break;
+      case 'city':
+        setField('city', value);
+        break;
+      case 'state':
+        setField('state', value || null);
+        break;
+    }
+  }
+
+  return (
+    <Container as="main" width="narrow" className="py-8 tablet:py-12">
+      {intro}
+
+      <form className="mt-8 flex flex-col gap-10" onSubmit={handleSubmit} noValidate>
+        <fieldset className="flex flex-col gap-5" disabled={submitting}>
+          <legend className={legendClass}>Sua loja</legend>
+          <InputField
+            id="store-name"
+            label="Nome da loja"
+            placeholder="Ex: Brechó da Ana"
+            value={values.name}
+            onChange={(value) => setField('name', value)}
+            error={errors.name}
+            disabled={submitting}
+          />
+          <TextArea
+            id="store-description"
+            label="Descrição (opcional)"
+            placeholder="Conte o estilo das peças e o que torna seu brechó único."
+            value={values.description}
+            onChange={(value) => setField('description', value)}
+            maxLength={DESCRIPTION_MAX_LENGTH}
+            disabled={submitting}
+          />
+          <MediaUploader
+            id="store-logo"
+            label="Logo (opcional)"
+            accept="image/*"
+            single
+            value={values.logo}
+            onChange={(items) => setField('logo', items)}
+            helperText="Aparece no perfil da sua loja."
+            disabled={submitting}
+          />
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-5" disabled={submitting}>
+          <legend className={legendClass}>Documento</legend>
+          <div role="radiogroup" aria-label="Tipo de documento" className="flex flex-wrap gap-6">
+            {DOCUMENT_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className="inline-flex min-h-touch cursor-pointer items-center gap-2 font-ui text-body text-tinta"
+              >
+                <input
+                  type="radio"
+                  name="document-type"
+                  value={option.value}
+                  checked={values.documentType === option.value}
+                  onChange={() => setDocumentType(option.value)}
+                  disabled={submitting}
+                  className="h-5 w-5 accent-vermelho-escuro focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+          <InputField
+            id="store-document"
+            label={`Número do ${document.label}`}
+            placeholder={document.placeholder}
+            value={values.documentNumber}
+            onChange={(value) => setField('documentNumber', value)}
+            error={errors.documentNumber}
+            helperText="Usado só para verificar a loja. Não aparece para compradores."
+            disabled={submitting}
+          />
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-5" disabled={submitting}>
+          <legend className={legendClass}>Endereço</legend>
+          <AddressFields
+            idPrefix="store"
+            value={addressValue}
+            onChange={handleAddressChange}
+            errors={addressErrors}
+            cepStatus={cepStatus}
+            disabled={submitting}
+          />
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-5" disabled={submitting}>
+          <legend className={legendClass}>Recebimento</legend>
+          <InputField
+            id="store-pix"
+            label="Chave Pix"
+            placeholder="E-mail, telefone, CPF/CNPJ ou chave aleatória"
+            value={values.pixKey}
+            onChange={(value) => setField('pixKey', value)}
+            error={errors.pixKey}
+            helperText="É para onde vai o valor das suas vendas."
+            disabled={submitting}
+          />
+        </fieldset>
+
+        <div className="flex flex-col gap-4">
+          {/* Na ordem da tela: o primeiro com erro recebe o foco. */}
+          <FormErrorSummary
+            submitCount={submitCount}
+            items={[
+              { id: 'store-name', message: errors.name },
+              { id: 'store-document', message: errors.documentNumber },
+              { id: 'store-cep', message: errors.cep },
+              { id: 'store-street', message: errors.street },
+              { id: 'store-number', message: errors.number },
+              { id: 'store-district', message: errors.district },
+              { id: 'store-city', message: errors.city },
+              { id: 'store-state', message: errors.state },
+              { id: 'store-pix', message: errors.pixKey },
+            ]}
+          />
+
+          {submitError ? (
+            <p
+              role="alert"
+              className="border border-vermelho-escuro bg-vermelho-suave px-4 py-3 text-body-sm text-vermelho-escuro"
+            >
+              {submitError}
+            </p>
+          ) : null}
+
+          <Button type="submit" variant="primary" fullWidth disabled={submitting}>
+            {submitting ? 'Abrindo sua loja…' : 'Abrir minha loja'}
+          </Button>
+        </div>
+      </form>
+    </Container>
+  );
+}
+
+export default Sell;
