@@ -1,0 +1,104 @@
+name: Documentation Draft
+
+on:
+  pull_request:
+    branches: [develop, main, deploy]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: documentation-draft-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  draft:
+    name: Documentation Draft (informativo)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: documentation/package-lock.json
+
+      - name: Listar arquivos alterados no PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-files.txt"
+
+      - name: Gerar rascunho a partir do path-map
+        id: generate
+        run: |
+          node scripts/docs/generate-draft.mjs \
+            --changed-files-file "$RUNNER_TEMP/changed-files.txt" \
+            --output "$RUNNER_TEMP/draft.md"
+
+      - name: Instalar dependências do Docusaurus
+        working-directory: documentation
+        run: npm ci
+
+      - name: Build do preview Docusaurus
+        id: build
+        working-directory: documentation
+        continue-on-error: true
+        run: npm run build
+
+      - name: Publicar preview como artifact
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-preview-pr-${{ github.event.pull_request.number }}
+          path: documentation/build
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Comentar no PR
+        if: >-
+          !cancelled() && steps.generate.outcome == 'success' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: actions/github-script@v7
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const draft = fs.readFileSync(process.env.RUNNER_TEMP + '/draft.md', 'utf8');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const buildLine = process.env.BUILD_OUTCOME === 'success'
+              ? `Preview Docusaurus gerado — [artifact e logs desta execução](${runUrl}) (retenção: 14 dias).`
+              : `Preview Docusaurus indisponível — [logs desta execução](${runUrl}). Falha informativa; não bloqueia merge.`;
+            const marker = '<!-- documentation-draft-bot -->';
+            const body = `${marker}\n## Documentation Draft\n\n${buildLine}\n\n${draft}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
