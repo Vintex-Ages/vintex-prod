@@ -160,11 +160,7 @@ function Consumer({ name = 'principal' }: { name?: string }) {
   );
 }
 
-function tree(
-  user: AuthUser | null,
-  loading = false,
-  children: ReactNode = <Consumer />,
-) {
+function tree(user: AuthUser | null, loading = false, children: ReactNode = <Consumer />) {
   return (
     <AuthContext.Provider value={session(user, loading)}>
       <NotificationsProvider>{children}</NotificationsProvider>
@@ -257,9 +253,7 @@ describe('NotificationsProvider — estado observado pelos consumidores', () => 
 
     render(tree(USER_A));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Erro ao carregar notificações',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao carregar notificações');
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
   });
 
@@ -295,10 +289,7 @@ describe('NotificationsProvider — estado observado pelos consumidores', () => 
       }),
     );
 
-    expect(markAsRead).toHaveBeenCalledExactlyOnceWith(
-      USER_A.id,
-      `${USER_A.id}-favorito`,
-    );
+    expect(markAsRead).toHaveBeenCalledExactlyOnceWith(USER_A.id, `${USER_A.id}-favorito`);
     expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('2');
     expect(screen.getAllByText('Não lida')).toHaveLength(2);
 

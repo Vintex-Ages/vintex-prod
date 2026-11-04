@@ -26,8 +26,7 @@ function createSession(userId: string | null) {
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
-  const identity =
-    !auth.loading && auth.isAuthenticated && auth.user ? auth.user.id : null;
+  const identity = !auth.loading && auth.isAuthenticated && auth.user ? auth.user.id : null;
 
   const [session, setSession] = useState(() => createSession(identity));
   const { userId } = session;
@@ -74,9 +73,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               ...item,
               isRead: item.isRead || session.confirmedReads.has(item.id),
             }))
-            .sort(
-              (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
-            ),
+            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
         );
 
         setUnreadCount(Math.max(0, result.unreadCount - confirmedOnPage));
@@ -134,9 +131,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
       session.confirmedReads.add(id);
       setItems((current) =>
-        current.map((entry) =>
-          entry.id === id ? { ...entry, isRead: true } : entry,
-        ),
+        current.map((entry) => (entry.id === id ? { ...entry, isRead: true } : entry)),
       );
       setUnreadCount((current) => Math.max(0, current - 1));
     })();
@@ -175,9 +170,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       }
 
       items.forEach((item) => session.confirmedReads.add(item.id));
-      setItems((current) =>
-        current.map((item) => ({ ...item, isRead: true })),
-      );
+      setItems((current) => current.map((item) => ({ ...item, isRead: true })));
       setUnreadCount(0);
     })();
 

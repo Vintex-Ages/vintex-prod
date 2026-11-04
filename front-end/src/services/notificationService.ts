@@ -71,9 +71,7 @@ function getMockNotifications(userId: string): Notification[] {
   return items;
 }
 
-export async function listNotifications(
-  userId: string,
-): Promise<NotificationPage> {
+export async function listNotifications(userId: string): Promise<NotificationPage> {
   if (useMocks) {
     const items = getMockNotifications(userId).map((item) => ({ ...item }));
 
@@ -86,15 +84,12 @@ export async function listNotifications(
     };
   }
 
-  const response = await httpClient.get<ApiNotificationResponse>(
-    '/api/users/me/notifications',
-    {
-      params: {
-        page: 1,
-        page_size: 50,
-      },
+  const response = await httpClient.get<ApiNotificationResponse>('/api/users/me/notifications', {
+    params: {
+      page: 1,
+      page_size: 50,
     },
-  );
+  });
 
   return {
     items: response.data.items.map(mapApiNotification),
@@ -105,20 +100,12 @@ export async function listNotifications(
   };
 }
 
-export async function markAsRead(
-  userId: string,
-  notificationId: string,
-): Promise<void> {
+export async function markAsRead(userId: string, notificationId: string): Promise<void> {
   if (useMocks) {
-    const item = getMockNotifications(userId).find(
-      (entry) => entry.id === notificationId,
-    );
+    const item = getMockNotifications(userId).find((entry) => entry.id === notificationId);
 
     if (!item) {
-      throw new NotificationServiceError(
-        'NOT_FOUND',
-        'Notificação não encontrada.',
-      );
+      throw new NotificationServiceError('NOT_FOUND', 'Notificação não encontrada.');
     }
 
     item.isRead = true;
@@ -126,18 +113,10 @@ export async function markAsRead(
   }
 
   try {
-    await httpClient.post(
-      `/api/users/me/notifications/${encodeURIComponent(notificationId)}/read`,
-    );
+    await httpClient.post(`/api/users/me/notifications/${encodeURIComponent(notificationId)}/read`);
   } catch (error: unknown) {
-    if (
-      (error as { response?: { status?: number } } | null)?.response?.status ===
-      404
-    ) {
-      throw new NotificationServiceError(
-        'NOT_FOUND',
-        'Notificação não encontrada.',
-      );
+    if ((error as { response?: { status?: number } } | null)?.response?.status === 404) {
+      throw new NotificationServiceError('NOT_FOUND', 'Notificação não encontrada.');
     }
 
     throw error;

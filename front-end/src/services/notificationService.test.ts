@@ -30,10 +30,7 @@ function apiNotification(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function apiResponse(
-  items = [apiNotification()],
-  overrides: Record<string, unknown> = {},
-) {
+function apiResponse(items = [apiNotification()], overrides: Record<string, unknown> = {}) {
   return {
     items,
     page: 1,
@@ -103,9 +100,7 @@ describe('notificationService', () => {
 
       const service = await import('@/services/notificationService');
 
-      await expect(
-        service.markAsRead('user-1', 'inexistente'),
-      ).rejects.toMatchObject({
+      await expect(service.markAsRead('user-1', 'inexistente')).rejects.toMatchObject({
         code: 'NOT_FOUND',
         name: 'NotificationServiceError',
       });
@@ -153,15 +148,12 @@ describe('notificationService', () => {
       const service = await import('@/services/notificationService');
       const result = await service.listNotifications('user-1');
 
-      expect(mockedGet).toHaveBeenCalledWith(
-        '/api/users/me/notifications',
-        {
-          params: {
-            page: 1,
-            page_size: 50,
-          },
+      expect(mockedGet).toHaveBeenCalledWith('/api/users/me/notifications', {
+        params: {
+          page: 1,
+          page_size: 50,
         },
-      );
+      });
 
       expect(result).toEqual({
         items: [
@@ -221,10 +213,7 @@ describe('notificationService', () => {
 
     it('usa o unread_count enviado pelo backend', async () => {
       mockedGet.mockResolvedValue({
-        data: apiResponse(
-          [apiNotification()],
-          { unread_count: 47, total: 100 },
-        ),
+        data: apiResponse([apiNotification()], { unread_count: 47, total: 100 }),
       } as never);
 
       const service = await import('@/services/notificationService');
@@ -253,9 +242,7 @@ describe('notificationService', () => {
 
       await service.markAsRead('user-1', '12');
 
-      expect(mockedPost).toHaveBeenCalledWith(
-        '/api/users/me/notifications/12/read',
-      );
+      expect(mockedPost).toHaveBeenCalledWith('/api/users/me/notifications/12/read');
     });
 
     it('codifica o ID da notificação na URL', async () => {
@@ -277,9 +264,7 @@ describe('notificationService', () => {
 
       await service.markAllAsRead('user-1');
 
-      expect(mockedPost).toHaveBeenCalledWith(
-        '/api/users/me/notifications/read',
-      );
+      expect(mockedPost).toHaveBeenCalledWith('/api/users/me/notifications/read');
     });
 
     it('converte resposta 404 em erro NOT_FOUND', async () => {
@@ -289,9 +274,7 @@ describe('notificationService', () => {
 
       const service = await import('@/services/notificationService');
 
-      await expect(
-        service.markAsRead('user-1', '999'),
-      ).rejects.toMatchObject({
+      await expect(service.markAsRead('user-1', '999')).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
     });
@@ -305,9 +288,7 @@ describe('notificationService', () => {
 
       const service = await import('@/services/notificationService');
 
-      await expect(
-        service.listNotifications('user-1'),
-      ).rejects.toBe(unauthorized);
+      await expect(service.listNotifications('user-1')).rejects.toBe(unauthorized);
     });
 
     it('preserva erros inesperados da API', async () => {
@@ -319,9 +300,7 @@ describe('notificationService', () => {
 
       const service = await import('@/services/notificationService');
 
-      await expect(
-        service.markAllAsRead('user-1'),
-      ).rejects.toBe(serverError);
+      await expect(service.markAllAsRead('user-1')).rejects.toBe(serverError);
     });
 
     it('exporta o erro específico de notificação inexistente', async () => {

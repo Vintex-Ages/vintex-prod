@@ -5,10 +5,7 @@ import type { Notification } from '@/types/notification';
  */
 export function createNotificationFixtures(userId: string): Notification[] {
   const scenario =
-    Array.from(userId).reduce(
-      (sum, character) => sum + character.charCodeAt(0),
-      0,
-    ) % 3;
+    Array.from(userId).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 3;
 
   if (scenario === 0) return [];
 

@@ -180,9 +180,7 @@ beforeEach(() => {
       if (!item) throw new Error('Notificação inexistente');
     });
 
-  vi.mocked(markAllAsRead)
-    .mockReset()
-    .mockResolvedValue(undefined);
+  vi.mocked(markAllAsRead).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
