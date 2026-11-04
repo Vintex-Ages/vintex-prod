@@ -5,6 +5,7 @@ import {
   isAllowed,
   parseClosingRefs,
 } from "./lib/issue-refs.mjs";
+import { flowErrors } from "./lib/branch-flow.mjs";
 
 const event = JSON.parse(
   fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
@@ -30,16 +31,10 @@ const workBranch =
   );
 const closingIssues = parseClosingRefs(pr.body, current);
 
-if (base === "main" && head !== "develop")
-  errors.push("main aceita somente Pull Requests de develop.");
-if (base === "deploy" && head !== "main")
-  errors.push("deploy aceita somente Pull Requests de main.");
 if (base === "develop" && !promotionMatch && !workBranch)
   errors.push(
     `Branch ${head} não é uma promoção nem uma branch de trabalho válida.`,
   );
-if (!["main", "develop", "deploy"].includes(base))
-  errors.push(`Base ${base} não é permitida.`);
 
 const api = async (path) => {
   const response = await fetch(`https://api.github.com${path}`, {
@@ -52,6 +47,17 @@ const api = async (path) => {
     throw new Error(`GET ${path}: ${response.status} ${await response.text()}`);
   return response.json();
 };
+
+const qaResponse = await fetch(
+  `https://api.github.com/repos/${owner}/${repo}/branches/qa`,
+  {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: "application/vnd.github+json",
+    },
+  },
+);
+errors.push(...flowErrors({ base, head, qaExists: qaResponse.ok }));
 
 if (base === "develop" && workBranch) {
   const branchIssue = Number(head.match(/^[^/]+\/(\d+)-/)?.[1]);
