@@ -3,7 +3,7 @@ name: GitOps Validation
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
-    branches: [develop, main, deploy]
+    branches: [develop, qa, main, deploy]
 
 permissions:
   contents: read
@@ -33,3 +33,4 @@ jobs:
       - run: node .github/scripts/validate-gitops.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - run: node --test .github/scripts/lib/branch-flow.test.mjs
