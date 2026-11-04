@@ -146,6 +146,14 @@ export interface ProductInput {
   price: number;
   /** URLs na ordem de exibição; ≥ 1 para publicar (RN-47). */
   images: string[];
+  /**
+   * Vídeo da peça, 3 a 5 segundos (RN-48; back-end#333). No envio (criar/editar)
+   * os três estados valem: ausente mantém, uma URL (a que o upload devolveu)
+   * cria ou troca, `null` remove (RN-52). Na leitura o service sempre preenche:
+   * a URL ou `null` quando a peça não tem vídeo. O vídeo não substitui a foto
+   * (RN-47): `images` segue sendo o que conta para publicar.
+   */
+  videoUrl?: string | null;
   /** RN-46 — literal: o back fixa em 1 e nem recebe o campo. */
   quantity: 1;
 }
