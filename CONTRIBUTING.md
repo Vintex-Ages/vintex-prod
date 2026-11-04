@@ -41,5 +41,6 @@ chore/<issue>-<descricao>
 - `main` aceita somente Pull Requests de `develop`.
 - Promoções automáticas dispensam issue, mas entram no Project geral.
 - O GitHub solicita review aos quatro integrantes de AGES III. O merge exige duas aprovações vigentes, que podem vir de AGES III ou AGES IV.
+- O CI depende do tipo de PR (`Front-end CI` e `Back-end CI`): `feature -> develop` roda só o que mudou (`front-end/**`, `back-end/**` e, no back-end, infra separada de aplicação); `develop -> qa` roda todos os testes de front-end e back-end; `qa -> main` roda os testes de infra. Sem mudança relevante, o check agregador passa sem rodar os jobs. A branch `qa` ainda precisa ser criada (#32); enquanto não existir, um PR `develop -> main` roda só a infra.
 - Todo PR exige CI e review; novo commit invalida aprovações anteriores e não há merge automático.
 - O repositório é público e não pode armazenar segredos.
