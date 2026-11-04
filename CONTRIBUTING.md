@@ -8,6 +8,30 @@ back-end/deploy  -> promote/back-end-<sha>  -> develop
 develop -> main -> futura AWS
 ```
 
+## Branches de trabalho
+
+Crie branches a partir de `develop`, com palavras minúsculas separadas por hífen. Todo trabalho deve possuir uma issue:
+
+```text
+feature/<issue>-<descricao>
+bugfix/<issue>-<descricao>
+hotfix/<issue>-<descricao>
+refactor/<issue>-<descricao>
+docs/<issue>-<descricao>
+chore/<issue>-<descricao>
+```
+
+## Pull Requests
+
+- Preencha o template inteiro (Descrição, O que foi feito, Tipo de mudança, Componentes afetados, Uso de IA, Evidências e Checklist).
+- Selecione exatamente um tipo de mudança, na palavra em inglês exigida pela validação.
+- Declare como IA foi utilizada ou informe explicitamente que não houve uso.
+- Assignees e labels são unidos a partir das issues; a milestone e os campos dos Projects vêm da issue primária.
+- O PR entra no Project geral. Draft fica em `In progress`, PR pronto em `In review` e merge em `Done`.
+- Faça commits pequenos; um novo commit invalida aprovações anteriores.
+
+## Regras do fluxo GitOps
+
 - Promoções de componentes alteram somente o manifesto correspondente.
 - Alterações de governança usam os prefixos `feature`, `bugfix`, `hotfix`, `refactor`, `docs` ou `chore`, com número de issue.
 - PRs de governança usam `Closes #<issue>`; a primeira issue deve coincidir com a branch e issues adicionais não podem ter milestones conflitantes.
