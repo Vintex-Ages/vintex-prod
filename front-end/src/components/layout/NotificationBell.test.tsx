@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -16,7 +16,6 @@ vi.mock('@/services/notificationService', () => ({
   listNotifications: vi.fn(),
   markAsRead: vi.fn(),
   markAllAsRead: vi.fn(),
-  countUnread: (items: Notification[]) => items.filter((item) => !item.isRead).length,
 }));
 
 const USER: AuthUser = {
@@ -36,7 +35,6 @@ function fixtures(): Notification[] {
     {
       id: 'favorito-341',
       type: 'favorite',
-      recipientUserId: USER.id,
       productId: 'produto-favorito-341',
       productName: 'Bolsa fictícia 341',
       createdAt: '2026-10-21T15:00:00.000Z',
@@ -45,7 +43,6 @@ function fixtures(): Notification[] {
     {
       id: 'venda-341',
       type: 'sale',
-      recipientUserId: USER.id,
       productName: 'Jaqueta fictícia 341',
       createdAt: '2026-10-20T15:00:00.000Z',
       isRead: false,
@@ -53,12 +50,23 @@ function fixtures(): Notification[] {
     {
       id: 'venda-lida-341',
       type: 'sale',
-      recipientUserId: USER.id,
       productName: 'Casaco fictício 341',
       createdAt: '2026-10-19T15:00:00.000Z',
       isRead: true,
     },
   ];
+}
+
+type NotificationPage = Awaited<ReturnType<typeof listNotifications>>;
+
+function pageFor(items: Notification[]): NotificationPage {
+  return {
+    items,
+    page: 1,
+    pageSize: items.length,
+    total: items.length,
+    unreadCount: items.filter((item) => !item.isRead).length,
+  };
 }
 
 let notifications: Notification[];
@@ -148,30 +156,33 @@ function notificationButton(message: string) {
 
 beforeEach(() => {
   notifications = fixtures();
+
   vi.mocked(listNotifications)
     .mockReset()
     .mockImplementation(async (userId) =>
-      userId === USER.id
-        ? structuredClone(notifications)
-        : [
-            {
-              ...fixtures()[0],
-              id: 'favorito-exclusivo-b',
-              recipientUserId: userId,
-              productName: 'Peça exclusiva B',
-            },
-          ],
+      pageFor(
+        userId === USER.id
+          ? structuredClone(notifications)
+          : [
+              {
+                ...fixtures()[0],
+                id: 'favorito-exclusivo-b',
+                productName: 'Peça exclusiva B',
+              },
+            ],
+      ),
     );
+
   vi.mocked(markAsRead)
     .mockReset()
     .mockImplementation(async (_userId, id) => {
       const item = notifications.find((entry) => entry.id === id);
       if (!item) throw new Error('Notificação inexistente');
-      return { ...item, isRead: true };
     });
+
   vi.mocked(markAllAsRead)
     .mockReset()
-    .mockImplementation(async () => notifications.map((item) => ({ ...item, isRead: true })));
+    .mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -273,14 +284,14 @@ describe('NotificationBell — painel e acessibilidade', () => {
   });
 
   it('mostra loading enquanto a lista está pendente', async () => {
-    const request = deferred<Notification[]>();
+    const request = deferred<NotificationPage>();
     vi.mocked(listNotifications).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel();
 
     expect(within(panel).getByRole('status')).toHaveTextContent(/carregando/i);
     expect(within(panel).queryAllByRole('listitem')).toHaveLength(0);
-    await act(async () => request.resolve(fixtures()));
+    await act(async () => request.resolve(pageFor(fixtures())));
   });
 
   it('falha de carregamento mostra erro e retry recupera a lista', async () => {
@@ -297,8 +308,6 @@ describe('NotificationBell — painel e acessibilidade', () => {
     expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  // Sem rota no back (back-end#261), o service avisa INTEGRATION_UNAVAILABLE:
-  // o sino some em vez de mostrar um erro que nenhum "tentar de novo" resolve.
   it('esconde o sino quando a integração de notificações não existe', async () => {
     vi.mocked(listNotifications).mockRejectedValue(
       Object.assign(new Error('indisponível'), { code: 'INTEGRATION_UNAVAILABLE' }),
@@ -387,7 +396,7 @@ describe('NotificationBell — painel e acessibilidade', () => {
 describe('NotificationBell — leitura e navegação confirmadas', () => {
   it('favorito confirma leitura antes de atualizar, fechar e navegar à peça', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification>();
+    const request = deferred<void>();
     vi.mocked(markAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -399,7 +408,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('2');
     expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
     expect(panel).toBeInTheDocument();
-    await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+    await act(async () => request.resolve());
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('1');
     expect(screen.getByLabelText('Rota atual')).toHaveTextContent(
       productDetail('produto-favorito-341'),
@@ -439,7 +448,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
   it('não duplica leitura enquanto a primeira operação está pendente', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification>();
+    const request = deferred<void>();
     vi.mocked(markAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -451,7 +460,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     await user.click(button);
 
     expect(markAsRead).toHaveBeenCalledTimes(1);
-    await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+    await act(async () => request.resolve());
   });
 
   it('falha individual preserva não lida, contador e rota, permitindo nova tentativa', async () => {
@@ -500,7 +509,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
   it('lote pendente não zera antecipadamente nem dispara operações repetidas', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification[]>();
+    const request = deferred<void>();
     vi.mocked(markAllAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -514,7 +523,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
     expect(markAllAsRead).toHaveBeenCalledTimes(1);
     expect(markAsRead).not.toHaveBeenCalled();
-    await act(async () => request.resolve(fixtures().map((item) => ({ ...item, isRead: true }))));
+    await act(async () => request.resolve());
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('0');
   });
 
@@ -571,7 +580,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     'confirmação atrasada após %s não navega nem restaura o conteúdo anterior',
     async (change) => {
       const user = userEvent.setup();
-      const request = deferred<Notification>();
+      const request = deferred<void>();
       vi.mocked(markAsRead).mockReturnValue(request.promise);
       renderBell();
       const panel = await openPanel(user);
@@ -583,7 +592,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
         }),
       );
 
-      await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+      await act(async () => request.resolve());
 
       expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
       expect(

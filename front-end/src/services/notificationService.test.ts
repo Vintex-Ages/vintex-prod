@@ -1,282 +1,339 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Notification } from '@/types/notification';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createNotificationFixtures } from '@/mocks/notifications';
+import { httpClient } from '@/services/httpClient';
 
-type NotificationService = typeof import('./notificationService');
-
-const doubles = vi.hoisted(() => ({
-  createFixtures: vi.fn<(userId: string) => Notification[]>(),
+vi.mock('@/services/httpClient', () => ({
   httpClient: {
     get: vi.fn(),
     post: vi.fn(),
-    patch: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-    request: vi.fn(),
   },
 }));
 
-vi.mock('@/mocks/notifications', () => ({ createNotificationFixtures: doubles.createFixtures }));
-vi.mock('@/services/httpClient', () => ({ httpClient: doubles.httpClient }));
+vi.mock('@/mocks/notifications', () => ({
+  createNotificationFixtures: vi.fn(),
+}));
 
-const USER_A = 'usuario-ficticio-341-a';
-const USER_B = 'usuario-ficticio-341-b';
-const EMPTY_USER = 'usuario-ficticio-341-vazio';
+const mockedGet = vi.mocked(httpClient.get);
+const mockedPost = vi.mocked(httpClient.post);
+const mockedFixtures = vi.mocked(createNotificationFixtures);
 
-function fixtures(userId: string): Notification[] {
-  if (userId === EMPTY_USER) return [];
-  return [
-    {
-      id: `${userId}-antiga-lida`,
-      type: 'sale',
-      recipientUserId: userId,
-      productName: 'Casaco fictício',
-      createdAt: '2026-10-19T15:00:00.000Z',
-      isRead: true,
-    },
-    {
-      id: `${userId}-favorito`,
-      type: 'favorite',
-      recipientUserId: userId,
-      productId: 'produto-ficticio-favorito',
-      productName: 'Bolsa fictícia',
-      createdAt: '2026-10-21T15:00:00.000Z',
-      isRead: false,
-    },
-    {
-      id: `${userId}-venda`,
-      type: 'sale',
-      recipientUserId: userId,
-      productId: 'produto-ficticio-vendido',
-      productName: 'Jaqueta fictícia',
-      createdAt: '2026-10-20T15:00:00.000Z',
-      isRead: false,
-    },
-  ];
+function apiNotification(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 12,
+    type: 'sale',
+    product_id: 7,
+    product_name: 'Jaqueta jeans',
+    order_id: 31,
+    created_at: '2026-10-28T14:03:11',
+    is_read: false,
+    ...overrides,
+  };
 }
 
-let service: NotificationService;
+function apiResponse(
+  items = [apiNotification()],
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    items,
+    page: 1,
+    page_size: 20,
+    total: items.length,
+    unread_count: items.filter((item) => item.is_read === false).length,
+    ...overrides,
+  };
+}
 
-beforeEach(async () => {
-  vi.stubEnv('VITE_USE_MOCKS', 'true');
-  vi.resetModules();
-  vi.clearAllMocks();
-  doubles.createFixtures.mockReset().mockImplementation(fixtures);
-  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Requisição real não autorizada'));
-  service = await import('./notificationService');
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllEnvs();
-});
-
-describe('notificationService — contrato interno do mock', () => {
-  it('lista somente as notificações do destinatário solicitado', async () => {
-    const items = await service.listNotifications(USER_A);
-
-    expect(items).toHaveLength(3);
-    expect(items.every((item) => item.recipientUserId === USER_A)).toBe(true);
-    expect(items.some((item) => item.id.startsWith(USER_B))).toBe(false);
+describe('notificationService', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
   });
 
-  it('ordena por createdAt, da mais recente para a mais antiga', async () => {
-    const items = await service.listNotifications(USER_A);
+  describe('modo mock', () => {
+    it('lista notificações fictícias do usuário', async () => {
+      const fixtures = [
+        {
+          id: 'user-1-notification',
+          type: 'favorite',
+          productId: '7',
+          productName: 'Jaqueta jeans',
+          createdAt: '2026-10-28T14:03:11',
+          isRead: false,
+        },
+      ];
 
-    expect(items.map((item) => item.id)).toEqual([
-      `${USER_A}-favorito`,
-      `${USER_A}-venda`,
-      `${USER_A}-antiga-lida`,
-    ]);
-  });
+      mockedFixtures.mockReturnValue(fixtures);
 
-  it('suporta usuário sem notificações', async () => {
-    const items = await service.listNotifications(EMPTY_USER);
+      const service = await import('@/services/notificationService');
+      const result = await service.listNotifications('user-1');
 
-    expect(items).toEqual([]);
-    expect(service.countUnread(items)).toBe(0);
-  });
+      expect(mockedFixtures).toHaveBeenCalledWith('user-1');
+      expect(result.items).toEqual(fixtures);
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(1);
+      expect(result.total).toBe(1);
+      expect(result.unreadCount).toBe(1);
+      expect(mockedGet).not.toHaveBeenCalled();
+    });
 
-  it('preserva notificações lidas e não lidas na mesma listagem', async () => {
-    const items = await service.listNotifications(USER_A);
+    it('marca uma notificação fictícia como lida', async () => {
+      mockedFixtures.mockReturnValue([
+        {
+          id: 'notification-1',
+          type: 'sale',
+          productName: 'Jaqueta',
+          createdAt: '2026-10-28T14:03:11',
+          isRead: false,
+        },
+      ]);
 
-    expect(items.filter((item) => item.isRead)).toHaveLength(1);
-    expect(items.filter((item) => !item.isRead)).toHaveLength(2);
-  });
+      const service = await import('@/services/notificationService');
 
-  it('preserva exatamente sale e favorite, incluindo venda sem productId', async () => {
-    const items = await service.listNotifications(USER_A);
+      await service.markAsRead('user-1', 'notification-1');
 
-    expect(new Set(items.map((item) => item.type))).toEqual(new Set(['sale', 'favorite']));
-    expect(items.find((item) => item.id === `${USER_A}-antiga-lida`)).not.toHaveProperty(
-      'productId',
-    );
-    expect(items.find((item) => item.type === 'favorite')).toMatchObject({
-      productId: 'produto-ficticio-favorito',
+      const result = await service.listNotifications('user-1');
+      expect(result.items[0].isRead).toBe(true);
+      expect(result.unreadCount).toBe(0);
+    });
+
+    it('não permite marcar uma notificação fictícia inexistente', async () => {
+      mockedFixtures.mockReturnValue([]);
+
+      const service = await import('@/services/notificationService');
+
+      await expect(
+        service.markAsRead('user-1', 'inexistente'),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        name: 'NotificationServiceError',
+      });
+    });
+
+    it('marca todas as notificações fictícias como lidas', async () => {
+      mockedFixtures.mockReturnValue([
+        {
+          id: 'notification-1',
+          type: 'sale',
+          productName: 'Jaqueta',
+          createdAt: '2026-10-28T14:03:11',
+          isRead: false,
+        },
+        {
+          id: 'notification-2',
+          type: 'favorite',
+          productName: 'Bolsa',
+          createdAt: '2026-10-27T14:03:11',
+          isRead: false,
+        },
+      ]);
+
+      const service = await import('@/services/notificationService');
+
+      await service.markAllAsRead('user-1');
+
+      const result = await service.listNotifications('user-1');
+
+      expect(result.items.every((item) => item.isRead)).toBe(true);
+      expect(result.unreadCount).toBe(0);
     });
   });
 
-  it('conta somente não lidas, sem alterar os itens nem buscar novamente', async () => {
-    const items = await service.listNotifications(USER_A);
-    const before = structuredClone(items);
-    doubles.createFixtures.mockClear();
-
-    expect(service.countUnread(items)).toBe(2);
-    expect(items).toEqual(before);
-    expect(doubles.createFixtures).not.toHaveBeenCalled();
-  });
-
-  it('marca somente a notificação escolhida e retorna sua confirmação', async () => {
-    const updated = await service.markAsRead(USER_A, `${USER_A}-favorito`);
-    const items = await service.listNotifications(USER_A);
-
-    expect(updated).toMatchObject({ id: `${USER_A}-favorito`, isRead: true });
-    expect(items.find((item) => item.id === `${USER_A}-favorito`)?.isRead).toBe(true);
-    expect(items.find((item) => item.id === `${USER_A}-venda`)?.isRead).toBe(false);
-    expect(service.countUnread(items)).toBe(1);
-  });
-
-  it('marcar uma não modifica notificações de outro usuário', async () => {
-    const beforeB = await service.listNotifications(USER_B);
-
-    await service.markAsRead(USER_A, `${USER_A}-favorito`);
-
-    expect(await service.listNotifications(USER_B)).toEqual(beforeB);
-  });
-
-  it('marca todas do destinatário e retorna a lista confirmada', async () => {
-    const updated = await service.markAllAsRead(USER_A);
-
-    expect(updated).toHaveLength(3);
-    expect(updated.every((item) => item.isRead)).toBe(true);
-    expect(service.countUnread(await service.listNotifications(USER_A))).toBe(0);
-  });
-
-  it('marcar todas não modifica notificações de outro usuário', async () => {
-    const beforeB = await service.listNotifications(USER_B);
-
-    await service.markAllAsRead(USER_A);
-
-    expect(await service.listNotifications(USER_B)).toEqual(beforeB);
-  });
-
-  it('marcar uma já lida é idempotente', async () => {
-    await service.markAsRead(USER_A, `${USER_A}-favorito`);
-    const before = await service.listNotifications(USER_A);
-
-    await service.markAsRead(USER_A, `${USER_A}-favorito`);
-
-    expect(await service.listNotifications(USER_A)).toEqual(before);
-    expect(service.countUnread(before)).toBe(1);
-  });
-
-  it('marcar todas novamente é idempotente, inclusive na lista vazia', async () => {
-    const first = await service.markAllAsRead(USER_A);
-
-    expect(await service.markAllAsRead(USER_A)).toEqual(first);
-    expect(await service.markAllAsRead(EMPTY_USER)).toEqual([]);
-  });
-
-  it('não expõe armazenamento por referência na listagem', async () => {
-    const items = await service.listNotifications(USER_A);
-    items[0].isRead = true;
-    items[0].productName = 'Nome alterado externamente';
-    items.pop();
-
-    const next = await service.listNotifications(USER_A);
-    expect(next).toHaveLength(3);
-    expect(next[0]).toMatchObject({ productName: 'Bolsa fictícia', isRead: false });
-  });
-
-  it('não expõe armazenamento pelo retorno da leitura individual', async () => {
-    const updated = await service.markAsRead(USER_A, `${USER_A}-favorito`);
-    updated.isRead = false;
-
-    const items = await service.listNotifications(USER_A);
-    expect(items.find((item) => item.id === updated.id)?.isRead).toBe(true);
-  });
-
-  it('não expõe armazenamento pelo retorno da leitura em lote', async () => {
-    const updated = await service.markAllAsRead(USER_A);
-    updated[0].isRead = false;
-    updated.pop();
-
-    const items = await service.listNotifications(USER_A);
-    expect(items).toHaveLength(3);
-    expect(items.every((item) => item.isRead)).toBe(true);
-  });
-
-  it('preserva a leitura ao listar novamente, sem duplicar notificações', async () => {
-    await service.listNotifications(USER_A);
-    await service.markAsRead(USER_A, `${USER_A}-favorito`);
-
-    expect(service.countUnread(await service.listNotifications(USER_A))).toBe(1);
-    expect(service.countUnread(await service.listNotifications(USER_A))).toBe(1);
-    expect(await service.listNotifications(USER_A)).toHaveLength(3);
-  });
-
-  it('rejeita ID inexistente sem alterar o estado', async () => {
-    const before = await service.listNotifications(USER_A);
-
-    await expect(service.markAsRead(USER_A, 'notificacao-inexistente')).rejects.toBeInstanceOf(
-      Error,
-    );
-
-    expect(await service.listNotifications(USER_A)).toEqual(before);
-  });
-
-  it('não permite marcar uma notificação de outro destinatário', async () => {
-    const beforeB = await service.listNotifications(USER_B);
-
-    await expect(service.markAsRead(USER_A, `${USER_B}-favorito`)).rejects.toBeInstanceOf(Error);
-
-    expect(await service.listNotifications(USER_B)).toEqual(beforeB);
-  });
-
-  it.each([
-    { operation: 'listagem', run: () => service.listNotifications(USER_A) },
-    {
-      operation: 'leitura individual',
-      run: () => service.markAsRead(USER_A, `${USER_A}-favorito`),
-    },
-    { operation: 'leitura em lote', run: () => service.markAllAsRead(USER_A) },
-  ])('propaga falha na $operation do mock', async ({ run }) => {
-    const error = new Error('Fixture indisponível');
-    doubles.createFixtures.mockImplementation(() => {
-      throw error;
+  describe('modo API', () => {
+    beforeEach(() => {
+      vi.stubEnv('VITE_USE_MOCKS', 'false');
     });
 
-    await expect(run()).rejects.toBe(error);
-  });
+    it('busca a primeira página de notificações na API', async () => {
+      mockedGet.mockResolvedValue({
+        data: apiResponse(),
+      } as never);
 
-  it('opera no mock sem qualquer chamada HTTP ou fetch', async () => {
-    await service.listNotifications(USER_A);
-    await service.markAsRead(USER_A, `${USER_A}-favorito`);
-    await service.markAllAsRead(USER_A);
+      const service = await import('@/services/notificationService');
+      const result = await service.listNotifications('user-1');
 
-    Object.values(doubles.httpClient).forEach((method) => expect(method).not.toHaveBeenCalled());
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
+      expect(mockedGet).toHaveBeenCalledWith(
+        '/api/users/me/notifications',
+        {
+          params: {
+            page: 1,
+            page_size: 50,
+          },
+        },
+      );
 
-  it.each([undefined, 'true', '1'])('mantém o mock para VITE_USE_MOCKS=%s', async (flag) => {
-    vi.stubEnv('VITE_USE_MOCKS', flag);
-    vi.resetModules();
-    const selected = await import('./notificationService');
+      expect(result).toEqual({
+        items: [
+          {
+            id: '12',
+            type: 'sale',
+            productId: '7',
+            productName: 'Jaqueta jeans',
+            orderId: '31',
+            createdAt: '2026-10-28T14:03:11',
+            isRead: false,
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        unreadCount: 1,
+      });
+    });
 
-    expect(await selected.listNotifications(USER_A)).toHaveLength(3);
-    expect(doubles.httpClient.get).not.toHaveBeenCalled();
-  });
+    it('preserva tipos desconhecidos recebidos da API', async () => {
+      mockedGet.mockResolvedValue({
+        data: apiResponse([
+          apiNotification({
+            type: 'new_backend_type',
+          }),
+        ]),
+      } as never);
 
-  it('VITE_USE_MOCKS=false rejeita operações sem inventar endpoint ou dados reais', async () => {
-    vi.stubEnv('VITE_USE_MOCKS', 'false');
-    vi.resetModules();
-    doubles.createFixtures.mockClear();
-    const realMode = await import('./notificationService');
+      const service = await import('@/services/notificationService');
+      const result = await service.listNotifications('user-1');
 
-    await expect(realMode.listNotifications(USER_A)).rejects.toBeInstanceOf(Error);
-    await expect(realMode.markAsRead(USER_A, 'id-ficticio')).rejects.toBeInstanceOf(Error);
-    await expect(realMode.markAllAsRead(USER_A)).rejects.toBeInstanceOf(Error);
-    expect(doubles.createFixtures).not.toHaveBeenCalled();
-    Object.values(doubles.httpClient).forEach((method) => expect(method).not.toHaveBeenCalled());
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(result.items[0].type).toBe('new_backend_type');
+    });
+
+    it('não inclui IDs opcionais quando não são enviados pela API', async () => {
+      mockedGet.mockResolvedValue({
+        data: apiResponse([
+          apiNotification({
+            product_id: null,
+            order_id: null,
+          }),
+        ]),
+      } as never);
+
+      const service = await import('@/services/notificationService');
+      const result = await service.listNotifications('user-1');
+
+      expect(result.items[0]).toEqual({
+        id: '12',
+        type: 'sale',
+        productName: 'Jaqueta jeans',
+        createdAt: '2026-10-28T14:03:11',
+        isRead: false,
+      });
+    });
+
+    it('usa o unread_count enviado pelo backend', async () => {
+      mockedGet.mockResolvedValue({
+        data: apiResponse(
+          [apiNotification()],
+          { unread_count: 47, total: 100 },
+        ),
+      } as never);
+
+      const service = await import('@/services/notificationService');
+      const result = await service.listNotifications('user-1');
+
+      expect(result.unreadCount).toBe(47);
+      expect(result.total).toBe(100);
+    });
+
+    it('não utiliza fixtures no modo API', async () => {
+      mockedGet.mockResolvedValue({
+        data: apiResponse(),
+      } as never);
+
+      const service = await import('@/services/notificationService');
+
+      await service.listNotifications('user-1');
+
+      expect(mockedFixtures).not.toHaveBeenCalled();
+    });
+
+    it('envia a requisição para marcar uma notificação como lida', async () => {
+      mockedPost.mockResolvedValue({ status: 204 } as never);
+
+      const service = await import('@/services/notificationService');
+
+      await service.markAsRead('user-1', '12');
+
+      expect(mockedPost).toHaveBeenCalledWith(
+        '/api/users/me/notifications/12/read',
+      );
+    });
+
+    it('codifica o ID da notificação na URL', async () => {
+      mockedPost.mockResolvedValue({ status: 204 } as never);
+
+      const service = await import('@/services/notificationService');
+
+      await service.markAsRead('user-1', 'id/com espaço');
+
+      expect(mockedPost).toHaveBeenCalledWith(
+        '/api/users/me/notifications/id%2Fcom%20espa%C3%A7o/read',
+      );
+    });
+
+    it('envia a requisição para marcar todas como lidas', async () => {
+      mockedPost.mockResolvedValue({ status: 204 } as never);
+
+      const service = await import('@/services/notificationService');
+
+      await service.markAllAsRead('user-1');
+
+      expect(mockedPost).toHaveBeenCalledWith(
+        '/api/users/me/notifications/read',
+      );
+    });
+
+    it('converte resposta 404 em erro NOT_FOUND', async () => {
+      mockedPost.mockRejectedValue({
+        response: { status: 404 },
+      });
+
+      const service = await import('@/services/notificationService');
+
+      await expect(
+        service.markAsRead('user-1', '999'),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
+    it('preserva erros 401 da API', async () => {
+      const unauthorized = {
+        response: { status: 401 },
+      };
+
+      mockedGet.mockRejectedValue(unauthorized);
+
+      const service = await import('@/services/notificationService');
+
+      await expect(
+        service.listNotifications('user-1'),
+      ).rejects.toBe(unauthorized);
+    });
+
+    it('preserva erros inesperados da API', async () => {
+      const serverError = {
+        response: { status: 500 },
+      };
+
+      mockedPost.mockRejectedValue(serverError);
+
+      const service = await import('@/services/notificationService');
+
+      await expect(
+        service.markAllAsRead('user-1'),
+      ).rejects.toBe(serverError);
+    });
+
+    it('exporta o erro específico de notificação inexistente', async () => {
+      const service = await import('@/services/notificationService');
+
+      const error = new service.NotificationServiceError(
+        'NOT_FOUND',
+        'Notificação não encontrada.',
+      );
+
+      expect(error.name).toBe('NotificationServiceError');
+      expect(error.code).toBe('NOT_FOUND');
+    });
   });
 });

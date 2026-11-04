@@ -68,11 +68,21 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
   async function readAndOpen(item: Notification) {
     const userId = identity;
     setOperationError(null);
+
     try {
       if (!item.isRead) await markAsRead(item.id);
       if (!isCurrent(userId)) return;
+
       onClose();
-      navigate(item.type === 'favorite' ? productDetail(item.productId) : paths.seller);
+
+      if (item.type === 'favorite') {
+        if (item.productId) {
+          navigate(productDetail(item.productId));
+        }
+        return;
+      }
+
+      navigate(paths.seller);
     } catch {
       if (userId && isCurrent(userId)) {
         setOperationError({
@@ -86,6 +96,7 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
   async function readAll() {
     const userId = identity;
     setOperationError(null);
+
     try {
       await markAllAsRead();
     } catch {
@@ -135,9 +146,11 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
           </span>
         )}
       </button>
+
       <span id={`${id}-count`} className="sr-only">
         {unreadCount === 1 ? '1 notificação não lida' : `${unreadCount} notificações não lidas`}
       </span>
+
       {open && (
         <section
           id={`${id}-panel`}
@@ -157,11 +170,13 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
               {markingAll ? 'Marcando como lidas…' : 'Marcar todas como lidas'}
             </Button>
           </div>
+
           {loading && (
             <p role="status" className="p-4">
               Carregando notificações…
             </p>
           )}
+
           {error && (
             <div role="alert" className="p-4">
               <p>{error}</p>
@@ -170,14 +185,17 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
               </Button>
             </div>
           )}
+
           {operationError?.userId === identity && (
             <p role="alert" className="p-4">
               {operationError.message}
             </p>
           )}
+
           {!loading && !error && items.length === 0 && (
             <p className="p-4">Nenhuma notificação por enquanto.</p>
           )}
+
           {items.length > 0 && (
             <ul className="divide-y divide-linha">
               {items.map((item) => (
@@ -193,10 +211,12 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
                         ? `Sua peça ${item.productName} foi vendida`
                         : `Alguém favoritou sua peça ${item.productName}`}
                     </span>
+
                     <span className="flex w-full flex-wrap items-center justify-between gap-2 text-label">
                       <time dateTime={item.createdAt} className="text-texto-auxiliar">
                         {dateFormatter.format(new Date(item.createdAt))}
                       </time>
+
                       {!item.isRead && (
                         <span className="font-semibold text-vermelho-escuro">Não lida</span>
                       )}

@@ -1,8 +1,10 @@
-/** Modelo interno do frontend; não representa um contrato HTTP do backend. */
+/** Modelo interno das notificações, compatível com a API. */
 export type Notification = {
   id: string;
-  recipientUserId: string;
+  type: string;
+  productId?: string;
   productName: string;
+  orderId?: string;
   createdAt: string;
   isRead: boolean;
-} & ({ type: 'sale'; productId?: string } | { type: 'favorite'; productId: string });
+};
