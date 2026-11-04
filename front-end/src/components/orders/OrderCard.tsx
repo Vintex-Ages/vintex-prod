@@ -9,19 +9,20 @@ import { formatCentsToBRL, formatPieceCount } from '@/utils/format';
  * pedidos T11, node 1001:1421): número, data, miniatura e nome da 1ª peça
  * ("+N peças" se houver mais), loja, total e badge da situação. Só
  * apresentação: o cartão inteiro chama `onOpen` com o id (quem navega é a
- * página) e `action` aparece só se a página mandar.
+ * página) e `action` aparece só se a página mandar. O mesmo vale para
+ * `afterSaleActions` (#424): o cartão não decide quando mostrar "Avaliar loja"
+ * ou "Reportar problema", só apresenta as ações que a página passar.
  *
  * Link esticado como no `StoreCard`: o botão principal cobre o cartão com
- * `::after`, e o botão de `action` fica acima dele (`relative z-10`), irmão e
- * não filho, então nenhum interativo fica dentro de outro e o clique na ação
+ * `::after`, e os botões de ação ficam acima dele (`relative z-10`), irmãos e
+ * não filhos, então nenhum interativo fica dentro de outro e o clique na ação
  * não abre o detalhe.
  *
  * Comprovante recusado não é status do Pedido (RN-23): vem de
  * `payment.status` e, quando presente, ocupa o lugar do badge do status.
  * Exceção: Pedido `expirado` mostra "Expirado" mesmo com a recusa, porque a
  * recusa ficou para trás e o que vale agora é que o Pedido acabou (#321).
- * Sem prazo nem rastreio de transportadora (RN-83). "Avaliar loja" e
- * "Reportar problema" ficam para a Sprint 4.
+ * Sem prazo nem rastreio de transportadora (RN-83).
  *
  * Usage:
  *   import OrderCard from '@/components/orders/OrderCard';
@@ -30,12 +31,25 @@ import { formatCentsToBRL, formatPieceCount } from '@/utils/format';
  *     onOpen={(id) => navigate(orderDetail(id))}
  *     action={{ label: 'Enviar comprovante', onClick: () => abrirEnvio(pedido.id) }}
  *   />
+ *   <OrderCard
+ *     order={pedido}
+ *     onOpen={(id) => navigate(orderDetail(id))}
+ *     afterSaleActions={{
+ *       primary: { label: 'Avaliar loja', onClick: () => abrirAvaliacao(pedido.id) },
+ *       secondary: { label: 'Reportar problema', onClick: () => abrirProblema(pedido.id) },
+ *     }}
+ *   />
  */
 export type OrderCardProps = {
   order: OrderSummary;
   onOpen: (id: string) => void;
   /** Botão separado (ex.: "Enviar comprovante"); a página decide quando passar. */
   action?: { label: string; onClick: () => void };
+  /** Pós-venda: `primary` é cheio e `secondary` tem contorno; a página decide quais passar. */
+  afterSaleActions?: {
+    primary?: { label: string; onClick: () => void };
+    secondary?: { label: string; onClick: () => void };
+  };
 };
 
 type BadgeTone = 'attention' | 'success' | 'danger';
@@ -87,8 +101,9 @@ function OrderBadge({ label, tone }: { label: string; tone: BadgeTone }) {
   );
 }
 
-function OrderCard({ order, onOpen, action }: OrderCardProps) {
+function OrderCard({ order, onOpen, action, afterSaleActions }: OrderCardProps) {
   const [first] = order.items;
+  const { primary, secondary } = afterSaleActions ?? {};
   const extraCount = order.items.length - 1;
   const createdAt = formatDate(order.createdAt);
   // `expirado` vence a recusa; fora isso, a recusa vence o badge do status.
@@ -158,6 +173,30 @@ function OrderCard({ order, onOpen, action }: OrderCardProps) {
         >
           {action.label}
         </Button>
+      ) : null}
+
+      {/* Sem ação não há grupo: um `div` vazio somaria um `gap` ao cartão. */}
+      {primary || secondary ? (
+        <div className="flex flex-col gap-2 tablet:flex-row tablet:justify-end">
+          {primary ? (
+            <Button
+              variant="primary"
+              onClick={primary.onClick}
+              className="relative z-10 w-full tablet:w-auto"
+            >
+              {primary.label}
+            </Button>
+          ) : null}
+          {secondary ? (
+            <Button
+              variant="outline"
+              onClick={secondary.onClick}
+              className="relative z-10 w-full tablet:w-auto"
+            >
+              {secondary.label}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );
