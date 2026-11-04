@@ -27,15 +27,10 @@ const averageFormatter = new Intl.NumberFormat('pt-BR', {
 
 function Star({ filled, className }: { filled: boolean; className: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={clsx(className, filled ? 'text-dourado' : 'text-linha')}
-    >
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
       <path
         d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55-4.76-4.64 6.58-.96L12 2.5z"
-        fill={filled ? 'currentColor' : 'none'}
-        stroke="currentColor"
+        className={clsx('stroke-texto-auxiliar', filled ? 'fill-dourado' : 'fill-none')}
         strokeWidth="1.5"
         strokeLinejoin="round"
       />
@@ -102,7 +97,7 @@ function SelectStars({
           tabIndex={score === tabStop ? 0 : -1}
           onClick={() => handleSelect(score)}
           onKeyDown={(event) => handleKeyDown(event, score)}
-          className="inline-flex min-h-touch min-w-touch items-center justify-center transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-vermelho-escuro"
+          className="inline-flex min-h-touch min-w-touch items-center justify-center transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
         >
           <Star filled={score <= shown} className="h-6 w-6" />
         </button>

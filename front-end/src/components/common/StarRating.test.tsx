@@ -9,9 +9,19 @@ function getStar(score: number) {
   return screen.getByRole('radio', { name: `${score} de 5 estrelas` });
 }
 
-// Estrela cheia é a que usa o token dourado; a contagem vale para os dois modos.
+// Estrela cheia é a que preenche com o token dourado; a contagem vale para os dois modos.
 function countFilledStars(container: HTMLElement) {
-  return container.querySelectorAll('svg.text-dourado').length;
+  return container.querySelectorAll('path.fill-dourado').length;
+}
+
+// WCAG 1.4.11: o contorno é igual em todas as estrelas; só a cheia tem preenchimento.
+function expectStarDrawing(svg: Element | null, filled: boolean) {
+  const path = svg?.querySelector('path');
+
+  expect(path).toHaveClass('stroke-texto-auxiliar', filled ? 'fill-dourado' : 'fill-none');
+  expect(path).not.toHaveClass(filled ? 'fill-none' : 'fill-dourado');
+  expect(svg).not.toHaveClass('text-dourado');
+  expect(svg).not.toHaveClass('text-linha');
 }
 
 describe('<StarRating mode="select" />', () => {
@@ -188,10 +198,13 @@ describe('<StarRating mode="select" />', () => {
     expect(getStar(1)).toHaveClass(
       'min-h-touch',
       'min-w-touch',
-      'focus-visible:ring-vermelho-escuro',
+      'focus:outline-none',
+      'focus-visible:ring-2',
+      'focus-visible:ring-tinta',
     );
-    expect(getStar(1).querySelector('svg')).toHaveClass('text-dourado');
-    expect(getStar(2).querySelector('svg')).toHaveClass('text-linha');
+    expect(getStar(1)).not.toHaveClass('focus-visible:ring-vermelho-escuro');
+    expectStarDrawing(getStar(1).querySelector('svg'), true);
+    expectStarDrawing(getStar(2).querySelector('svg'), false);
   });
 });
 
@@ -248,6 +261,15 @@ describe('<StarRating mode="display" />', () => {
 
     rerender(<StarRating mode="display" average={4.5} />);
     expect(countFilledStars(container)).toBe(5);
+  });
+
+  // Objetivo: o modo exibir usa o mesmo desenho de estrela do modo escolher.
+  it('desenha cheias e vazias com os mesmos tokens do modo select', () => {
+    const { container } = render(<StarRating mode="display" average={2} />);
+
+    const stars = container.querySelectorAll('svg');
+    expect(stars).toHaveLength(5);
+    stars.forEach((star, index) => expectStarDrawing(star, index < 2));
   });
 
   it('não é interativo', () => {
