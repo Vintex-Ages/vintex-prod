@@ -1,11 +1,23 @@
 import fs from "node:fs";
+import {
+  allowedRepositories,
+  formatRef,
+  isAllowed,
+  parseClosingRefs,
+} from "./lib/issue-refs.mjs";
 
 const event = JSON.parse(
   fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
 );
+const config = JSON.parse(
+  fs.readFileSync("config/governance/pr-automation.json", "utf8"),
+);
 const pr = event.pull_request;
 const token = process.env.GITHUB_TOKEN;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+const current = { owner, repo };
+const allowedRepos = allowedRepositories(config, current);
+const allowedNames = [`${owner}/${repo}`, ...(config.issueRepositories || [])];
 const errors = [];
 const base = pr.base.ref;
 const head = pr.head.ref;
@@ -16,13 +28,7 @@ const workBranch =
   /^(feature|bugfix|hotfix|refactor|docs|chore)\/[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
     head,
   );
-const closingIssues = [
-  ...new Set(
-    [...(pr.body || "").matchAll(/\b(?:Closes|Fixes|Resolves)\s+#(\d+)/gi)].map(
-      (match) => Number(match[1]),
-    ),
-  ),
-];
+const closingIssues = parseClosingRefs(pr.body, current);
 
 if (base === "main" && head !== "develop")
   errors.push("main aceita somente Pull Requests de develop.");
@@ -52,24 +58,34 @@ if (base === "develop" && workBranch) {
   if (!closingIssues.length) {
     errors.push("Inclua Closes #<issue> no corpo do PR.");
   } else {
-    if (branchIssue !== closingIssues[0]) {
+    if (branchIssue !== closingIssues[0].number) {
       errors.push("A primeira issue vinculada deve coincidir com o número da branch.");
     }
     const issues = [];
-    for (const number of closingIssues) {
+    for (const ref of closingIssues) {
+      const label = formatRef(ref, current);
+      if (!isAllowed(ref, allowedRepos)) {
+        errors.push(
+          `${label}: só são aceitas issues de ${allowedNames.join(", ")}.`,
+        );
+        continue;
+      }
       try {
-        const issue = await api(`/repos/${owner}/${repo}/issues/${number}`);
+        const issue = await api(
+          `/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`,
+        );
         if (issue.pull_request) {
-          errors.push(`#${number} é um Pull Request, não uma issue.`);
+          errors.push(`${label} é um Pull Request, não uma issue.`);
         } else {
           issues.push(issue);
         }
       } catch {
-        errors.push(`A issue #${number} não existe neste repositório.`);
+        errors.push(`A issue ${label} não existe em ${ref.owner}/${ref.repo}.`);
       }
     }
+    // O número da milestone muda de um repositório para outro; o título não.
     const milestones = new Set(
-      issues.map((issue) => issue.milestone?.number).filter(Boolean),
+      issues.map((issue) => issue.milestone?.title).filter(Boolean),
     );
     if (milestones.size > 1) {
       errors.push("As issues vinculadas possuem milestones diferentes.");

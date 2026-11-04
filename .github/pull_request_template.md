@@ -1,11 +1,22 @@
 ## Descrição
 
-<!-- Descreva a promoção ou alteração operacional. -->
+<!-- Descreva a promoção ou alteração. -->
+
+<!-- Issue deste repositório: Closes #<número>.
+Issue de front-end ou back-end: Closes Vintex-Ages/front-end#<número> ou
+Closes Vintex-Ages/back-end#<número>. O número da branch deve ser o da
+primeira issue citada. -->
 
 Closes #<!-- issue, quando aplicável -->
 
 ## Tipo de mudança
 
+<!-- Marque um. Feature, Bugfix, Hotfix e Refactor viram o label change:<tipo>. -->
+
+- [ ] Feature
+- [ ] Bugfix
+- [ ] Hotfix
+- [ ] Refactor
 - [ ] Promotion
 - [ ] Infra
 - [ ] Docs
