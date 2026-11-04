@@ -2,9 +2,9 @@ name: Front-end CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, qa]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, qa]
   workflow_dispatch:
   schedule:
     - cron: "11 6 * * *"
@@ -18,9 +18,11 @@ defaults:
     working-directory: front-end
 
 jobs:
-  # Em PRs para develop, só roda o CI do front-end se o PR alterar o front-end
-  # (ou este workflow). Nos demais eventos (push, PR para main, agenda e
-  # execução manual) tudo roda.
+  # Escopo por tipo de PR:
+  #   feature -> develop : só se o PR alterar o front-end (ou este workflow)
+  #   develop -> qa      : todos os testes da aplicação
+  #   qa -> main         : só infra; o front-end não tem infra, então dispensa
+  #   push / manual / agenda : tudo
   changes:
     name: Detect front-end changes
     if: github.event_name != 'schedule'
@@ -40,6 +42,10 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
+          if [ "$EVENT" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
+            echo "front_end=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$EVENT" != "pull_request" ] || [ "$BASE_REF" != "develop" ]; then
             echo "front_end=true" >> "$GITHUB_OUTPUT"
             exit 0
