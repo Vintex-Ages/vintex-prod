@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: node --test .github/scripts/lib/issue-refs.test.mjs
       - run: node .github/scripts/validate-gitops.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
