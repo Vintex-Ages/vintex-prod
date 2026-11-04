@@ -1,0 +1,67 @@
+{
+  "name": "deploy governance",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/deploy"
+      ],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "required_reviewers": [
+          {
+            "minimum_approvals": 2,
+            "file_patterns": [
+              "*",
+              "**/*"
+            ],
+            "reviewer": {
+              "id": 19183386,
+              "type": "Team"
+            }
+          }
+        ],
+        "require_code_owner_review": false,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true,
+        "require_extra_approval_for_unattributed_changes": false,
+        "allowed_merge_methods": [
+          "merge"
+        ]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          {
+            "context": "GitOps Validation"
+          },
+          {
+            "context": "PR Metadata"
+          }
+        ]
+      }
+    }
+  ]
+}
