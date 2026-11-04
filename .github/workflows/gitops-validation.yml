@@ -3,7 +3,7 @@ name: GitOps Validation
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
-    branches: [develop, main, deploy]
+    branches: [develop, qa, main, deploy]
 
 permissions:
   contents: read
@@ -15,6 +15,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect automation script changes
+        id: scripts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' | grep -q '^\.github/scripts/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Test automation scripts
+        if: steps.scripts.outputs.changed == 'true'
+        run: node --test .github/scripts/lib/issue-refs.test.mjs
       - run: node .github/scripts/validate-gitops.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - run: node --test .github/scripts/lib/branch-flow.test.mjs
