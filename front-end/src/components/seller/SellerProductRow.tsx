@@ -9,6 +9,8 @@ export type RowAction = {
   onSelect: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  /** `secondary` (com contorno) destaca a ação principal da linha; o padrão é `quiet`. */
+  variant?: 'secondary' | 'quiet';
 };
 
 export type SellerProductRowProps = {
@@ -31,11 +33,16 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
  */
 function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
   const reasonIdPrefix = useId();
+  // "Tamanho M • Marca • Preço: R$ 198,00" (frame ajustado do Figma, T15): só entra o que a peça tem.
+  const attributes = [
+    product.size ? `Tamanho ${product.size}` : null,
+    product.brand ?? null,
+  ].filter((attribute): attribute is string => Boolean(attribute));
 
   return (
     <article className="flex w-full flex-col gap-4 border border-linha bg-branco-quente p-4 web:flex-row web:items-center">
       <div className="flex min-w-0 items-center gap-4 web:flex-1">
-        <div className="h-20 w-20 shrink-0 overflow-hidden bg-papel-profundo">
+        <div className="h-[75px] w-[65px] shrink-0 overflow-hidden border border-linha bg-papel-profundo">
           {product.coverImageUrl ? (
             <img
               src={product.coverImageUrl}
@@ -61,7 +68,10 @@ function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
             <p className="font-ui text-body font-semibold text-tinta">{product.name}</p>
           )}
 
-          <p className="font-ui text-body text-tinta">{priceFormatter.format(product.price)}</p>
+          <p className="font-ui text-body-sm text-texto-auxiliar">
+            {attributes.map((attribute) => `${attribute} • `)}
+            Preço: <span className="font-bold">{priceFormatter.format(product.price)}</span>
+          </p>
         </div>
       </div>
 
@@ -81,7 +91,8 @@ function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
                 className="flex min-w-0 flex-1 flex-col web:flex-none"
               >
                 <Button
-                  variant="quiet"
+                  variant={action.variant ?? 'quiet'}
+                  className="text-label uppercase"
                   fullWidth
                   disabled={action.disabled}
                   aria-describedby={hasDisabledReason ? reasonId : undefined}

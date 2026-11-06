@@ -31,6 +31,11 @@ type FilterChipProps = {
   removable?: boolean;
   onRemove?: () => void;
   compact?: boolean;
+  /**
+   * Cor do chip: `verde` (padrão, catálogo) ou `tinta`, a do painel do vendedor no
+   * frame ajustado do Figma (T15): ativo em tinta, inativo em papel.
+   */
+  tone?: 'verde' | 'tinta';
 };
 
 const baseClass =
@@ -62,11 +67,17 @@ export function FilterChip({
   removable = false,
   onRemove,
   compact = false,
+  tone = 'verde',
 }: FilterChipProps) {
   const sizeClass = compact ? undefined : touchClass;
-  const toneClass = active
-    ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
-    : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
+  const toneClass =
+    tone === 'tinta'
+      ? active
+        ? 'border-tinta bg-tinta text-branco-quente hover:brightness-110'
+        : 'border-linha bg-papel text-tinta hover:bg-papel-profundo'
+      : active
+        ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
+        : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
 
   if (removable) {
     return (

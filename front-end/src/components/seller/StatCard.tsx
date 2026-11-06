@@ -9,6 +9,11 @@ export type StatCardProps = {
   icon?: ReactNode;
   /** Variante "você recebeu" — cor de confiança no valor em vez da cor de texto padrão. */
   highlight?: boolean;
+  /**
+   * Visual dos cartões do painel do vendedor no frame ajustado do Figma (T15):
+   * rótulo em caixa alta e negrito, valor em negrito. Só muda a aparência.
+   */
+  emphasized?: boolean;
 };
 
 /**
@@ -28,15 +33,35 @@ export type StatCardProps = {
  *   <StatCard label="Peças ativas" value="12" hint="nos últimos 30 dias" />
  *   <StatCard label="Você recebeu" value="R$ 340,00" highlight />
  */
-function StatCard({ label, value, hint, icon, highlight = false }: StatCardProps) {
+function StatCard({
+  label,
+  value,
+  hint,
+  icon,
+  highlight = false,
+  emphasized = false,
+}: StatCardProps) {
   return (
     <div className="flex w-full flex-col gap-1 border border-linha bg-branco-quente p-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-label text-texto-auxiliar">{label}</span>
+        <span
+          className={clsx(
+            'text-label text-texto-auxiliar',
+            emphasized && 'font-bold uppercase tracking-widest',
+          )}
+        >
+          {label}
+        </span>
         {icon}
       </div>
 
-      <p className={clsx('font-display text-h3', highlight ? 'text-verde-rs' : 'text-tinta')}>
+      <p
+        className={clsx(
+          'font-display text-h3',
+          emphasized && 'font-bold',
+          highlight ? 'text-verde-rs' : 'text-tinta',
+        )}
+      >
         {value}
       </p>
 

@@ -213,4 +213,51 @@ describe('<SellerProductRow />', () => {
       deleteReason.id,
     );
   });
+
+  describe('detalhes da peça e ação principal (frame ajustado do Figma, T15)', () => {
+    it('mostra tamanho, marca e o preço em negrito depois de "Preço:"', () => {
+      renderRow({ product: { ...baseProduct, size: 'M', brand: 'Garimpo Alemão' } });
+
+      const price = screen.getByText(/R\$\s?149,90/);
+      expect(price.className).toContain('font-bold');
+      expect(price.parentElement).toHaveTextContent(
+        /Tamanho M • Garimpo Alemão • Preço:\s*R\$\s?149,90/,
+      );
+    });
+
+    it('só mostra o que a peça tem: sem tamanho nem marca, fica "Preço:" e o valor', () => {
+      renderRow();
+
+      const price = screen.getByText(/R\$\s?149,90/);
+      expect(price.parentElement).toHaveTextContent(/^Preço:\s*R\$\s?149,90$/);
+      expect(price.parentElement?.textContent).not.toContain('Tamanho');
+      expect(price.parentElement?.textContent).not.toContain('•');
+    });
+
+    it('com só um dos dois, não deixa separador sobrando', () => {
+      renderRow({ product: { ...baseProduct, size: 'G' } });
+
+      expect(screen.getByText(/R\$\s?149,90/).parentElement).toHaveTextContent(
+        /^Tamanho G • Preço:\s*R\$\s?149,90$/,
+      );
+    });
+
+    it('a ação com variant secondary ganha contorno; as demais seguem discretas', () => {
+      renderRow({
+        actions: [
+          { label: 'Editar anúncio', variant: 'secondary', onSelect: vi.fn() },
+          { label: 'Pausar', onSelect: vi.fn() },
+        ],
+      });
+
+      expect(screen.getByRole('button', { name: 'Editar anúncio' })).toHaveClass('border-2');
+      expect(screen.getByRole('button', { name: 'Pausar' })).toHaveClass('border-transparent');
+    });
+
+    it('os botões usam o rótulo em caixa alta do frame', () => {
+      renderRow({ actions: [{ label: 'Pausar', onSelect: vi.fn() }] });
+
+      expect(screen.getByRole('button', { name: 'Pausar' })).toHaveClass('uppercase', 'text-label');
+    });
+  });
 });

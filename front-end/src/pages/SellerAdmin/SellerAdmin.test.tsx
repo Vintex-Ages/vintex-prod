@@ -87,13 +87,49 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    const anunciadas = await screen.findByTestId('stat-anunciadas');
-    expect(within(anunciadas).getByText('2')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
+    // As contagens ficam na aba e nos filtros (frame ajustado do Figma, T15).
+    expect(
+      await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (4)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Todas (4)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anunciadas (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pausadas (1)' })).toBeInTheDocument();
 
     expect(screen.getByText('Jaqueta jeans')).toBeInTheDocument();
     expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
+  });
+
+  // Issue #437 (frame ajustado T15): título do painel e só a aba de peças.
+  it('mostra o título do frame e só a aba "Minhas Peças Cadastradas"', async () => {
+    vi.mocked(getMine).mockResolvedValue(pagina([peca()]));
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
+    // Não há rota no back para o vendedor ver Pedidos: a aba não aparece.
+    expect(screen.queryByText(/Pedidos para Envio/i)).toBeNull();
+    expect(screen.queryByRole('tab')).toBeNull();
+  });
+
+  it('o filtro ativo fica marcado e a aba de rascunhos continua ao lado dos filtros', async () => {
+    vi.mocked(getMine).mockResolvedValue(pagina([peca()]));
+
+    renderPage();
+
+    await screen.findByText('Jaqueta jeans');
+    expect(screen.getByRole('button', { name: 'Todas (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Rascunhos' })).toBeInTheDocument();
   });
 
   it('filtra a lista por status sem chamar o serviço de novo', async () => {
@@ -110,7 +146,7 @@ describe('<SellerAdmin />', () => {
     await screen.findByText('Jaqueta jeans');
     expect(getMine).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: 'Vendidas' }));
+    await user.click(screen.getByRole('button', { name: 'Vendidas (1)' }));
 
     expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
     expect(screen.queryByText('Jaqueta jeans')).not.toBeInTheDocument();
@@ -118,7 +154,7 @@ describe('<SellerAdmin />', () => {
   });
 
   // docs/adr/0001 (#297): o back devolve rascunho na listagem sem filtro.
-  it('rascunho não aparece na lista, nos cards nem no total', async () => {
+  it('rascunho não aparece na lista, nos filtros nem no total', async () => {
     vi.mocked(getMine).mockResolvedValue(
       pagina([
         peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
@@ -130,8 +166,11 @@ describe('<SellerAdmin />', () => {
 
     expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
     expect(screen.queryByText('Saia abandonada')).toBeNull();
-    expect(screen.getByText('1 peça no total')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (1)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Todas (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
   });
 
   it('só rascunhos conta como painel vazio', async () => {
@@ -189,7 +228,7 @@ describe('<SellerAdmin />', () => {
     renderPage();
 
     await screen.findByText('Jaqueta jeans');
-    await user.click(screen.getByRole('button', { name: 'Vendidas' }));
+    await user.click(screen.getByRole('button', { name: 'Vendidas (0)' }));
 
     expect(screen.getByText(/nada com esse filtro/i)).toBeInTheDocument();
     expect(screen.queryByText(/anuncie sua primeira peça/i)).not.toBeInTheDocument();
@@ -217,11 +256,12 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    const anunciadas = await screen.findByTestId('stat-anunciadas');
-    expect(within(anunciadas).getByText('100')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('102 peças no total')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (102)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anunciadas (100)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pausadas (1)' })).toBeInTheDocument();
     expect(screen.getByText('Bota Chelsea')).toBeInTheDocument();
     expect(getMine).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100 });
   });
@@ -273,11 +313,11 @@ describe('<SellerAdmin />', () => {
       await screen.findByText('Jaqueta jeans');
 
       const ativa = within(linha('Jaqueta jeans'));
-      expect(ativa.getByRole('button', { name: 'Editar' })).toBeEnabled();
-      expect(ativa.getByRole('button', { name: 'Despublicar' })).toBeInTheDocument();
+      expect(ativa.getByRole('button', { name: 'Editar anúncio' })).toBeEnabled();
+      expect(ativa.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
 
       const pausada = within(linha('Bolsa palha'));
-      expect(pausada.getByRole('button', { name: 'Editar' })).toBeEnabled();
+      expect(pausada.getByRole('button', { name: 'Editar anúncio' })).toBeEnabled();
       expect(pausada.getByRole('button', { name: 'Republicar' })).toBeInTheDocument();
     });
 
@@ -287,20 +327,20 @@ describe('<SellerAdmin />', () => {
       await screen.findByText('Bota Chelsea');
 
       const vendida = within(linha('Bota Chelsea'));
-      const editar = vendida.getByRole('button', { name: 'Editar' });
+      const editar = vendida.getByRole('button', { name: 'Editar anúncio' });
       expect(editar).toBeDisabled();
       expect(editar).toHaveAccessibleDescription('Peça vendida não pode ser editada');
-      expect(vendida.queryByRole('button', { name: 'Despublicar' })).toBeNull();
+      expect(vendida.queryByRole('button', { name: 'Pausar' })).toBeNull();
       expect(vendida.queryByRole('button', { name: 'Bota Chelsea' })).toBeNull();
     });
 
     // Objetivo declarado: garantir RN-52.
-    it('Despublicar pausa a peça, que continua na lista, e avisa com Desfazer', async () => {
+    it('Pausar tira a peça da vitrine, ela continua na lista, e avisa com Desfazer', async () => {
       const user = userEvent.setup();
       renderPage();
       await screen.findByText('Jaqueta jeans');
 
-      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Despublicar' }));
+      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Pausar' }));
 
       expect(unpublish).toHaveBeenCalledWith('1');
       expect(await screen.findByText('Anúncio pausado')).toBeInTheDocument();
@@ -308,14 +348,14 @@ describe('<SellerAdmin />', () => {
       expect(
         within(linha('Jaqueta jeans')).getByRole('button', { name: 'Republicar' }),
       ).toBeInTheDocument();
-      expect(within(screen.getByTestId('stat-pausadas')).getByText('2')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pausadas (2)' })).toBeInTheDocument();
       expect(getMine).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole('button', { name: 'Desfazer' }));
 
       expect(publish).toHaveBeenCalledWith('1');
       expect(
-        await within(linha('Jaqueta jeans')).findByRole('button', { name: 'Despublicar' }),
+        await within(linha('Jaqueta jeans')).findByRole('button', { name: 'Pausar' }),
       ).toBeInTheDocument();
     });
 
@@ -337,7 +377,9 @@ describe('<SellerAdmin />', () => {
       renderPage();
       await screen.findByText('Jaqueta jeans');
 
-      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Editar' }));
+      await user.click(
+        within(linha('Jaqueta jeans')).getByRole('button', { name: 'Editar anúncio' }),
+      );
 
       expect(
         await screen.findByRole('heading', { name: 'Formulário da peça' }),
@@ -352,7 +394,7 @@ describe('<SellerAdmin />', () => {
       renderPage();
       await screen.findByText('Jaqueta jeans');
 
-      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Despublicar' }));
+      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Pausar' }));
 
       expect(
         await screen.findByText('Esta peça já foi vendida e não pode mais ser alterada.'),
@@ -441,8 +483,10 @@ describe('<SellerAdmin />', () => {
       expect(discardDraft).toHaveBeenCalledWith('7');
       await waitFor(() => expect(screen.queryByText('Saia plissada')).toBeNull());
       expect(screen.getByText('Blazer xadrez')).toBeInTheDocument();
-      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
-      expect(screen.getByText('2 peças no total')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
+      ).toBeInTheDocument();
     });
 
     it('cancelar a confirmação não descarta', async () => {
@@ -465,8 +509,10 @@ describe('<SellerAdmin />', () => {
       comRascunhos();
       renderPage();
 
-      expect(await screen.findByText('2 peças no total')).toBeInTheDocument();
-      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
     });
   });
 
@@ -475,8 +521,8 @@ describe('<SellerAdmin />', () => {
       vi.mocked(getMine).mockResolvedValue(pagina([]));
     });
 
-    // Objetivo declarado: garantir a visão financeira (RN-51.1, RN-11).
-    it('duas vendas de R$ 100 mostram bruto 200, comissão 18 e líquido 182', async () => {
+    // Objetivo declarado: garantir a visão financeira (RN-51.1, RN-11, RN-95).
+    it('duas vendas de R$ 100 mostram o bruto 200 e a taxa retida 18, como no frame', async () => {
       vi.mocked(getSalesSummary).mockResolvedValue({
         period: 'month',
         soldCount: 2,
@@ -488,47 +534,90 @@ describe('<SellerAdmin />', () => {
       renderPage();
 
       const bruto = await screen.findByTestId('financeiro-bruto');
-      expect(within(bruto).getByText('Vendido no período')).toBeInTheDocument();
+      expect(within(bruto).getByText('Faturamento bruto no mês')).toBeInTheDocument();
       expect(within(bruto).getByText('R$ 200,00')).toBeInTheDocument();
+      expect(within(bruto).getByText('2 peças vendidas no mês')).toBeInTheDocument();
       const comissao = screen.getByTestId('financeiro-comissao');
-      expect(within(comissao).getByText('Comissão (9%)')).toBeInTheDocument();
+      expect(within(comissao).getByText('Taxa média retida (9%)')).toBeInTheDocument();
       expect(within(comissao).getByText('R$ 18,00')).toBeInTheDocument();
-      expect(
-        within(screen.getByTestId('financeiro-liquido')).getByText('R$ 182,00'),
-      ).toBeInTheDocument();
       expect(getSalesSummary).toHaveBeenCalledWith('month');
     });
 
-    // Objetivo declarado: garantir o filtro.
-    it('trocar o período refaz a consulta com skeleton nos cards', async () => {
-      const user = userEvent.setup();
+    // Critério da issue #437: os números vêm do resumo do back, nenhum é calculado na tela.
+    it('mostra os números do resumo como vieram, sem recalcular nada', async () => {
+      // 25 não é 9% de 200: se a tela recalculasse, apareceria R$ 18,00.
+      vi.mocked(getSalesSummary).mockResolvedValue({
+        period: 'month',
+        soldCount: 2,
+        gross: 200,
+        commission: 25,
+        net: 175,
+      });
+
       renderPage();
+
+      const comissao = await screen.findByTestId('financeiro-comissao');
+      expect(within(comissao).getByText('R$ 25,00')).toBeInTheDocument();
+      expect(screen.queryByText('R$ 18,00')).toBeNull();
+    });
+
+    // Fora do painel por falta de número no back (issue #437): não é inventado nem calculado.
+    it('não mostra "Repasses pendentes", o percentual de líquido nem o valor líquido', async () => {
+      vi.mocked(getSalesSummary).mockResolvedValue({
+        period: 'month',
+        soldCount: 2,
+        gross: 200,
+        commission: 18,
+        net: 182,
+      });
+
+      renderPage();
+
       await screen.findByTestId('financeiro-bruto');
+      expect(screen.queryByText(/Repasses pendentes/i)).toBeNull();
+      expect(screen.queryByText(/91%/)).toBeNull();
+      expect(screen.queryByText('R$ 182,00')).toBeNull();
+      expect(screen.queryByText(/Pedidos para Envio/i)).toBeNull();
+    });
 
-      let resolver: () => void = () => {};
-      vi.mocked(getSalesSummary).mockImplementationOnce(
-        (period) =>
-          new Promise((resolve) => {
-            resolver = () => resolve({ period, soldCount: 1, gross: 100, commission: 9, net: 91 });
-          }),
-      );
+    it('uma venda usa o singular', async () => {
+      vi.mocked(getSalesSummary).mockResolvedValue({
+        period: 'month',
+        soldCount: 1,
+        gross: 100,
+        commission: 9,
+        net: 91,
+      });
 
-      await user.selectOptions(screen.getByLabelText('Período'), 'Últimos 30 dias');
+      renderPage();
 
-      expect(getSalesSummary).toHaveBeenLastCalledWith('30d');
-      expect(screen.getByTestId('financeiro-skeleton')).toBeInTheDocument();
+      expect(await screen.findByText('1 peça vendida no mês')).toBeInTheDocument();
+    });
 
-      resolver();
-      const liquido = await screen.findByTestId('financeiro-liquido');
-      expect(await within(liquido).findByText('R$ 91,00')).toBeInTheDocument();
+    it('o frame não tem seletor de período: consulta sempre o mês, uma vez', async () => {
+      renderPage();
+
+      await screen.findByTestId('financeiro-bruto');
+      expect(screen.queryByLabelText('Período')).toBeNull();
+      expect(getSalesSummary).toHaveBeenCalledTimes(1);
+      expect(getSalesSummary).toHaveBeenCalledWith('month');
+    });
+
+    it('mostra o skeleton dos cartões enquanto carrega o resumo', async () => {
+      vi.mocked(getSalesSummary).mockReturnValue(new Promise(() => {}));
+
+      renderPage();
+
+      expect(await screen.findByTestId('financeiro-skeleton')).toBeInTheDocument();
+      expect(screen.queryByTestId('financeiro-bruto')).toBeNull();
     });
 
     it('sem vendas mostra R$ 0,00 e uma nota', async () => {
       renderPage();
 
-      const liquido = await screen.findByTestId('financeiro-liquido');
-      expect(within(liquido).getByText('R$ 0,00')).toBeInTheDocument();
-      expect(screen.getByText(/Nenhuma venda neste período ainda/)).toBeInTheDocument();
+      const bruto = await screen.findByTestId('financeiro-bruto');
+      expect(within(bruto).getByText('R$ 0,00')).toBeInTheDocument();
+      expect(screen.getByText(/Nenhuma venda neste mês ainda/)).toBeInTheDocument();
     });
 
     // docs/adr/0002 (#297): rota ausente no back não é falha que se tenta de novo.
@@ -557,7 +646,7 @@ describe('<SellerAdmin />', () => {
       ).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
-      expect(await screen.findByTestId('financeiro-liquido')).toBeInTheDocument();
+      expect(await screen.findByTestId('financeiro-bruto')).toBeInTheDocument();
       expect(getSalesSummary).toHaveBeenCalledTimes(2);
     });
   });
