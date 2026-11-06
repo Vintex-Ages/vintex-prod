@@ -21,22 +21,10 @@
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 0,
+        "required_approving_review_count": 2,
         "dismiss_stale_reviews_on_push": true,
-        "required_reviewers": [
-          {
-            "minimum_approvals": 2,
-            "file_patterns": [
-              "*",
-              "**/*"
-            ],
-            "reviewer": {
-              "id": 19183386,
-              "type": "Team"
-            }
-          }
-        ],
-        "require_code_owner_review": false,
+        "required_reviewers": [],
+        "require_code_owner_review": true,
         "dismissal_restriction": {
           "enabled": false,
           "allowed_actors": []
