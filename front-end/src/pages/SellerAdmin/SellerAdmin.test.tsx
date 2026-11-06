@@ -321,6 +321,19 @@ describe('<SellerAdmin />', () => {
       expect(pausada.getByRole('button', { name: 'Republicar' })).toBeInTheDocument();
     });
 
+    // O botão não pode mudar de tamanho nem empurrar o "Editar anúncio" ao pausar: "Pausar"
+    // reserva a largura de "Republicar", que é o texto mais largo.
+    it('"Pausar" reserva a largura de "Republicar"; "Republicar" já é o mais largo', async () => {
+      renderPage();
+      await screen.findByText('Jaqueta jeans');
+
+      const pausar = within(linha('Jaqueta jeans')).getByRole('button', { name: 'Pausar' });
+      expect(within(pausar).getByText('Republicar')).toHaveAttribute('aria-hidden', 'true');
+
+      const republicar = within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' });
+      expect(republicar.textContent).toBe('Republicar');
+    });
+
     // Objetivo declarado: garantir RN-53.
     it('vendida tem Editar desabilitado com o motivo e não pode despublicar', async () => {
       renderPage();
@@ -345,18 +358,20 @@ describe('<SellerAdmin />', () => {
       expect(unpublish).toHaveBeenCalledWith('1');
       expect(await screen.findByText('Anúncio pausado')).toBeInTheDocument();
       expect(within(linha('Jaqueta jeans')).getByText('Pausada')).toBeInTheDocument();
-      expect(
-        within(linha('Jaqueta jeans')).getByRole('button', { name: 'Republicar' }),
-      ).toBeInTheDocument();
+      const republicar = within(linha('Jaqueta jeans')).getByRole('button', { name: 'Republicar' });
+      expect(republicar).toBeInTheDocument();
+      // "Republicar" é o texto mais largo: não reserva nada, mantém o tamanho dele.
+      expect(republicar.textContent).toBe('Republicar');
       expect(screen.getByRole('button', { name: 'Pausadas (2)' })).toBeInTheDocument();
       expect(getMine).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole('button', { name: 'Desfazer' }));
 
       expect(publish).toHaveBeenCalledWith('1');
-      expect(
-        await within(linha('Jaqueta jeans')).findByRole('button', { name: 'Pausar' }),
-      ).toBeInTheDocument();
+      const pausar = await within(linha('Jaqueta jeans')).findByRole('button', { name: 'Pausar' });
+      expect(pausar).toBeInTheDocument();
+      // De volta a "Pausar", o botão reserva a largura de "Republicar" e não encolhe.
+      expect(within(pausar).getByText('Republicar')).toHaveAttribute('aria-hidden', 'true');
     });
 
     it('Republicar usa publish e volta a peça para anunciada', async () => {

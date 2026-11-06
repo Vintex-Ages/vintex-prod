@@ -49,12 +49,12 @@ function FinancialSummary() {
           <div
             aria-hidden="true"
             data-testid="financeiro-skeleton"
-            className="grid grid-cols-1 gap-4 tablet:grid-cols-2"
+            className="grid grid-cols-2 gap-3 web:gap-5"
           >
             {Array.from({ length: 2 }).map((_, index) => (
               <div
                 key={index}
-                className="flex animate-pulse flex-col gap-2 border border-linha bg-branco-quente p-4 motion-reduce:animate-none"
+                className="flex min-h-[10.4rem] animate-pulse flex-col gap-2 border border-linha bg-branco-quente p-[0.85rem] motion-reduce:animate-none tablet:min-h-0 tablet:p-5"
               >
                 <span className="h-3 w-24 bg-papel-profundo" />
                 <span className="h-7 w-32 bg-papel-profundo" />
@@ -74,8 +74,9 @@ function FinancialSummary() {
 
       {state.status === 'ready' && (
         <>
-          <div className="grid grid-cols-1 gap-4 tablet:grid-cols-2">
-            <div data-testid="financeiro-bruto">
+          {/* Frame ajustado (T15): duas colunas também no celular, cartões de ~172×166 px. */}
+          <div className="grid grid-cols-2 gap-3 web:gap-5">
+            <div data-testid="financeiro-bruto" className="flex min-h-[10.4rem] tablet:min-h-0">
               <StatCard
                 label="Faturamento bruto no mês"
                 value={brl(state.summary.gross)}
@@ -84,7 +85,7 @@ function FinancialSummary() {
                 emphasized
               />
             </div>
-            <div data-testid="financeiro-comissao">
+            <div data-testid="financeiro-comissao" className="flex min-h-[10.4rem] tablet:min-h-0">
               <StatCard
                 label={`Taxa média retida (${COMMISSION_PERCENT}%)`}
                 value={brl(state.summary.commission)}

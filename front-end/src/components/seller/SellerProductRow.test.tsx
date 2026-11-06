@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SellerProduct } from '@/types/product';
 import SellerProductRow, { type RowAction, type SellerProductRowProps } from './SellerProductRow';
@@ -220,7 +220,7 @@ describe('<SellerProductRow />', () => {
 
       const price = screen.getByText(/R\$\s?149,90/);
       expect(price.className).toContain('font-bold');
-      expect(price.parentElement).toHaveTextContent(
+      expect(price.closest('p')).toHaveTextContent(
         /Tamanho M • Garimpo Alemão • Preço:\s*R\$\s?149,90/,
       );
     });
@@ -229,20 +229,20 @@ describe('<SellerProductRow />', () => {
       renderRow();
 
       const price = screen.getByText(/R\$\s?149,90/);
-      expect(price.parentElement).toHaveTextContent(/^Preço:\s*R\$\s?149,90$/);
-      expect(price.parentElement?.textContent).not.toContain('Tamanho');
-      expect(price.parentElement?.textContent).not.toContain('•');
+      expect(price.closest('p')).toHaveTextContent(/^Preço:\s*R\$\s?149,90$/);
+      expect(price.closest('p')?.textContent).not.toContain('Tamanho');
+      expect(price.closest('p')?.textContent).not.toContain('•');
     });
 
     it('com só um dos dois, não deixa separador sobrando', () => {
       renderRow({ product: { ...baseProduct, size: 'G' } });
 
-      expect(screen.getByText(/R\$\s?149,90/).parentElement).toHaveTextContent(
+      expect(screen.getByText(/R\$\s?149,90/).closest('p')).toHaveTextContent(
         /^Tamanho G • Preço:\s*R\$\s?149,90$/,
       );
     });
 
-    it('a ação com variant secondary ganha contorno; as demais seguem discretas', () => {
+    it('com ação principal, todas ficam do tamanho do texto e agrupadas à direita', () => {
       renderRow({
         actions: [
           { label: 'Editar anúncio', variant: 'secondary', onSelect: vi.fn() },
@@ -250,14 +250,91 @@ describe('<SellerProductRow />', () => {
         ],
       });
 
-      expect(screen.getByRole('button', { name: 'Editar anúncio' })).toHaveClass('border-2');
+      const principal = screen.getByRole('button', { name: 'Editar anúncio' }).closest('li');
+      const outra = screen.getByRole('button', { name: 'Pausar' }).closest('li');
+      expect(principal).toHaveClass('flex-none');
+      expect(outra).toHaveClass('flex-none');
+      expect(principal?.closest('ul')).toHaveClass('justify-end');
+    });
+
+    it('sem ação principal, as ações dividem a linha (rascunhos)', () => {
+      renderRow({
+        actions: [
+          { label: 'Continuar', onSelect: vi.fn() },
+          { label: 'Descartar', onSelect: vi.fn() },
+        ],
+      });
+
+      expect(screen.getByRole('button', { name: 'Continuar' }).closest('li')).toHaveClass('flex-1');
+      expect(screen.getByRole('button', { name: 'Descartar' }).closest('li')).toHaveClass('flex-1');
+    });
+
+    it('a ação com variant secondary ganha contorno de 1px na cor de borda do projeto; as demais seguem discretas', () => {
+      renderRow({
+        actions: [
+          { label: 'Editar anúncio', variant: 'secondary', onSelect: vi.fn() },
+          { label: 'Pausar', onSelect: vi.fn() },
+        ],
+      });
+
+      const principal = screen.getByRole('button', { name: 'Editar anúncio' });
+      expect(principal).toHaveClass('border-linha', 'border-[1px]', 'px-[0.75rem]');
       expect(screen.getByRole('button', { name: 'Pausar' })).toHaveClass('border-transparent');
+    });
+
+    it('o botão compacto usa só cores de token (nenhuma cor solta do Figma)', () => {
+      renderRow({
+        actions: [{ label: 'Editar anúncio', variant: 'secondary', onSelect: vi.fn() }],
+      });
+
+      expect(screen.getByRole('button', { name: 'Editar anúncio' }).className).not.toMatch(
+        /\[#[0-9a-fA-F]{3,8}\]/,
+      );
     });
 
     it('os botões usam o rótulo em caixa alta do frame', () => {
       renderRow({ actions: [{ label: 'Pausar', onSelect: vi.fn() }] });
 
       expect(screen.getByRole('button', { name: 'Pausar' })).toHaveClass('uppercase', 'text-label');
+    });
+
+    // Ao pausar, "Pausar" vira "Republicar" (mais largo): o botão reserva a largura do maior texto
+    // para não encolher nem empurrar o "Editar anúncio".
+    describe('widthLabel (largura estável quando o texto troca)', () => {
+      it('reserva a largura do texto mais largo, invisível e escondido de leitor de tela', () => {
+        renderRow({ actions: [{ label: 'Pausar', widthLabel: 'Republicar', onSelect: vi.fn() }] });
+
+        const button = screen.getByRole('button', { name: 'Pausar' });
+        const reservado = within(button).getByText('Republicar');
+        expect(reservado).toHaveAttribute('aria-hidden', 'true');
+        expect(reservado).toHaveClass('invisible');
+        expect(button).toHaveAccessibleName('Pausar');
+      });
+
+      it('o texto visível e o reservado ocupam a mesma célula, então vale o maior dos dois', () => {
+        renderRow({ actions: [{ label: 'Pausar', widthLabel: 'Republicar', onSelect: vi.fn() }] });
+
+        const button = screen.getByRole('button', { name: 'Pausar' });
+        expect(within(button).getByText('Pausar')).toHaveClass('col-start-1', 'row-start-1');
+        expect(within(button).getByText('Republicar')).toHaveClass('col-start-1', 'row-start-1');
+        expect(within(button).getByText('Pausar').parentElement).toHaveClass('inline-grid');
+      });
+
+      it('clicar no botão com largura reservada continua chamando a ação', async () => {
+        const onSelect = vi.fn();
+        const user = userEvent.setup();
+        renderRow({ actions: [{ label: 'Pausar', widthLabel: 'Republicar', onSelect }] });
+
+        await user.click(screen.getByRole('button', { name: 'Pausar' }));
+
+        expect(onSelect).toHaveBeenCalledTimes(1);
+      });
+
+      it('sem widthLabel o botão mostra só o texto', () => {
+        renderRow({ actions: [{ label: 'Republicar', onSelect: vi.fn() }] });
+
+        expect(screen.getByRole('button', { name: 'Republicar' }).textContent).toBe('Republicar');
+      });
     });
   });
 });

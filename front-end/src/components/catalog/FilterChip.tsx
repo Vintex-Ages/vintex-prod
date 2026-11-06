@@ -39,7 +39,7 @@ type FilterChipProps = {
 };
 
 const baseClass =
-  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
+  'inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
 
 /** Altura mínima de toque (44px) no padrão; `compact` dispensa. */
 const touchClass = 'min-h-touch';
@@ -70,6 +70,8 @@ export function FilterChip({
   tone = 'verde',
 }: FilterChipProps) {
   const sizeClass = compact ? undefined : touchClass;
+  // Padding lateral do chip do painel no Figma (15,2px); o padrão do catálogo é 12px.
+  const paddingClass = tone === 'tinta' ? 'px-[0.95rem]' : 'px-3';
   const toneClass =
     tone === 'tinta'
       ? active
@@ -85,7 +87,7 @@ export function FilterChip({
         type="button"
         aria-label={`Remover ${label}`}
         onClick={onRemove}
-        className={clsx(baseClass, sizeClass, toneClass)}
+        className={clsx(baseClass, paddingClass, sizeClass, toneClass)}
       >
         <span>{label}</span>
         <RemoveIcon />
@@ -98,7 +100,7 @@ export function FilterChip({
       type="button"
       aria-pressed={active}
       onClick={onToggle}
-      className={clsx(baseClass, sizeClass, toneClass)}
+      className={clsx(baseClass, paddingClass, sizeClass, toneClass)}
     >
       {label}
     </button>

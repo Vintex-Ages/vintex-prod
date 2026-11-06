@@ -107,7 +107,15 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
     switch (product.status) {
       case 'ativo':
-        return [editar, { label: 'Pausar', onSelect: () => void despublicar(product) }];
+        // "Pausar" reserva a largura de "Republicar": ao pausar, o botão não encolhe nem move o "Editar anúncio".
+        return [
+          editar,
+          {
+            label: 'Pausar',
+            widthLabel: 'Republicar',
+            onSelect: () => void despublicar(product),
+          },
+        ];
       case 'despublicado':
         return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
       case 'vendido':
@@ -121,7 +129,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
     <Container as="main" className="flex flex-col gap-6 py-10">
       <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="font-display text-h2 text-tinta">
+          {/* 35,2px fixos, entrelinha 38,72px e espaçamento −0,02em: medidas do título no frame (T15). */}
+          <h1 className="font-display text-[2.2rem] leading-[1.1] tracking-[-0.02em] text-tinta">
             Painel de Vendas &amp; Gestão de Peças
           </h1>
           <p className="font-ui text-body-sm text-texto-auxiliar">
@@ -141,11 +150,15 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
       <TrustSealCard storeSource={storeSource} />
 
       {/* Única aba do frame (a de "Pedidos para Envio" não existe): é só o título da lista. */}
+      {/* No celular a aba ocupa metade da largura, em duas linhas, como no frame (T15). */}
       <div className="border-b-2 border-tinta">
-        <h2 className="inline-flex min-h-touch items-center bg-tinta px-6 font-ui text-body-sm font-semibold text-branco-quente">
-          {state.status === 'ready'
-            ? `Minhas Peças Cadastradas (${state.counts.total})`
-            : 'Minhas Peças Cadastradas'}
+        <h2 className="flex min-h-touch w-1/2 items-center justify-center bg-tinta px-2 py-3 text-center font-ui text-[0.85rem] font-semibold leading-[normal] text-branco-quente tablet:inline-flex tablet:w-auto tablet:px-6">
+          <span>
+            <span className="block tablet:inline">Minhas Peças</span>{' '}
+            <span className="block tablet:inline">
+              {state.status === 'ready' ? `Cadastradas (${state.counts.total})` : 'Cadastradas'}
+            </span>
+          </span>
         </h2>
       </div>
 
@@ -178,7 +191,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
       {state.status === 'ready' && (
         <>
-          <div className="flex flex-wrap gap-2">
+          {/* Uma linha só, com rolagem na horizontal, como no frame (T15): os filtros não quebram. */}
+          <div className="flex gap-2 overflow-x-auto pb-4">
             {CHIPS.map((chip) => (
               <FilterChip
                 key={chip.value}
