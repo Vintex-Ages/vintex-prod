@@ -458,7 +458,9 @@ describe('<SellerAdmin />', () => {
       await user.click(await screen.findByText(RESERVADA.name));
 
       expect(screen.queryByRole('heading', { name: 'Formulário da peça' })).not.toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Painel de Vendas & Gestão de Peças' }),
+      ).toBeInTheDocument();
       expect(publish).not.toHaveBeenCalled();
       expect(unpublish).not.toHaveBeenCalled();
     });
@@ -469,7 +471,10 @@ describe('<SellerAdmin />', () => {
 
       const nome = await screen.findByText(RESERVADA.name);
       const linha = within(nome.closest('article') as HTMLElement);
-      expect(screen.getByRole('button', { name: 'Todas' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Todas (4)' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
       expect(linha.getByText('Reservada', { exact: true })).toBeInTheDocument();
       expect(screen.getByText('4 peças no total')).toBeInTheDocument();
       expect(linha.queryByRole('link')).not.toBeInTheDocument();
@@ -492,16 +497,16 @@ describe('<SellerAdmin />', () => {
 
       expect(screen.queryByRole('button', { name: /^Reservadas$/i })).not.toBeInTheDocument();
       for (const [filtro, nome] of [
-        ['Anunciadas', ATIVA.name],
-        ['Vendidas', VENDIDA.name],
-        ['Pausadas', PAUSADA.name],
+        ['Anunciadas (1)', ATIVA.name],
+        ['Vendidas (1)', VENDIDA.name],
+        ['Pausadas (1)', PAUSADA.name],
       ]) {
         await user.click(screen.getByRole('button', { name: filtro }));
         expect(screen.getByText(nome)).toBeInTheDocument();
         expect(screen.queryByText(RESERVADA.name)).not.toBeInTheDocument();
       }
 
-      await user.click(screen.getByRole('button', { name: 'Todas' }));
+      await user.click(screen.getByRole('button', { name: 'Todas (4)' }));
       expect(screen.getByText(RESERVADA.name)).toBeInTheDocument();
       expect(getMine).toHaveBeenCalledTimes(1);
       expect(getMine).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'reservado' }));
