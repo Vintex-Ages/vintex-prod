@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
+import StatCard from '@/components/seller/StatCard';
 import { useToast } from '@/context/useToast';
 import {
   useSellerProducts,
@@ -134,7 +135,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
             Painel de Vendas &amp; Gestão de Peças
           </h1>
           <p className="font-ui text-body-sm text-texto-auxiliar">
-            Acompanhe seus anúncios ativos e os valores a receber via Pix.
+            Acompanhe seus anúncios ativos, valores a receber via Pix e pedidos prontos para envio.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -191,6 +192,25 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
       {state.status === 'ready' && (
         <>
+          <section
+            aria-label="Resumo das suas peças"
+            className="grid grid-cols-1 gap-4 web:grid-cols-3"
+          >
+            <div data-testid="stat-anunciadas">
+              <StatCard label="Anunciadas" value={String(state.counts.ativo)} />
+            </div>
+            <div data-testid="stat-vendidas">
+              <StatCard label="Vendidas" value={String(state.counts.vendido)} />
+            </div>
+            <div data-testid="stat-pausadas">
+              <StatCard label="Pausadas" value={String(state.counts.despublicado)} />
+            </div>
+          </section>
+
+          <p className="font-ui text-body-sm text-texto-auxiliar">
+            {state.counts.total === 1 ? '1 peça no total' : `${state.counts.total} peças no total`}
+          </p>
+
           {/* Uma linha só, com rolagem na horizontal, como no frame (T15): os filtros não quebram. */}
           <div className="flex gap-2 overflow-x-auto pb-4">
             {CHIPS.map((chip) => (

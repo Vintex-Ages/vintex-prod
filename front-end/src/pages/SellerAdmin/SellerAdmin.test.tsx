@@ -87,9 +87,16 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    // As contagens ficam na aba e nos filtros (frame ajustado do Figma, T15).
+    // Os cartões de contagem continuam no painel...
+    const anunciadas = await screen.findByTestId('stat-anunciadas');
+    expect(within(anunciadas).getByText('2')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('4 peças no total')).toBeInTheDocument();
+
+    // ...e as contagens também aparecem na aba e nos filtros (frame ajustado do Figma, T15).
     expect(
-      await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (4)' }),
+      screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (4)' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Todas (4)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Anunciadas (2)' })).toBeInTheDocument();
@@ -108,6 +115,12 @@ describe('<SellerAdmin />', () => {
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
+    // Subtítulo com o texto exato do frame.
+    expect(
+      screen.getByText(
+        'Acompanhe seus anúncios ativos, valores a receber via Pix e pedidos prontos para envio.',
+      ),
     ).toBeInTheDocument();
     expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
     // Não há rota no back para o vendedor ver Pedidos: a aba não aparece.
@@ -154,7 +167,7 @@ describe('<SellerAdmin />', () => {
   });
 
   // docs/adr/0001 (#297): o back devolve rascunho na listagem sem filtro.
-  it('rascunho não aparece na lista, nos filtros nem no total', async () => {
+  it('rascunho não aparece na lista, nos cards nem no total', async () => {
     vi.mocked(getMine).mockResolvedValue(
       pagina([
         peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
@@ -166,6 +179,9 @@ describe('<SellerAdmin />', () => {
 
     expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
     expect(screen.queryByText('Saia abandonada')).toBeNull();
+    expect(screen.getByText('1 peça no total')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+    // A aba e os filtros (frame ajustado, T15) também não contam o rascunho.
     expect(
       screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (1)' }),
     ).toBeInTheDocument();
@@ -256,8 +272,14 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
+    const anunciadas = await screen.findByTestId('stat-anunciadas');
+    expect(within(anunciadas).getByText('100')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('102 peças no total')).toBeInTheDocument();
+    // A aba e os filtros (frame ajustado, T15) usam as mesmas contagens.
     expect(
-      await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (102)' }),
+      screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (102)' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Anunciadas (100)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toBeInTheDocument();
@@ -362,6 +384,7 @@ describe('<SellerAdmin />', () => {
       expect(republicar).toBeInTheDocument();
       // "Republicar" é o texto mais largo: não reserva nada, mantém o tamanho dele.
       expect(republicar.textContent).toBe('Republicar');
+      expect(within(screen.getByTestId('stat-pausadas')).getByText('2')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Pausadas (2)' })).toBeInTheDocument();
       expect(getMine).toHaveBeenCalledTimes(1);
 
@@ -498,6 +521,8 @@ describe('<SellerAdmin />', () => {
       expect(discardDraft).toHaveBeenCalledWith('7');
       await waitFor(() => expect(screen.queryByText('Saia plissada')).toBeNull());
       expect(screen.getByText('Blazer xadrez')).toBeInTheDocument();
+      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+      expect(screen.getByText('2 peças no total')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
       expect(
         screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
@@ -524,8 +549,10 @@ describe('<SellerAdmin />', () => {
       comRascunhos();
       renderPage();
 
+      expect(await screen.findByText('2 peças no total')).toBeInTheDocument();
+      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
       expect(
-        await screen.findByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
+        screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
     });
@@ -537,7 +564,7 @@ describe('<SellerAdmin />', () => {
     });
 
     // Objetivo declarado: garantir a visão financeira (RN-51.1, RN-11, RN-95).
-    it('duas vendas de R$ 100 mostram o bruto 200 e a taxa retida 18, como no frame', async () => {
+    it('duas vendas de R$ 100 mostram bruto 200, taxa retida 18 e líquido 182', async () => {
       vi.mocked(getSalesSummary).mockResolvedValue({
         period: 'month',
         soldCount: 2,
@@ -555,6 +582,9 @@ describe('<SellerAdmin />', () => {
       const comissao = screen.getByTestId('financeiro-comissao');
       expect(within(comissao).getByText('Taxa média retida (9%)')).toBeInTheDocument();
       expect(within(comissao).getByText('R$ 18,00')).toBeInTheDocument();
+      const liquido = screen.getByTestId('financeiro-liquido');
+      expect(within(liquido).getByText('Você recebeu')).toBeInTheDocument();
+      expect(within(liquido).getByText('R$ 182,00')).toBeInTheDocument();
       expect(getSalesSummary).toHaveBeenCalledWith('month');
     });
 
@@ -577,7 +607,7 @@ describe('<SellerAdmin />', () => {
     });
 
     // Fora do painel por falta de número no back (issue #437): não é inventado nem calculado.
-    it('não mostra "Repasses pendentes", o percentual de líquido nem o valor líquido', async () => {
+    it('não mostra "Repasses pendentes" nem o percentual de líquido, que o back não traz', async () => {
       vi.mocked(getSalesSummary).mockResolvedValue({
         period: 'month',
         soldCount: 2,
@@ -591,7 +621,6 @@ describe('<SellerAdmin />', () => {
       await screen.findByTestId('financeiro-bruto');
       expect(screen.queryByText(/Repasses pendentes/i)).toBeNull();
       expect(screen.queryByText(/91%/)).toBeNull();
-      expect(screen.queryByText('R$ 182,00')).toBeNull();
       expect(screen.queryByText(/Pedidos para Envio/i)).toBeNull();
     });
 
@@ -609,13 +638,42 @@ describe('<SellerAdmin />', () => {
       expect(await screen.findByText('1 peça vendida no mês')).toBeInTheDocument();
     });
 
-    it('o frame não tem seletor de período: consulta sempre o mês, uma vez', async () => {
+    it('o seletor de período continua no Financeiro e começa no mês, com uma consulta só', async () => {
       renderPage();
 
       await screen.findByTestId('financeiro-bruto');
-      expect(screen.queryByLabelText('Período')).toBeNull();
+      expect(screen.getByRole('heading', { name: 'Financeiro' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Período')).toHaveValue('month');
       expect(getSalesSummary).toHaveBeenCalledTimes(1);
       expect(getSalesSummary).toHaveBeenCalledWith('month');
+    });
+
+    // Objetivo declarado: garantir o filtro.
+    it('trocar o período refaz a consulta com skeleton nos cards', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId('financeiro-bruto');
+
+      let resolver: () => void = () => {};
+      vi.mocked(getSalesSummary).mockImplementationOnce(
+        (period) =>
+          new Promise((resolve) => {
+            resolver = () => resolve({ period, soldCount: 1, gross: 100, commission: 9, net: 91 });
+          }),
+      );
+
+      await user.selectOptions(screen.getByLabelText('Período'), 'Últimos 30 dias');
+
+      expect(getSalesSummary).toHaveBeenLastCalledWith('30d');
+      expect(screen.getByTestId('financeiro-skeleton')).toBeInTheDocument();
+
+      resolver();
+      const liquido = await screen.findByTestId('financeiro-liquido');
+      expect(await within(liquido).findByText('R$ 91,00')).toBeInTheDocument();
+      // O rótulo acompanha o período escolhido (no mês, ele é o do frame do Figma).
+      const bruto = screen.getByTestId('financeiro-bruto');
+      expect(within(bruto).getByText('Faturamento bruto nos últimos 30 dias')).toBeInTheDocument();
+      expect(within(bruto).getByText('1 peça vendida nos últimos 30 dias')).toBeInTheDocument();
     });
 
     it('mostra o skeleton dos cartões enquanto carrega o resumo', async () => {
@@ -630,9 +688,12 @@ describe('<SellerAdmin />', () => {
     it('sem vendas mostra R$ 0,00 e uma nota', async () => {
       renderPage();
 
-      const bruto = await screen.findByTestId('financeiro-bruto');
-      expect(within(bruto).getByText('R$ 0,00')).toBeInTheDocument();
-      expect(screen.getByText(/Nenhuma venda neste mês ainda/)).toBeInTheDocument();
+      const liquido = await screen.findByTestId('financeiro-liquido');
+      expect(within(liquido).getByText('R$ 0,00')).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('financeiro-bruto')).getByText('R$ 0,00'),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Nenhuma venda neste período ainda/)).toBeInTheDocument();
     });
 
     // docs/adr/0002 (#297): rota ausente no back não é falha que se tenta de novo.
