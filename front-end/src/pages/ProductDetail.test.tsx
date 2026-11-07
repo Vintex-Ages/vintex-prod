@@ -15,8 +15,10 @@ import { useFavorites } from '@/context/useFavorites';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { PENDING_ACTION_STORAGE_KEY } from '@/hooks/useProtectedAction';
 import { paths } from '@/routes/paths';
+import * as catalogService from '@/services/catalogService';
 import type { AuthUser } from '@/types/auth';
 import type { Cart } from '@/types/cart';
+import type { ProductDetail as ProductDetailData } from '@/types/product';
 import ProductDetail from './ProductDetail';
 
 vi.mock('@/services/cartService', () => ({
@@ -380,6 +382,146 @@ describe('<ProductDetail />', () => {
 
     expect(screen.getByRole('button', { name: 'Adicionar aos favoritos' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
+  });
+
+  describe('#408 — peça reservada', () => {
+    const reservada: ProductDetailData = {
+      ...CARD_PRODUCT,
+      name: 'Jaqueta reservada',
+      status: 'reservado',
+      category: 'Roupas',
+      size: 'G',
+      color: 'Azul',
+      brand: 'Vintage',
+      condition: 'Usado',
+      description: 'Jaqueta aguardando aprovação do comprovante do pedido.',
+      media: [],
+    };
+
+    beforeEach(() => {
+      vi.spyOn(catalogService, 'getProduct').mockResolvedValue(reservada);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    describe('RED — indisponibilidade de compra', () => {
+      it('identifica a reserva com o selo Reservada, sem informar que foi vendida', async () => {
+        renderAt('/product/1');
+
+        await screen.findByRole('heading', { name: reservada.name });
+
+        expect(screen.getByText('Reservada', { exact: true })).toBeInTheDocument();
+        expect(screen.queryByText(/vendid[ao]/i)).not.toBeInTheDocument();
+      });
+
+      it.each([/Comprar Agora/, /Adicionar ao carrinho/])(
+        'desabilita o controle %s para a peça reservada',
+        async (name) => {
+          renderAt('/product/1', { authenticated: true });
+
+          const buttons = await screen.findAllByRole('button', { name });
+          for (const button of buttons) expect(button).toBeDisabled();
+        },
+      );
+
+      it('não abre o checkout ao tentar comprar a peça reservada', async () => {
+        const user = userEvent.setup();
+        renderAt('/product/1', { authenticated: true });
+
+        const buttons = await screen.findAllByRole('button', { name: /Comprar Agora/ });
+        for (const button of buttons) await user.click(button);
+
+        expect(screen.queryByRole('heading', { name: 'Checkout' })).not.toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: reservada.name })).toBeInTheDocument();
+      });
+
+      it('não chama add ao tentar colocar a peça reservada na sacola', async () => {
+        const user = userEvent.setup();
+        const add = vi.fn().mockResolvedValue(undefined);
+        renderAt('/product/1', {
+          authenticated: true,
+          cartValue: createCartValue({ add }),
+        });
+
+        const buttons = await screen.findAllByRole('button', { name: 'Adicionar ao carrinho' });
+        for (const button of buttons) await user.click(button);
+
+        expect(add).not.toHaveBeenCalled();
+        expect(screen.queryByText('Adicionada ao carrinho')).not.toBeInTheDocument();
+      });
+
+      it.each([/Comprar Agora/, /Adicionar ao carrinho/])(
+        'não retoma %s após login se a peça ficou reservada',
+        async (name) => {
+          const user = userEvent.setup();
+          const add = vi.fn().mockResolvedValue(undefined);
+          vi.mocked(catalogService.getProduct)
+            .mockResolvedValueOnce({ ...reservada, status: 'ativo' })
+            .mockResolvedValue(reservada);
+          renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+          await user.click(await screen.findByRole('button', { name }));
+          await user.click(await screen.findByRole('button', { name: 'Entrar' }));
+          await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+          await waitFor(() => expect(catalogService.getProduct).toHaveBeenCalledTimes(2));
+          await waitFor(() =>
+            expect(screen.queryByText('Carregando produto...')).not.toBeInTheDocument(),
+          );
+
+          expect(screen.queryByRole('heading', { name: 'Checkout' })).not.toBeInTheDocument();
+          expect(add).not.toHaveBeenCalled();
+          expect(screen.getByRole('heading', { name: reservada.name })).toBeInTheDocument();
+        },
+      );
+    });
+
+    describe('regressão — favoritos continuam disponíveis', () => {
+      it('logado: mantém o favorito habilitado e permite favoritar e desfavoritar', async () => {
+        const user = userEvent.setup();
+        renderAt('/product/1', { authenticated: true });
+
+        const favorite = await screen.findByRole('button', { name: 'Adicionar aos favoritos' });
+        expect(favorite).toBeEnabled();
+        await user.click(favorite);
+
+        const removeFavorite = await screen.findByRole('button', { name: 'Remover dos favoritos' });
+        expect(removeFavorite).toHaveAttribute('aria-pressed', 'true');
+        expect(mockedAddFavorite).toHaveBeenCalledWith(SAMPLE_USER.id, reservada.id);
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+        await user.click(removeFavorite);
+
+        expect(
+          await screen.findByRole('button', { name: 'Adicionar aos favoritos' }),
+        ).toHaveAttribute('aria-pressed', 'false');
+        expect(mockedRemoveFavorite).toHaveBeenCalledWith(SAMPLE_USER.id, reservada.id);
+      });
+
+      it('deslogado: usa a barreira existente e retoma somente o favorito após login', async () => {
+        const user = userEvent.setup();
+        const add = vi.fn().mockResolvedValue(undefined);
+        renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+        const favorite = await screen.findByRole('button', { name: 'Adicionar aos favoritos' });
+        expect(favorite).toBeEnabled();
+        await user.click(favorite);
+
+        expect(await screen.findByRole('dialog')).toBeInTheDocument();
+        expect(mockedAddFavorite).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', { name: 'Entrar' }));
+        await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+        expect(
+          await screen.findByRole('button', { name: 'Remover dos favoritos' }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        expect(mockedAddFavorite).toHaveBeenCalledWith(SAMPLE_USER.id, reservada.id);
+        expect(add).not.toHaveBeenCalled();
+        expect(screen.queryByRole('heading', { name: 'Checkout' })).not.toBeInTheDocument();
+      });
+    });
   });
 
   describe('barreira de login (FE-US012-5, #88)', () => {
