@@ -361,6 +361,73 @@ describe('<SellerAdmin />', () => {
     });
   });
 
+  describe('#408 — peça reservada', () => {
+    const RESERVADA = peca({ id: 'r1', name: 'Jaqueta reservada', status: 'reservado' });
+    const ATIVA = peca({ id: 'a1', name: 'Camisa anunciada', status: 'ativo' });
+    const PAUSADA = peca({ id: 'p1', name: 'Bolsa pausada', status: 'despublicado' });
+    const VENDIDA = peca({ id: 'v1', name: 'Bota vendida', status: 'vendido' });
+
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina([RESERVADA, ATIVA, PAUSADA, VENDIDA]));
+    });
+
+    it('RED — clicar no nome reservado mantém o painel e não abre o formulário', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByText(RESERVADA.name));
+
+      expect(screen.queryByRole('heading', { name: 'Formulário da peça' })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+      expect(publish).not.toHaveBeenCalled();
+      expect(unpublish).not.toHaveBeenCalled();
+    });
+
+    it('regressão — Todas mostra a reserva com selo, sem editar ou pausar disponíveis', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const nome = await screen.findByText(RESERVADA.name);
+      const linha = within(nome.closest('article') as HTMLElement);
+      expect(screen.getByRole('button', { name: 'Todas' })).toHaveAttribute('aria-pressed', 'true');
+      expect(linha.getByText('Reservada', { exact: true })).toBeInTheDocument();
+      expect(screen.getByText('4 peças no total')).toBeInTheDocument();
+      expect(linha.queryByRole('link')).not.toBeInTheDocument();
+
+      for (const button of linha.queryAllByRole('button', {
+        name: /Editar|Pausar|Despublicar|Republicar/i,
+      })) {
+        expect(button).toBeDisabled();
+        await user.click(button);
+      }
+
+      expect(publish).not.toHaveBeenCalled();
+      expect(unpublish).not.toHaveBeenCalled();
+    });
+
+    it('regressão — preserva os filtros existentes sem filtro ou consulta de reservado', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText(RESERVADA.name);
+
+      expect(screen.queryByRole('button', { name: /^Reservadas$/i })).not.toBeInTheDocument();
+      for (const [filtro, nome] of [
+        ['Anunciadas', ATIVA.name],
+        ['Vendidas', VENDIDA.name],
+        ['Pausadas', PAUSADA.name],
+      ]) {
+        await user.click(screen.getByRole('button', { name: filtro }));
+        expect(screen.getByText(nome)).toBeInTheDocument();
+        expect(screen.queryByText(RESERVADA.name)).not.toBeInTheDocument();
+      }
+
+      await user.click(screen.getByRole('button', { name: 'Todas' }));
+      expect(screen.getByText(RESERVADA.name)).toBeInTheDocument();
+      expect(getMine).toHaveBeenCalledTimes(1);
+      expect(getMine).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'reservado' }));
+    });
+  });
+
   describe('aba de rascunhos (FE-US019-6, #345)', () => {
     const PUBLICADAS = [
       peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
