@@ -211,9 +211,9 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
                   <SellerProductRow
                     product={product}
                     actions={acoes(product)}
-                    // Vendida não abre o formulário (RN-53): o nome fica só como texto.
+                    // Vendida ou reservada não abre o formulário: o nome fica só como texto.
                     onOpen={
-                      product.status === 'vendido'
+                      product.status === 'vendido' || product.status === 'reservado'
                         ? undefined
                         : (id) => navigate(sellerProductPath(id))
                     }
