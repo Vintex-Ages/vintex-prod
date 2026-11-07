@@ -6,7 +6,6 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
-import StatCard from '@/components/seller/StatCard';
 import { useToast } from '@/context/useToast';
 import {
   useSellerProducts,
@@ -130,8 +129,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
     <Container as="main" className="flex flex-col gap-6 py-10">
       <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
         <div className="flex flex-col gap-1">
-          {/* 35,2px fixos, entrelinha 38,72px e espaçamento −0,02em: medidas do título no frame (T15). */}
-          <h1 className="font-display text-[2.2rem] leading-[1.1] tracking-[-0.02em] text-tinta">
+          {/* Token `h3` (24px): o frame (T15) usa 35,2px, que não existe na escala de tipografia. */}
+          <h1 className="font-display text-h3 leading-[1.1] tracking-[-0.02em] text-tinta">
             Painel de Vendas &amp; Gestão de Peças
           </h1>
           <p className="font-ui text-body-sm text-texto-auxiliar">
@@ -153,7 +152,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
       {/* Única aba do frame (a de "Pedidos para Envio" não existe): é só o título da lista. */}
       {/* No celular a aba ocupa metade da largura, em duas linhas, como no frame (T15). */}
       <div className="border-b-2 border-tinta">
-        <h2 className="flex min-h-touch w-1/2 items-center justify-center bg-tinta px-2 py-3 text-center font-ui text-[0.85rem] font-semibold leading-[normal] text-branco-quente tablet:inline-flex tablet:w-auto tablet:px-6">
+        <h2 className="flex min-h-touch w-1/2 items-center web:min-h-0 justify-center bg-tinta px-2 py-3 text-center font-ui text-body-sm font-semibold leading-[normal] text-branco-quente tablet:inline-flex tablet:w-auto tablet:px-6">
           <span>
             <span className="block tablet:inline">Minhas Peças</span>{' '}
             <span className="block tablet:inline">
@@ -192,21 +191,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
       {state.status === 'ready' && (
         <>
-          <section
-            aria-label="Resumo das suas peças"
-            className="grid grid-cols-1 gap-4 web:grid-cols-3"
-          >
-            <div data-testid="stat-anunciadas">
-              <StatCard label="Anunciadas" value={String(state.counts.ativo)} />
-            </div>
-            <div data-testid="stat-vendidas">
-              <StatCard label="Vendidas" value={String(state.counts.vendido)} />
-            </div>
-            <div data-testid="stat-pausadas">
-              <StatCard label="Pausadas" value={String(state.counts.despublicado)} />
-            </div>
-          </section>
-
+          {/* Sem os cartões Anunciadas/Vendidas/Pausadas: o frame (T15) só tem as contagens nos filtros. */}
           <p className="font-ui text-body-sm text-texto-auxiliar">
             {state.counts.total === 1 ? '1 peça no total' : `${state.counts.total} peças no total`}
           </p>

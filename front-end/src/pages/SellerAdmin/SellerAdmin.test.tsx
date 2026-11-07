@@ -87,14 +87,16 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    // Os cartões de contagem continuam no painel...
-    const anunciadas = await screen.findByTestId('stat-anunciadas');
-    expect(within(anunciadas).getByText('2')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('4 peças no total')).toBeInTheDocument();
+    // O frame do Figma (T15) não tem os cartões Anunciadas/Vendidas/Pausadas.
+    expect(await screen.findByText('4 peças no total')).toBeInTheDocument();
+    expect(screen.queryByTestId('stat-anunciadas')).toBeNull();
+    expect(screen.queryByTestId('stat-vendidas')).toBeNull();
+    expect(screen.queryByTestId('stat-pausadas')).toBeNull();
 
-    // ...e as contagens também aparecem na aba e nos filtros (frame ajustado do Figma, T15).
+    // As contagens aparecem na aba e nos filtros (frame ajustado do Figma, T15).
+    expect(screen.getByRole('button', { name: 'Anunciadas (2)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pausadas (1)' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (4)' }),
     ).toBeInTheDocument();
@@ -180,7 +182,7 @@ describe('<SellerAdmin />', () => {
     expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
     expect(screen.queryByText('Saia abandonada')).toBeNull();
     expect(screen.getByText('1 peça no total')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
     // A aba e os filtros (frame ajustado, T15) também não contam o rascunho.
     expect(
       screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (1)' }),
@@ -272,11 +274,10 @@ describe('<SellerAdmin />', () => {
 
     renderPage();
 
-    const anunciadas = await screen.findByTestId('stat-anunciadas');
-    expect(within(anunciadas).getByText('100')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-vendidas')).getByText('1')).toBeInTheDocument();
-    expect(within(screen.getByTestId('stat-pausadas')).getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('102 peças no total')).toBeInTheDocument();
+    expect(await screen.findByText('102 peças no total')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anunciadas (100)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pausadas (1)' })).toBeInTheDocument();
     // A aba e os filtros (frame ajustado, T15) usam as mesmas contagens.
     expect(
       screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (102)' }),
@@ -384,7 +385,6 @@ describe('<SellerAdmin />', () => {
       expect(republicar).toBeInTheDocument();
       // "Republicar" é o texto mais largo: não reserva nada, mantém o tamanho dele.
       expect(republicar.textContent).toBe('Republicar');
-      expect(within(screen.getByTestId('stat-pausadas')).getByText('2')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Pausadas (2)' })).toBeInTheDocument();
       expect(getMine).toHaveBeenCalledTimes(1);
 
@@ -521,7 +521,6 @@ describe('<SellerAdmin />', () => {
       expect(discardDraft).toHaveBeenCalledWith('7');
       await waitFor(() => expect(screen.queryByText('Saia plissada')).toBeNull());
       expect(screen.getByText('Blazer xadrez')).toBeInTheDocument();
-      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
       expect(screen.getByText('2 peças no total')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
       expect(
@@ -550,7 +549,7 @@ describe('<SellerAdmin />', () => {
       renderPage();
 
       expect(await screen.findByText('2 peças no total')).toBeInTheDocument();
-      expect(within(screen.getByTestId('stat-anunciadas')).getByText('1')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Anunciadas (1)' })).toBeInTheDocument();
       expect(
         screen.getByRole('heading', { name: 'Minhas Peças Cadastradas (2)' }),
       ).toBeInTheDocument();
@@ -582,9 +581,9 @@ describe('<SellerAdmin />', () => {
       const comissao = screen.getByTestId('financeiro-comissao');
       expect(within(comissao).getByText('Taxa média retida (9%)')).toBeInTheDocument();
       expect(within(comissao).getByText('R$ 18,00')).toBeInTheDocument();
-      const liquido = screen.getByTestId('financeiro-liquido');
-      expect(within(liquido).getByText('Você recebeu')).toBeInTheDocument();
-      expect(within(liquido).getByText('R$ 182,00')).toBeInTheDocument();
+      // O frame do Figma (T15) só tem os dois cartões acima: sem "Você recebeu".
+      expect(screen.queryByTestId('financeiro-liquido')).toBeNull();
+      expect(screen.queryByText('Você recebeu')).toBeNull();
       expect(getSalesSummary).toHaveBeenCalledWith('month');
     });
 
@@ -638,42 +637,15 @@ describe('<SellerAdmin />', () => {
       expect(await screen.findByText('1 peça vendida no mês')).toBeInTheDocument();
     });
 
-    it('o seletor de período continua no Financeiro e começa no mês, com uma consulta só', async () => {
+    // O seletor de período não está no frame do Figma (T15): fica fora da página (o componente Select continua no projeto).
+    it('não mostra o seletor de período e consulta o mês, com uma consulta só', async () => {
       renderPage();
 
       await screen.findByTestId('financeiro-bruto');
       expect(screen.getByRole('heading', { name: 'Financeiro' })).toBeInTheDocument();
-      expect(screen.getByLabelText('Período')).toHaveValue('month');
+      expect(screen.queryByLabelText('Período')).toBeNull();
       expect(getSalesSummary).toHaveBeenCalledTimes(1);
       expect(getSalesSummary).toHaveBeenCalledWith('month');
-    });
-
-    // Objetivo declarado: garantir o filtro.
-    it('trocar o período refaz a consulta com skeleton nos cards', async () => {
-      const user = userEvent.setup();
-      renderPage();
-      await screen.findByTestId('financeiro-bruto');
-
-      let resolver: () => void = () => {};
-      vi.mocked(getSalesSummary).mockImplementationOnce(
-        (period) =>
-          new Promise((resolve) => {
-            resolver = () => resolve({ period, soldCount: 1, gross: 100, commission: 9, net: 91 });
-          }),
-      );
-
-      await user.selectOptions(screen.getByLabelText('Período'), 'Últimos 30 dias');
-
-      expect(getSalesSummary).toHaveBeenLastCalledWith('30d');
-      expect(screen.getByTestId('financeiro-skeleton')).toBeInTheDocument();
-
-      resolver();
-      const liquido = await screen.findByTestId('financeiro-liquido');
-      expect(await within(liquido).findByText('R$ 91,00')).toBeInTheDocument();
-      // O rótulo acompanha o período escolhido (no mês, ele é o do frame do Figma).
-      const bruto = screen.getByTestId('financeiro-bruto');
-      expect(within(bruto).getByText('Faturamento bruto nos últimos 30 dias')).toBeInTheDocument();
-      expect(within(bruto).getByText('1 peça vendida nos últimos 30 dias')).toBeInTheDocument();
     });
 
     it('mostra o skeleton dos cartões enquanto carrega o resumo', async () => {
@@ -688,10 +660,10 @@ describe('<SellerAdmin />', () => {
     it('sem vendas mostra R$ 0,00 e uma nota', async () => {
       renderPage();
 
-      const liquido = await screen.findByTestId('financeiro-liquido');
-      expect(within(liquido).getByText('R$ 0,00')).toBeInTheDocument();
+      const bruto = await screen.findByTestId('financeiro-bruto');
+      expect(within(bruto).getByText('R$ 0,00')).toBeInTheDocument();
       expect(
-        within(screen.getByTestId('financeiro-bruto')).getByText('R$ 0,00'),
+        within(screen.getByTestId('financeiro-comissao')).getByText('R$ 0,00'),
       ).toBeInTheDocument();
       expect(screen.getByText(/Nenhuma venda neste período ainda/)).toBeInTheDocument();
     });

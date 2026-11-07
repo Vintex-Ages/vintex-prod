@@ -69,7 +69,12 @@ export function FilterChip({
   compact = false,
   tone = 'verde',
 }: FilterChipProps) {
-  const sizeClass = compact ? undefined : touchClass;
+  // No painel (tom `tinta`) o frame da web tem chips de 32px; no celular segue o alvo de toque.
+  const sizeClass = compact
+    ? undefined
+    : tone === 'tinta'
+      ? clsx(touchClass, 'web:min-h-0')
+      : touchClass;
   // Padding lateral do chip do painel no Figma (15,2px); o padrão do catálogo é 12px.
   const paddingClass = tone === 'tinta' ? 'px-[0.95rem]' : 'px-3';
   const toneClass =

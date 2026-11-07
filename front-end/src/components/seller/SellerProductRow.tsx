@@ -118,7 +118,7 @@ function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
                   // A ação principal tem borda de 1px. A cor da borda no Figma (#9E8E7C) não é
                   // token: usa-se `border-linha` (da variante `secondary`), o token mais próximo.
                   className={clsx(
-                    'px-[0.75rem] text-label uppercase',
+                    'px-[0.75rem] text-label uppercase web:min-h-9',
                     action.variant === 'secondary' && 'border-[1px]',
                   )}
                   fullWidth

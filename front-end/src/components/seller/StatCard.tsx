@@ -55,7 +55,7 @@ function StatCard({
           className={clsx(
             'text-texto-auxiliar',
             emphasized
-              ? 'text-[0.72rem] font-bold uppercase leading-[1.5] tracking-[0.08em]'
+              ? 'text-label font-bold uppercase leading-[1.5] tracking-[0.08em]'
               : 'text-label',
           )}
         >
@@ -67,7 +67,7 @@ function StatCard({
       <p
         className={clsx(
           'font-display',
-          emphasized ? 'text-[1.6rem] font-bold leading-[1.5]' : 'text-h3',
+          emphasized ? 'text-h3 font-bold leading-[1.5]' : 'text-h3',
           highlight ? 'text-verde-rs' : 'text-tinta',
         )}
       >
