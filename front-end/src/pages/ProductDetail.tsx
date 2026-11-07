@@ -10,6 +10,7 @@ import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Container from '@/components/layout/Container';
 import Gallery from '@/components/product/Gallery';
 import SoldBadge from '@/components/product/SoldBadge';
+import StatusBadge from '@/components/product/StatusBadge';
 import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
 import { useFavorites } from '@/context/useFavorites';
@@ -138,6 +139,7 @@ function ProductDetail() {
   }, [id]);
 
   const productId = product?.id ?? '';
+  const purchaseUnavailable = product?.status === 'reservado' || product?.status === 'vendido';
   const isFavorite = productId !== '' && favoriteIds.has(productId);
 
   /**
@@ -178,12 +180,12 @@ function ProductDetail() {
    * #319). Deslogado, a barreira guarda a intenção e isto roda na volta do login.
    */
   const buyNow = useCallback(() => {
-    if (!product) return;
+    if (!product || purchaseUnavailable) return;
     const { id, name, price, coverImageUrl, store } = product;
     navigate(paths.checkout, {
       state: { products: [{ id, name, price, coverImageUrl, store }] } satisfies CheckoutState,
     });
-  }, [navigate, product]);
+  }, [navigate, product, purchaseUnavailable]);
 
   const alreadyInCart = useMemo(
     () =>
@@ -193,7 +195,7 @@ function ProductDetail() {
   );
 
   const addToCart = useCallback(async () => {
-    if (!productId || alreadyInCart || isAddingRef.current) return;
+    if (!productId || purchaseUnavailable || alreadyInCart || isAddingRef.current) return;
 
     isAddingRef.current = true;
     setIsAdding(true);
@@ -213,7 +215,7 @@ function ProductDetail() {
       isAddingRef.current = false;
       setIsAdding(false);
     }
-  }, [add, alreadyInCart, navigate, productId, toast]);
+  }, [add, alreadyInCart, navigate, productId, purchaseUnavailable, toast]);
 
   /**
    * Ao voltar do login, espera a primeira carga do carrinho antes de fazer a
@@ -276,8 +278,7 @@ function ProductDetail() {
     : alreadyInCart
       ? 'No carrinho'
       : 'Adicionar ao carrinho';
-  const cartActionDisabled =
-    product.status === 'vendido' || cartLoading || alreadyInCart || isAdding;
+  const cartActionDisabled = purchaseUnavailable || cartLoading || alreadyInCart || isAdding;
 
   return (
     <Container as="main" className="bg-branco-quente py-4 web:py-10">
@@ -315,6 +316,11 @@ function ProductDetail() {
             {product.status === 'vendido' ? (
               <div className="mb-2">
                 <SoldBadge />
+              </div>
+            ) : product.status === 'reservado' ? (
+              <div className="mb-2" role="status">
+                <StatusBadge status="reservado" />
+                <p className="mt-2 text-body-sm text-texto-auxiliar">Esta peça está reservada.</p>
               </div>
             ) : null}
             <p className="mb-2 font-ui text-label font-bold uppercase leading-relaxed tracking-wider text-vermelho-escuro">
@@ -442,7 +448,7 @@ function ProductDetail() {
         <Button
           variant="primary"
           aria-label={`Comprar Agora • ${priceLabel}`}
-          disabled={product.status === 'vendido'}
+          disabled={purchaseUnavailable}
           className="h-12 min-w-0 flex-1 px-2 text-label uppercase tracking-wide web:px-6 web:text-body-sm"
           onClick={() => {
             void protectedBuy.runProtectedAction();
