@@ -1,0 +1,216 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop, deploy]
+  pull_request:
+    branches: [main, develop, deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  staging-runtime:
+    name: Staging Runtime Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test real Nginx against synthetic backend
+        run: python3 scripts/infra/test_staging_proxy.py
+      - name: Test IMDS guard in isolated container namespaces
+        run: |
+          docker build -f tests/staging/Dockerfile.imds -t vintex-staging-imds:test .
+          docker run --rm --privileged --network none vintex-staging-imds:test
+
+  terraform:
+    name: Terraform Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.4"
+      - name: Check Terraform formatting
+        run: make terraform-fmt
+      - name: Validate and test local, bootstrap and AWS without credentials
+        run: |
+          for environment in local bootstrap staging; do
+            make terraform-validate "$environment"
+            make terraform-test "$environment"
+          done
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Ruff (linter)
+        run: ruff check .
+
+      - name: Check Black (formatting)
+        run: black --check .
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pip-audit
+        run: pip-audit
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run mypy
+        run: mypy app/ --ignore-missing-imports
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector/pgvector:pg16 — ver docker-compose.yml (BE-US027-1, back-end#92)
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vintex
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vintex
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Assert a single Alembic head
+        run: |
+          alembic heads
+          count=$(alembic heads | grep -c '(head)' || true)
+          echo "Alembic heads encontradas: $count"
+          test "$count" -eq 1
+
+      - name: Apply migrations (empty DB -> head)
+        run: alembic upgrade head
+
+      - name: Check migrations are reversible
+        run: alembic downgrade base
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  test-postgres:
+    name: Tests (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # pgvector/pgvector:pg16 — esta fixture roda `alembic upgrade head`
+        # (via pg_engine/tests/conftest.py), e a cadeia de migrations inclui
+        # `CREATE EXTENSION vector` (BE-US027-1, back-end#92). Mesma imagem
+        # do job `migrations` acima, mesmo motivo.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vintex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/vintex_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Postgres-only tests
+        run: pytest tests/ -v -m postgres
+
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - staging-runtime
+      - terraform
+      - lint
+      - audit
+      - type-check
+      - migrations
+      - test
+      - test-postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t vintex-backend:${{ github.sha }} .
