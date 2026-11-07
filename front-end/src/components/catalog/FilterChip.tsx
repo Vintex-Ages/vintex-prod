@@ -31,10 +31,15 @@ type FilterChipProps = {
   removable?: boolean;
   onRemove?: () => void;
   compact?: boolean;
+  /**
+   * Cor do chip: `verde` (padrão, catálogo) ou `tinta`, a do painel do vendedor no
+   * frame ajustado do Figma (T15): ativo em tinta, inativo em papel.
+   */
+  tone?: 'verde' | 'tinta';
 };
 
 const baseClass =
-  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
+  'inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border py-2 font-ui text-label font-semibold leading-normal transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tinta';
 
 /** Altura mínima de toque (44px) no padrão; `compact` dispensa. */
 const touchClass = 'min-h-touch';
@@ -62,11 +67,24 @@ export function FilterChip({
   removable = false,
   onRemove,
   compact = false,
+  tone = 'verde',
 }: FilterChipProps) {
-  const sizeClass = compact ? undefined : touchClass;
-  const toneClass = active
-    ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
-    : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
+  // No painel (tom `tinta`) o frame da web tem chips de 32px; no celular segue o alvo de toque.
+  const sizeClass = compact
+    ? undefined
+    : tone === 'tinta'
+      ? clsx(touchClass, 'web:min-h-0')
+      : touchClass;
+  // Padding lateral do chip do painel no Figma (15,2px); o padrão do catálogo é 12px.
+  const paddingClass = tone === 'tinta' ? 'px-[0.95rem]' : 'px-3';
+  const toneClass =
+    tone === 'tinta'
+      ? active
+        ? 'border-tinta bg-tinta text-branco-quente hover:brightness-110'
+        : 'border-linha bg-papel text-tinta hover:bg-papel-profundo'
+      : active
+        ? 'border-verde-rs bg-verde-rs text-branco-quente hover:brightness-110'
+        : 'border-linha bg-branco-quente text-verde-rs hover:bg-papel-profundo';
 
   if (removable) {
     return (
@@ -74,7 +92,7 @@ export function FilterChip({
         type="button"
         aria-label={`Remover ${label}`}
         onClick={onRemove}
-        className={clsx(baseClass, sizeClass, toneClass)}
+        className={clsx(baseClass, paddingClass, sizeClass, toneClass)}
       >
         <span>{label}</span>
         <RemoveIcon />
@@ -87,7 +105,7 @@ export function FilterChip({
       type="button"
       aria-pressed={active}
       onClick={onToggle}
-      className={clsx(baseClass, sizeClass, toneClass)}
+      className={clsx(baseClass, paddingClass, sizeClass, toneClass)}
     >
       {label}
     </button>
