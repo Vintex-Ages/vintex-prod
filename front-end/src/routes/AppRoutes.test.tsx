@@ -412,7 +412,7 @@ describe('<AppRoutes />', () => {
     [paths.seller, 'Painel de Vendas & Gestão de Peças', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
-    [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
+    [sellerProductReviewPath('1'), 'Revise sua peça antes de publicar', SELLER],
     [paths.cart, 'Seu carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {

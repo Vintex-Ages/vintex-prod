@@ -6,7 +6,7 @@ export type PriceBreakdownProps = {
   /** Preço em reais; `null` enquanto o vendedor ainda não informou. */
   price: number | null;
   commissionRate?: number;
-  /** `inline`: uma linha, para o formulário. `card`: três linhas, para a revisão. */
+  /** `inline`: uma linha, para o formulário. `card`: comissão e líquido, para a revisão. */
   variant?: 'inline' | 'card';
 };
 
@@ -39,23 +39,34 @@ function PriceBreakdown({
   const format = (cents: number) => (hasPrice ? formatCentsToBRL(cents) : PLACEHOLDER);
   const ratePercent = (commissionRate * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
-  const rows = [
-    { label: 'Preço', value: format(priceCents), highlight: false },
-    {
-      label: `Comissão da plataforma (${ratePercent}%)`,
-      value: format(priceCents - netCents),
-      highlight: false,
-    },
-    { label: 'Você recebe', value: format(netCents), highlight: true },
-  ];
-
   const isCard = variant === 'card';
+
+  // `card` (revisão, frame ajustado do Figma T14): sem a linha do preço, que a revisão já
+  // mostra logo acima; comissão com sinal de desconto e o líquido no Pix em destaque.
+  const rows = isCard
+    ? [
+        {
+          label: `Comissão Vintex (${ratePercent}%):`,
+          value: hasPrice ? `- ${format(priceCents - netCents)}` : PLACEHOLDER,
+          highlight: false,
+        },
+        { label: 'Você recebe líquido no Pix:', value: format(netCents), highlight: true },
+      ]
+    : [
+        { label: 'Preço', value: format(priceCents), highlight: false },
+        {
+          label: `Comissão da plataforma (${ratePercent}%)`,
+          value: format(priceCents - netCents),
+          highlight: false,
+        },
+        { label: 'Você recebe', value: format(netCents), highlight: true },
+      ];
 
   return (
     <dl
       className={clsx(
         isCard
-          ? 'flex w-full flex-col gap-2 bg-papel-profundo p-4'
+          ? 'flex w-full flex-col gap-3 border border-linha bg-branco-quente px-4 pb-4 pt-5'
           : 'flex flex-wrap items-baseline gap-x-4 gap-y-1',
       )}
     >
@@ -65,14 +76,26 @@ function PriceBreakdown({
           className={clsx(
             'flex items-baseline gap-2',
             isCard && 'justify-between',
-            isCard && highlight && 'border-t border-linha pt-2',
+            isCard && highlight && 'border-t border-linha pt-2.5',
           )}
         >
-          <dt className="text-body-sm text-texto-auxiliar">{label}</dt>
+          <dt
+            className={clsx(
+              isCard && highlight
+                ? 'text-body font-bold text-verde-rs'
+                : 'text-body-sm text-texto-auxiliar',
+            )}
+          >
+            {label}
+          </dt>
           <dd
             className={clsx(
-              highlight ? 'font-semibold text-verde-rs' : 'text-tinta',
-              isCard && highlight ? 'text-h4' : 'text-body-sm',
+              highlight
+                ? 'font-semibold text-verde-rs'
+                : isCard
+                  ? 'text-texto-auxiliar'
+                  : 'text-tinta',
+              isCard && highlight ? 'text-h4 font-bold' : 'text-body-sm',
             )}
           >
             {value}
