@@ -161,13 +161,10 @@ export function LookSuggestions({
       aria-labelledby="look-suggestions-titulo"
       className="flex flex-col gap-2 border border-linha bg-papel-profundo p-5"
     >
-      <p className="text-label font-bold uppercase tracking-[0.08em] text-vermelho-escuro">
+      <p className="text-label font-bold uppercase text-vermelho-escuro">
         <span aria-hidden="true">✨ </span>Curadoria da IA Vintex
       </p>
-      <h3
-        id="look-suggestions-titulo"
-        className="font-display text-h4 tracking-[-0.02em] text-tinta"
-      >
+      <h3 id="look-suggestions-titulo" className="font-display text-h4 text-tinta">
         {title}
       </h3>
       <p className="text-body-sm text-texto-auxiliar">
