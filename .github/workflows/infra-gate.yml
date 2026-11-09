@@ -1,0 +1,142 @@
+name: Infra gate
+
+# PR qa -> main: todos os testes de infra + validação do gateway de IA e da chave.
+# Os testes de infra vêm do Makefile do back-end e ficam inativos enquanto
+# back-end/Makefile não existir neste repo.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ready:
+    name: Detect infra sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: check
+        run: |
+          if [ -f back-end/Makefile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::back-end/Makefile não existe neste repositório: testes de infra NÃO executados."
+          fi
+
+  terraform:
+    name: Terraform (fmt, validate, test)
+    needs: ready
+    if: needs.ready.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: back-end
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ">=1.16.0"
+          terraform_wrapper: false
+      # Nenhum destes alvos usa conta AWS (init -backend=false, planos mockados).
+      - run: make terraform-fmt
+      - run: make terraform-validate
+      - run: make terraform-validate staging
+      - run: make terraform-test
+      - run: make terraform-test staging
+
+  infra-complete:
+    name: Infra completa (QA + testes locais)
+    needs: ready
+    if: needs.ready.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: back-end
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ">=1.16.0"
+          terraform_wrapper: false
+      # QA, sobe a infra local (LocalStack/MiniStack/Postgres), roda todos os testes e
+      # sempre derruba o ambiente ao final (scripts/infra/complete.sh).
+      - run: make infra-complete
+
+  llm-key:
+    name: LLM key check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN_STAGING }}
+      STAGING_INSTANCE_ID: ${{ vars.STAGING_INSTANCE_ID }}
+      REQUIRE_LLM_CHECK: ${{ vars.REQUIRE_LLM_CHECK }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: config
+        name: Check AWS configuration
+        run: |
+          if [ -n "$AWS_ROLE_ARN" ] && [ -n "$STAGING_INSTANCE_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          msg="AWS não configurada (AWS_ROLE_ARN_STAGING / STAGING_INSTANCE_ID): a chave do gateway de IA NÃO foi validada."
+          printf '### LLM key check\n\n**NÃO EXECUTADO**: %s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$REQUIRE_LLM_CHECK" = "true" ]; then
+            echo "::error::$msg"
+            exit 1
+          fi
+          echo "::warning::$msg"
+      - if: steps.config.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      - if: steps.config.outputs.configured == 'true'
+        run: node .github/scripts/validate-llm-gateway.mjs
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+          LLM_PROBE_COMPLETION: ${{ vars.LLM_PROBE_COMPLETION }}
+
+  gate:
+    name: Infra gate
+    if: ${{ always() }}
+    needs: [ready, terraform, infra-complete, llm-key]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every executed job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          test "$(echo "$NEEDS" | jq -r '.ready.result')" = success
+          failed=$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key')
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs que não passaram: $failed"
+            exit 1
+          fi

@@ -33,7 +33,7 @@ jobs:
           client-id: ${{ vars.GPA_APP_CLIENT_ID }}
           private-key: ${{ secrets.GPA_APP_PRIVATE_KEY }}
           owner: Vintex-Ages
-          repositories: front-end
+          repositories: vintex-prod
       - run: node .github/scripts/project-sync.mjs
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}

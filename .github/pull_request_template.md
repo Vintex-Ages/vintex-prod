@@ -1,26 +1,50 @@
 ## Descrição
 
-<!-- Descreva a promoção ou alteração operacional. -->
+<!-- Explique o que foi feito e por quê. -->
 
-Closes #<!-- issue, quando aplicável -->
+## O que foi feito
+
+<!-- Liste objetivamente as mudanças feitas neste PR. -->
+
+-
+-
+-
 
 ## Tipo de mudança
 
-- [ ] Promotion
-- [ ] Infra
+<!-- Selecione exatamente uma opção, mantendo a palavra em inglês
+(exigido pela validação automática de PR). -->
+
+- [ ] Feature
+- [ ] Bugfix
+- [ ] Hotfix
+- [ ] Refactor
 - [ ] Docs
 - [ ] Chore
 
 ## Componentes afetados
 
-- [ ] Frontend
-- [ ] Backend
-- [ ] Compartilhado
-
-## Evidências
-
-<!-- Action de origem, SHA, validações e observações. -->
+- [ ] front-end
+- [ ] back-end
+- [ ] Infra / pipeline
 
 ## Uso de IA
 
-<!-- Declare o uso ou informe que não houve uso de IA. -->
+<!-- Quais ferramentas de IA foram usadas neste PR (ChatGPT, Claude, Copilot,
+Cursor, etc.) e em quais partes (geração de código, revisão, documentação,
+testes, etc.). Se nenhuma foi usada, escreva "Nenhuma". -->
+
+## Checklist
+
+- [ ] Rodei lint, formatação e testes do componente alterado localmente
+- [ ] O `CI gate` deste PR está verde
+- [ ] Adicionei prints caso envolva mudança visual
+
+## Prints
+
+<!-- Cole aqui prints de antes/depois, se for mudança visual. -->
+
+## Observações
+
+<!-- Qualquer contexto adicional para quem for revisar.
+Inclua aqui: Closes #<número da issue> -->

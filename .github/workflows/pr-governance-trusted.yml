@@ -3,7 +3,7 @@ name: PR Governance trusted
 on:
   pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
-    branches: [develop, main, deploy]
+    branches: [develop, qa, main, deploy]
 
 permissions:
   contents: read

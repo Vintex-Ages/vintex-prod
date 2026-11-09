@@ -1,0 +1,96 @@
+name: CI
+
+# feature -> develop : valida só o que mudou (ver .github/config/ci-paths.json)
+# develop -> qa, qa -> main, main -> deploy, push e agenda : valida tudo
+# O único check a exigir no ruleset é o "CI gate": workflows filtrados por caminho
+# deixam checks obrigatórios pendentes para sempre quando não rodam.
+
+on:
+  push:
+    branches: [develop, qa, main, deploy]
+  pull_request:
+    branches: [develop, qa, main, deploy]
+  workflow_dispatch:
+  schedule:
+    - cron: "11 6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.detect.outputs.mode }}
+      front_end: ${{ steps.detect.outputs.front_end }}
+      back_end: ${{ steps.detect.outputs.back_end }}
+      infra: ${{ steps.detect.outputs.infra }}
+      automation: ${{ steps.detect.outputs.automation }}
+      docs: ${{ steps.detect.outputs.docs }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: detect
+        run: node .github/scripts/detect-changes.mjs
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  front-end:
+    name: front-end
+    needs: changes
+    if: needs.changes.outputs.front_end == 'true'
+    uses: ./.github/workflows/ci-front-end.yml
+
+  back-end:
+    name: back-end
+    needs: changes
+    if: needs.changes.outputs.back_end == 'true'
+    uses: ./.github/workflows/ci-back-end.yml
+
+  automation:
+    name: Automation scripts
+    needs: changes
+    if: needs.changes.outputs.automation == 'true' && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Test automation scripts
+        run: node --test .github/scripts/lib/*.tests.mjs
+
+  gate:
+    name: CI gate
+    # Um job pulado conta como sucesso para a proteção de branch; por isso o gate roda
+    # sempre e falha explicitamente se qualquer job executado não tiver passado.
+    if: ${{ always() }}
+    needs: [changes, front-end, back-end, automation]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every executed job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          test "$(echo "$NEEDS" | jq -r '.changes.result')" = success
+          failed=$(echo "$NEEDS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key')
+          if [ -n "$failed" ]; then
+            echo "::error::Jobs que não passaram: $failed"
+            exit 1
+          fi
