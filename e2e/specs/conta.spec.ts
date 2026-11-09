@@ -71,5 +71,6 @@ test.describe('conta', () => {
 
     await page.goto('/profile/favorites');
     await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole('heading', { name: 'Entre na Vintex' })).toBeVisible();
   });
 });
