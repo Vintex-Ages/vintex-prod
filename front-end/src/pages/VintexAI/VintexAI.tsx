@@ -99,7 +99,6 @@ export default function VintexAI() {
     endOfMessagesRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
   }, [messages]);
 
-  const hasMessages = messages.length > 0;
   // Cota do dia esgotada (FE-US027-5): enviar só geraria outro aviso igual.
   const quotaAtiva = errorReason === 'quota';
 
@@ -121,10 +120,15 @@ export default function VintexAI() {
           onClick={handleBack}
         />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-body font-semibold leading-tight text-tinta">
+          <h1 className="font-display text-h4 leading-tight tracking-tight text-tinta">
             Conversa com a Vintex
           </h1>
-          <p className="mt-1 text-label font-semibold uppercase tracking-wide text-texto-auxiliar">
+          <p className="mt-1 flex items-center gap-2 text-label font-semibold uppercase tracking-wide text-texto-auxiliar">
+            <span
+              aria-hidden="true"
+              data-testid="vintex-header-dot"
+              className="h-[7px] w-[7px] shrink-0 rounded-full bg-dourado ring-[3px] ring-dourado/15"
+            />
             Curadoria de brechós
           </p>
         </div>
@@ -141,22 +145,20 @@ export default function VintexAI() {
       <div className="vintex-chat-scroll flex flex-1 flex-col overflow-y-auto px-4 pb-6 pt-5 tablet:px-8 web:px-10">
         <div className="mx-auto w-full max-w-3xl">
           <div className="grid grid-cols-[auto_1fr] items-start gap-3 border-b border-linha pb-4">
-            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-vermelho-escuro text-vermelho-escuro">
+            <span className="flex h-10 w-10 flex-shrink-0 -rotate-[8deg] items-center justify-center rounded-full border border-vermelho-escuro text-vermelho-escuro">
               <PlusIcon className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="font-display text-h3 text-tinta">Sempre há um próximo garimpo</h2>
+              <h2 className="font-display text-h4 text-tinta">Sempre há um próximo garimpo</h2>
               <p className="mt-1 text-body-sm leading-relaxed text-texto-auxiliar">
-                Quando a peça exata não existe, a Vintex aproxima a busca pelo que mais combina com
-                seu pedido.
+                Quando a peça exata não existe, a Vintex explica e aproxima a busca pelo que mais
+                combina com seu pedido.
               </p>
             </div>
           </div>
         </div>
 
-        {hasMessages ? <hr className="mx-auto mt-6 w-full max-w-3xl border-linha" /> : null}
-
-        <div className="mx-auto w-full max-w-3xl space-y-4 pt-6">
+        <div className="mx-auto w-full max-w-3xl space-y-4 pt-4">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -250,7 +252,7 @@ export default function VintexAI() {
               <SendIcon className="h-5 w-5" />
             </button>
           </form>
-          <p className="mt-2 text-center text-label leading-relaxed text-texto-auxiliar">
+          <p className="mt-8 text-center text-label leading-relaxed text-texto-auxiliar">
             As sugestões consideram as peças disponíveis no catálogo.
           </p>
         </div>
