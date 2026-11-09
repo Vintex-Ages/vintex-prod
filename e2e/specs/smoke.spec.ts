@@ -38,5 +38,7 @@ test.describe('visitante', () => {
   test('rota protegida leva ao login', async ({ page }) => {
     await page.goto('/profile/favorites');
     await expect(page).toHaveURL(/\/login/);
+    // A URL sozinha não prova que a tela pintou: espera o formulário.
+    await expect(page.getByRole('heading', { name: 'Entre na Vintex' })).toBeVisible();
   });
 });
