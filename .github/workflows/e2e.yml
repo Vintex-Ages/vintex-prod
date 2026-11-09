@@ -50,6 +50,8 @@ jobs:
       AI_PROVIDER: fake
       CHAT_QUOTA_PER_PERSON: '100'
       CHAT_QUOTA_PER_DAY: '1000'
+      # O runner tem pnpm no PATH; localmente o config cai no corepack.
+      E2E_WEB_COMMAND: pnpm exec vite --host 127.0.0.1 --port 5173 --strictPort
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -121,12 +123,12 @@ jobs:
 
       - name: Instalar dependências do front-end e da suíte
         run: |
-          corepack pnpm install --frozen-lockfile --dir front-end
-          corepack pnpm install --frozen-lockfile --dir e2e
+          pnpm install --frozen-lockfile --dir front-end
+          pnpm install --frozen-lockfile --dir e2e
 
       - name: Instalar navegadores do Playwright
         working-directory: e2e
-        run: corepack pnpm exec playwright install --with-deps chromium webkit
+        run: pnpm exec playwright install --with-deps chromium webkit
 
       - name: Rodar a suíte
         working-directory: e2e
@@ -134,7 +136,7 @@ jobs:
           CI: 'true'
           # No CI não existe .venv: o comando da API usa o Python do runner.
           E2E_API_COMMAND: python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-        run: corepack pnpm exec playwright test --workers=2
+        run: pnpm exec playwright test --workers=2
 
       - name: Publicar relatório
         if: always()

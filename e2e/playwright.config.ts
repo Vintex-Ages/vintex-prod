@@ -93,7 +93,8 @@ export default defineConfig({
     },
     {
       command:
-        'corepack pnpm exec vite --host 127.0.0.1 --port ' + WEB_PORT + ' --strictPort',
+        process.env.E2E_WEB_COMMAND ??
+        `corepack pnpm exec vite --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       cwd: FRONTEND_DIR,
       url: WEB_URL,
       reuseExistingServer: !process.env.CI,
