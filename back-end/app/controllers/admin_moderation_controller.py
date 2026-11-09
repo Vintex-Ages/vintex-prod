@@ -47,26 +47,38 @@ class AdminModerationController:
     def suspend(self, product_id: int, reason: str, admin: User) -> ModerationResponse:
         """Tira a peça do ar com motivo, data e autor (RN-80).
 
-        Peça `vendido` ou `reservado` responde 409 e não muda de estado: a
-        primeira é dinheiro contado (RN-53) e a segunda está num pedido aberto
-        (RN-46) — tirar do ar qualquer uma quebra o pedido de alguém. A RN-80
-        não abre exceção, então o anúncio inadequado já reservado continua no ar
-        até o pedido resolver.
+        Peça `vendido`, `reservado` ou `rascunho` responde 409 e não muda de
+        estado: a primeira é dinheiro contado (RN-53), a segunda está num
+        pedido aberto (RN-46) e a terceira nunca foi publicada — devolvê-la
+        depois gravaria `ativo` e poria no feed uma peça que o vendedor nunca
+        publicou (RN-50). A RN-80 não abre exceção, então o anúncio inadequado
+        já reservado continua no ar até o pedido resolver.
 
         Suspender de novo atualiza o motivo e a data, sem avisar outra vez: o
-        vendedor não precisa de dois avisos da mesma peça.
+        vendedor não precisa de dois avisos da mesma peça, mas o aviso que ele
+        já tem passa a dizer o motivo novo.
         """
         product = self._get(product_id)
-        self._recusar_em_pedido(product)
+        self._recusar_status_incompativel(product)
 
         ja_estava = product.moderated_at is not None
         product.status = "despublicado"
         product.moderation_reason = reason
         product.moderated_at = utcnow_naive()
         product.moderated_by_id = admin.id
-        if not ja_estava:
+        if ja_estava:
+            self.notifications.update_moderation_reason(
+                user_id=product.store.seller.user_id,
+                product_id=product.id,
+                reason=reason,
+            )
+        else:
+            # O aviso leva o motivo (RN-80): "suspensa" sem o porquê não diz ao
+            # vendedor o que corrigir.
             self.notifications.add_moderation(
-                user_id=product.store.seller.user_id, product_id=product.id
+                user_id=product.store.seller.user_id,
+                product_id=product.id,
+                reason=reason,
             )
         self.products.commit()
         return _resposta(product)
@@ -127,8 +139,8 @@ class AdminModerationController:
         return product
 
     @staticmethod
-    def _recusar_em_pedido(product: Product) -> None:
-        """`vendido` e `reservado` não mudam de estado (409)."""
+    def _recusar_status_incompativel(product: Product) -> None:
+        """`vendido`, `reservado` e `rascunho` não mudam de estado (409)."""
         if product.status == "vendido":
             raise AppError(
                 "Peça vendida não pode ser despublicada.",
@@ -138,6 +150,14 @@ class AdminModerationController:
         if product.status == "reservado":
             raise AppError(
                 "Peça reservada em um pedido não pode ser despublicada.",
+                code=ErrorCode.PRODUCT_NOT_EDITABLE,
+                status_code=409,
+            )
+        if product.status == "rascunho":
+            # Devolver à vitrine grava `ativo`: o rascunho, que nunca esteve no
+            # feed, entraria por uma suspensão que não deveria existir (RN-50).
+            raise AppError(
+                "Peça em rascunho nunca foi publicada; não há o que suspender.",
                 code=ErrorCode.PRODUCT_NOT_EDITABLE,
                 status_code=409,
             )

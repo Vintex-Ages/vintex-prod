@@ -38,6 +38,9 @@ class Notification(BaseModel):
     pedido na venda. `order_id` só existe na venda. `actor_id` é quem
     favoritou: não sai na resposta, existe para o índice único impedir que
     favoritar, desfavoritar e favoritar de novo avise duas vezes.
+    `moderation_reason` só existe na suspensão: é o motivo que a administradora
+    gravou na peça, porque o aviso sem ele não diz ao vendedor por que o
+    anúncio saiu do ar (RN-80).
     """
 
     __tablename__ = "notifications"
@@ -47,6 +50,14 @@ class Notification(BaseModel):
             "(type = 'sale' AND order_id IS NOT NULL)"
             " OR (type <> 'sale' AND order_id IS NULL)",
             name="ck_notifications_order",
+        ),
+        # A suspensão carrega o motivo: o sino precisa dizer por que a peça saiu
+        # do ar, e a peça pode voltar (o motivo dela é apagado) sem apagar o
+        # histórico do aviso.
+        CheckConstraint(
+            "(type = 'moderation' AND moderation_reason IS NOT NULL)"
+            " OR (type <> 'moderation' AND moderation_reason IS NULL)",
+            name="ck_notifications_moderation",
         ),
         # A lista do usuário, mais recente primeiro.
         Index("ix_notifications_user_id_created_at", "user_id", "created_at"),
@@ -69,4 +80,5 @@ class Notification(BaseModel):
     )
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
     actor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
+    moderation_reason: Mapped[str | None] = mapped_column(String(500))
     read_at: Mapped[datetime | None] = mapped_column(DateTime)

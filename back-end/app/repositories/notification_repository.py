@@ -19,6 +19,8 @@ class NotificationRow(TypedDict):
     product_id: int
     product_name: str
     order_id: int | None
+    # Só na suspensão: o motivo que a administradora gravou (RN-80).
+    moderation_reason: str | None
     created_at: datetime
     read_at: datetime | None
 
@@ -48,23 +50,44 @@ class NotificationRepository:
         )
         self.db.flush()
 
-    def add_moderation(self, user_id: int, product_id: int) -> None:
-        """Aviso da suspensão ao vendedor (RN-80, back-end#327).
+    def add_moderation(self, user_id: int, product_id: int, reason: str) -> None:
+        """Aviso da suspensão ao vendedor, com o motivo (RN-80, back-end#327).
 
         Grava no mesmo commit da suspensão, como o aviso da venda: não pode
-        existir peça fora do ar sem o vendedor saber por quê. Não duplica
-        porque quem chama só avisa na primeira suspensão — suspender de novo
-        atualiza o motivo sem criar outra linha.
+        existir peça fora do ar sem o vendedor saber por quê. O motivo fica na
+        linha, e não só na peça: devolver a peça à vitrine apaga o motivo dela,
+        e o aviso continua dizendo o que aconteceu. Não duplica porque quem
+        chama só avisa na primeira suspensão — suspender de novo atualiza o
+        motivo pelo `update_moderation_reason`.
         """
         self.db.add(
             Notification(
                 user_id=user_id,
                 type="moderation",
                 product_id=product_id,
+                moderation_reason=reason,
                 created_at=utcnow_naive(),
             )
         )
         self.db.flush()
+
+    def update_moderation_reason(
+        self, user_id: int, product_id: int, reason: str
+    ) -> None:
+        """Troca o motivo do aviso já gravado, sem criar outro (RN-80).
+
+        Suspender de novo a mesma peça muda a explicação ao vendedor; dois
+        avisos da mesma peça só repetiriam o sino.
+        """
+        self.db.execute(
+            update(Notification)
+            .where(
+                Notification.user_id == user_id,
+                Notification.product_id == product_id,
+                Notification.type == "moderation",
+            )
+            .values(moderation_reason=reason)
+        )
 
     def add_favorite(self, user_id: int, product_id: int, actor_id: int) -> None:
         """Aviso do favorito, uma vez por peça e por quem favoritou.
@@ -111,6 +134,7 @@ class NotificationRepository:
                     Notification.product_id,
                     Product.name.label("product_name"),
                     Notification.order_id,
+                    Notification.moderation_reason,
                     Notification.created_at,
                     Notification.read_at,
                 )

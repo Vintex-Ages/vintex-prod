@@ -52,7 +52,10 @@ def get_moderation_controller(
         403: {"description": "ADMIN_REQUIRED: inclusive o dono da peça"},
         404: {"description": "PRODUCT_NOT_FOUND"},
         409: {
-            "description": "PRODUCT_SOLD · PRODUCT_NOT_EDITABLE: peça em pedido aberto"
+            "description": (
+                "PRODUCT_SOLD · PRODUCT_NOT_EDITABLE: peça vendida, reservada"
+                " ou em rascunho"
+            )
         },
         422: {"description": "motivo vazio"},
     },

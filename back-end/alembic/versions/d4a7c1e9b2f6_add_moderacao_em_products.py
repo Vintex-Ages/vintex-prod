@@ -11,7 +11,8 @@ vendedor consulta para recusar a republicação.
 
 Sem tabela nova e sem alterar o `CheckConstraint` do status: `despublicado` já
 existe. O aviso ao vendedor usa a tabela de notificações (#261), que ganha o
-terceiro tipo — o modelo já dizia que ele entraria aqui.
+terceiro tipo e o motivo na própria linha: o sino precisa dizer por que a peça
+saiu do ar, e o motivo da peça é apagado quando ela volta à vitrine.
 """
 
 from typing import Sequence, Union
@@ -49,8 +50,23 @@ def upgrade() -> None:
         "type IN ('sale', 'favorite', 'moderation')",
     )
 
+    # O motivo viaja com o aviso: a peça volta e perde o motivo, o sino continua
+    # contando por que ela saiu do ar.
+    op.add_column(
+        "notifications", sa.Column("moderation_reason", sa.String(500), nullable=True)
+    )
+    op.create_check_constraint(
+        "ck_notifications_moderation",
+        "notifications",
+        "(type = 'moderation' AND moderation_reason IS NOT NULL)"
+        " OR (type <> 'moderation' AND moderation_reason IS NULL)",
+    )
+
 
 def downgrade() -> None:
+    op.drop_constraint("ck_notifications_moderation", "notifications", type_="check")
+    op.drop_column("notifications", "moderation_reason")
+
     # O CHECK antigo não aceita o tipo novo: as linhas precisam sair antes de
     # ele voltar, senão o downgrade falha com dado de moderação gravado.
     op.execute("DELETE FROM notifications WHERE type = 'moderation'")

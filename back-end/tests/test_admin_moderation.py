@@ -23,6 +23,7 @@ CATALOGO = "/api/products/{}"
 PAINEL_VENDEDOR = "/api/users/me/products"
 PAUSAR = "/api/users/me/products/{}/unpublish"
 PUBLICAR = "/api/users/me/products/{}/publish"
+AVISOS = "/api/users/me/notifications"
 
 
 def make_user(db: Session, name: str, email: str, *, is_admin: bool = False) -> User:
@@ -143,6 +144,24 @@ def test_administradora_suspende_e_a_peca_sai_do_catalogo(cenario, client):
     )
     assert len(avisos) == 1
 
+    # O sino diz por que ela saiu do ar, não só que saiu (RN-80): o motivo vai
+    # na resposta da notificação, e não só na peça.
+    sino = client.get(AVISOS, headers=cenario["vendedora_headers"]).json()
+    aviso = next(item for item in sino["items"] if item["product_id"] == peca.id)
+    assert aviso["type"] == "moderation"
+    assert aviso["moderation_reason"] == "Fotos não são do produto"
+
+
+def test_suspender_de_novo_troca_o_motivo_sem_duplicar_o_aviso(cenario, client):
+    peca = cenario["peca"]
+    suspender(client, cenario["admin_headers"], peca.id, "Fotos não são do produto")
+    suspender(client, cenario["admin_headers"], peca.id, "Preço enganoso")
+
+    sino = client.get(AVISOS, headers=cenario["vendedora_headers"]).json()
+    avisos = [item for item in sino["items"] if item["type"] == "moderation"]
+    assert len(avisos) == 1
+    assert avisos[0]["moderation_reason"] == "Preço enganoso"
+
 
 def test_vendedor_nao_republica_peca_suspensa(cenario, client):
     peca = cenario["peca"]
@@ -182,8 +201,17 @@ def test_motivo_vazio_responde_422(cenario, client):
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-@pytest.mark.parametrize("status", ["vendido", "reservado"])
-def test_peca_em_pedido_nao_e_suspensa(cenario, client, status):
+@pytest.mark.parametrize(
+    ("status", "codigo"),
+    [
+        ("vendido", "PRODUCT_SOLD"),
+        ("reservado", "PRODUCT_NOT_EDITABLE"),
+        # Rascunho nunca esteve no feed: suspender e devolver gravaria `ativo`
+        # e publicaria uma peça que o vendedor não publicou (RN-50).
+        ("rascunho", "PRODUCT_NOT_EDITABLE"),
+    ],
+)
+def test_peca_que_nao_esta_na_vitrine_nao_e_suspensa(cenario, client, status, codigo):
     db = cenario["db"]
     peca = make_product(db, cenario["loja"], f"Peca {status}", status=status)
     db.commit()
@@ -191,6 +219,7 @@ def test_peca_em_pedido_nao_e_suspensa(cenario, client, status):
     response = suspender(client, cenario["admin_headers"], peca.id)
 
     assert response.status_code == 409
+    assert response.json()["error"]["code"] == codigo
     db.refresh(peca)
     assert peca.status == status
     assert peca.moderation_reason is None
