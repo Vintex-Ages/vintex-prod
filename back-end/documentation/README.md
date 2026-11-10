@@ -3,7 +3,7 @@
 Portal Docusaurus do back-end.
 
 ```bash
-cd documentation
+cd back-end/documentation
 npm ci
 npm start    # dev server em http://localhost:3000
 npm run build
@@ -20,7 +20,7 @@ documentation/
 └── src/css/custom.css
 ```
 
-`scripts/docs/generate_draft.py` (na raiz do repo) lê `path-map.json` e casa os arquivos alterados de um PR contra ele — usado pelo workflow [`documentation-draft.yml`](../.github/workflows/documentation-draft.yml).
+`back-end/scripts/docs/generate_draft.py` lê `path-map.json` e casa os arquivos alterados de um PR contra ele — usado pelo workflow [`back-end-documentation-draft.yml`](../../.github/workflows/back-end-documentation-draft.yml), que remove o prefixo `back-end/` dos caminhos antes de casá-los.
 
 ## Escopo (critérios de aceite da issue)
 

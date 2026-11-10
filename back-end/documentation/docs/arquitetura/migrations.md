@@ -21,7 +21,8 @@ O job **Tests (Postgres)** sobe as migrations de novo no banco de teste (`TEST_P
 ## Regras
 
 - **Revise o arquivo gerado** pelo `--autogenerate` antes de aplicar: ele não detecta tudo (renomear coluna, alguns constraints).
-- **Coluna nova em tabela com dado aceita nulo**, ou tem default. Linha gravada antes dela não tem o valor, e a leitura não pode quebrar. Ex.: `payments.receipt_name` e `payments.receipt_content_type` ([#244](https://github.com/Vintex-Ages/back-end/issues/244)).
+- **Coluna nova em tabela com dado aceita nulo**, ou tem default. Linha gravada antes dela não tem o valor, e a leitura não pode quebrar. Ex.: `payments.receipt_name` e `payments.receipt_content_type` ([#244](https://github.com/Vintex-Ages/back-end/issues/244)) e `users.terms_version` e `users.terms_accepted_at` (revisão `e4a2c7b9d1f3`, [#259](https://github.com/Vintex-Ages/back-end/issues/259)): usuário criado antes não tem versão de termos, e a leitura segue funcionando.
+- **Migration nova encadeia na head atual.** A `e4a2c7b9d1f3` avisou no PR que quem mergeasse uma revisão depois dela precisava ajustar o `down_revision`. O job **Migrations** reprova duas heads, então o ajuste aparece no CI antes do merge.
 - **O docstring da revisão diz por que ela existe**, com a issue. É o que sobra quando alguém lê o histórico.
 - **Teste de schema usa o Postgres**: `CheckConstraint`, `RETURNING` e extensões (`vector`, `unaccent`) se comportam diferente no SQLite.
 - Para conferir localmente, contra um banco descartável: `alembic upgrade head`, `alembic downgrade -1`, `alembic upgrade head`.

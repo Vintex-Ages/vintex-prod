@@ -34,7 +34,8 @@ Cada vendedor tem uma loja (RN-02). As rotas abaixo são públicas e funcionam d
 }
 ```
 
-- **`q` casa só o nome da loja**, por parte do nome e sem diferenciar maiúscula. No Postgres também ignora acento (`redencao` acha "Redenção"). Cidade fica de fora, declarado na #256. Filtrar por cidade é o filtro do catálogo.
+- **`q` casa só o nome da loja**, por parte do nome e sem diferenciar maiúscula. No Postgres também ignora acento (`redencao` acha "Redenção"). Cidade fica de fora, declarado na #256. Filtrar por cidade é o filtro do catálogo, e o catálogo também filtra por loja ([Filtros do catálogo por loja e localização](./situacoes-da-peca#filtros-do-catálogo-por-loja-e-localização)).
+- **`verified` é o selo Confiável** (RN-73) e só vale com documento válido: o dígito verificador do CPF ou CNPJ é conferido ([Loja do vendedor](./loja-do-vendedor#o-documento-do-vendedor)).
 - `q` ausente ou em branco lista todos. Mais de 100 caracteres responde `422`.
 - **`city` e `state` são nulos quando a loja não tem endereço** (`stores.address_id` é anulável). A loja continua na lista.
 - A busca devolve as lojas. As peças de uma loja saem de `GET /api/stores/{id}/products`; as duas juntas cumprem a RN-42.
