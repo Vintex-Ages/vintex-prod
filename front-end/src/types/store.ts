@@ -1,3 +1,4 @@
+
 /**
  * Contrato de dados da loja do vendedor (FE-SVC-store). Único ponto de
  * verdade para o shape de `StoreProfile` e do que é necessário para criar uma
@@ -10,9 +11,18 @@ export interface StoreMetrics {
   activeProducts: number;
   soldProducts: number;
   monthsOnPlatform: number;
-  /** RN-74 — só existem quando o back tiver dado suficiente; opcionais de propósito. */
+  /** RN-74 — a loja pode não ter avaliações. */
   shippingWithoutComplaintRate?: number;
-  rating?: number;
+  rating?: number | null;
+  ratingCount?: number;
+}
+
+export interface StoreRating {
+  id: string;
+  storeId: string;
+  orderId: string;
+  score: number;
+  createdAt: string;
 }
 
 export interface StoreProfile {
