@@ -43,6 +43,14 @@ class Product(BaseModel):
             "status IN ('rascunho', 'ativo', 'reservado', 'vendido', 'despublicado')",
             name="ck_products_status",
         ),
+        # A origem de uma Suspensa. `suspend` recusa `vendido`, `reservado` e
+        # `rascunho`, então a peça moderada veio de `ativo` ou de
+        # `despublicado` — e é para lá que o `restore` a devolve (RN-50).
+        CheckConstraint(
+            "moderation_previous_status IS NULL"
+            " OR moderation_previous_status IN ('ativo', 'despublicado')",
+            name="ck_products_moderation_previous_status",
+        ),
         CheckConstraint(
             "ai_status IS NULL OR ai_status IN ('pending', 'processing', 'done', 'failed')",
             name="ck_products_ai_status",
@@ -91,7 +99,7 @@ class Product(BaseModel):
 
     # Moderação da administradora (RN-80, back-end#327). É o que distingue a
     # peça que o **vendedor** pausou da que a **moderação** tirou do ar: as duas
-    # são `despublicado` no status, e só estas três colunas contam quem tirou,
+    # são `despublicado` no status, e só estas colunas contam quem tirou,
     # quando e por quê. Preenchidas só pela rota da administradora; o `publish`
     # do vendedor as recusa (RN-80), e o caminho de volta é a rota dela.
     moderation_reason: Mapped[str | None] = mapped_column(String(500))
@@ -100,6 +108,11 @@ class Product(BaseModel):
         BigInteger, ForeignKey("users.id")
     )
     moderated_by: Mapped["User | None"] = relationship()
+    # De onde a suspensão tirou a peça. A suspensão grava `despublicado`, que é
+    # o mesmo status da peça que o vendedor pausou; devolver à vitrine lê
+    # daqui em vez de gravar `ativo` fixo, senão a peça pausada entra no feed
+    # por uma suspensão, sem o vendedor publicar (RN-50).
+    moderation_previous_status: Mapped[str | None] = mapped_column(String(30))
 
     # Pipeline assíncrono de ingestão de IA (VE-05, back-end#62).
     # `ai_status` nulo significa "nenhuma análise de IA foi solicitada para

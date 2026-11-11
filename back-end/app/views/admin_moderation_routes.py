@@ -72,7 +72,7 @@ def suspend_product(
 @router.post(
     "/products/{product_id}/publish",
     response_model=ModerationResponse,
-    summary="Devolve à vitrine a peça Suspensa pela moderação",
+    summary="Devolve a peça Suspensa ao estado de onde a moderação a tirou",
     responses={
         403: {"description": "ADMIN_REQUIRED"},
         404: {"description": "PRODUCT_NOT_FOUND"},

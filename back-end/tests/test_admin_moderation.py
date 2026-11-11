@@ -2,12 +2,14 @@
 
 O caminho completo: a administradora tira a peça do ar com motivo, a peça sai
 do catálogo, o vendedor vê o motivo e **não** consegue republicar, e só a
-administradora devolve à vitrine. A peça que o vendedor pausou sozinho continua
-igual — é o que separa Pausada de Suspensa.
+administradora devolve ao estado de onde tirou — a peça que o vendedor pausou
+volta pausada, a que estava no ar volta `ativo`. É o que separa Pausada de
+Suspensa.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -191,6 +193,64 @@ def test_administradora_devolve_a_peca_a_vitrine(cenario, client):
     assert detalhe.status_code == 200
     assert detalhe.json()["status"] == "ativo"
 
+    # A origem não fica para a suspensão seguinte: a próxima devolução lê o
+    # estado gravado por ela, não o desta.
+    cenario["db"].refresh(peca)
+    assert peca.moderation_previous_status is None
+
+
+def test_devolver_a_peca_pausada_a_devolve_pausada(cenario, client):
+    """Suspender e devolver a peça que o vendedor pausou não a publica (RN-50).
+
+    As duas são `despublicado` no status; quem decide para onde a peça volta é
+    o estado de origem gravado na suspensão, não um `ativo` fixo.
+    """
+    pausada = cenario["pausada"]
+    assert suspender(client, cenario["admin_headers"], pausada.id).status_code == 200
+
+    response = client.post(
+        DEVOLVER.format(pausada.id), headers=cenario["admin_headers"]
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "despublicado"
+    # Fora do feed, como estava: a moderação não publica no lugar do vendedor.
+    assert client.get(CATALOGO.format(pausada.id)).status_code == 404
+
+    # E o caminho de volta ao feed continua sendo o `publish` do vendedor.
+    publicar = client.post(
+        PUBLICAR.format(pausada.id), headers=cenario["vendedora_headers"]
+    )
+    assert publicar.status_code == 200
+    assert publicar.json()["status"] == "ativo"
+
+
+def test_cada_suspensao_deixa_o_proprio_aviso(cenario, client):
+    """Devolver e suspender de novo não reescreve o aviso da suspensão anterior.
+
+    O sino conta o que aconteceu, com a data de cada suspensão; suspender de
+    novo dentro da mesma suspensão muda só o motivo do aviso em curso.
+    """
+    peca = cenario["peca"]
+
+    suspender(client, cenario["admin_headers"], peca.id, "Fotos não são do produto")
+    client.post(DEVOLVER.format(peca.id), headers=cenario["admin_headers"])
+    suspender(client, cenario["admin_headers"], peca.id, "Preço enganoso")
+    suspender(client, cenario["admin_headers"], peca.id, "Réplica não declarada")
+
+    sino = client.get(AVISOS, headers=cenario["vendedora_headers"]).json()
+    avisos = [item for item in sino["items"] if item["type"] == "moderation"]
+
+    # Um aviso por suspensão: o primeiro fica com o motivo e a data dele, e o
+    # segundo nasce com o motivo da suspensão em curso.
+    assert [aviso["moderation_reason"] for aviso in avisos] == [
+        "Réplica não declarada",
+        "Fotos não são do produto",
+    ]
+    primeira = datetime.fromisoformat(avisos[1]["created_at"])
+    segunda = datetime.fromisoformat(avisos[0]["created_at"])
+    assert primeira < segunda
+
 
 def test_motivo_vazio_responde_422(cenario, client):
     response = suspender(
@@ -206,12 +266,14 @@ def test_motivo_vazio_responde_422(cenario, client):
     [
         ("vendido", "PRODUCT_SOLD"),
         ("reservado", "PRODUCT_NOT_EDITABLE"),
-        # Rascunho nunca esteve no feed: suspender e devolver gravaria `ativo`
-        # e publicaria uma peça que o vendedor não publicou (RN-50).
+        # Rascunho nunca esteve no feed: suspender só mudaria a peça de aba no
+        # painel do vendedor, sem nada para devolver à vitrine.
         ("rascunho", "PRODUCT_NOT_EDITABLE"),
     ],
 )
-def test_peca_que_nao_esta_na_vitrine_nao_e_suspensa(cenario, client, status, codigo):
+def test_peca_vendida_reservada_ou_rascunho_nao_e_suspensa(
+    cenario, client, status, codigo
+):
     db = cenario["db"]
     peca = make_product(db, cenario["loja"], f"Peca {status}", status=status)
     db.commit()

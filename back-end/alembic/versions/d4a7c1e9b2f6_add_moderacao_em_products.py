@@ -5,9 +5,11 @@ Revises: c8f3b1e5d2a4
 Create Date: 2026-11-04
 
 A peça que a administradora tira do ar (RN-80) precisa se distinguir da peça
-que o próprio vendedor pausou: as duas são `despublicado` no status. As três
+que o próprio vendedor pausou: as duas são `despublicado` no status. Três
 colunas guardam quem moderou, quando e por quê, e são o que o `publish` do
-vendedor consulta para recusar a republicação.
+vendedor consulta para recusar a republicação. A quarta guarda o estado de onde
+a peça veio: sem ela, devolver à vitrine gravaria `ativo` e poria no feed a peça
+que o vendedor tinha pausado (RN-50).
 
 Sem tabela nova e sem alterar o `CheckConstraint` do status: `despublicado` já
 existe. O aviso ao vendedor usa a tabela de notificações (#261), que ganha o
@@ -43,6 +45,21 @@ def upgrade() -> None:
         ["id"],
     )
 
+    # De onde a suspensão tirou a peça. `suspend` recusa `vendido`, `reservado`
+    # e `rascunho`, então a origem é `ativo` (estava no feed) ou
+    # `despublicado` (o vendedor já a tinha pausado). O `restore` devolve para
+    # ela em vez de gravar `ativo` fixo.
+    op.add_column(
+        "products",
+        sa.Column("moderation_previous_status", sa.String(30), nullable=True),
+    )
+    op.create_check_constraint(
+        "ck_products_moderation_previous_status",
+        "products",
+        "moderation_previous_status IS NULL"
+        " OR moderation_previous_status IN ('ativo', 'despublicado')",
+    )
+
     op.drop_constraint("ck_notifications_type", "notifications", type_="check")
     op.create_check_constraint(
         "ck_notifications_type",
@@ -76,6 +93,11 @@ def downgrade() -> None:
         "notifications",
         "type IN ('sale', 'favorite')",
     )
+
+    op.drop_constraint(
+        "ck_products_moderation_previous_status", "products", type_="check"
+    )
+    op.drop_column("products", "moderation_previous_status")
 
     op.drop_constraint(
         "fk_products_moderated_by_id_users", "products", type_="foreignkey"

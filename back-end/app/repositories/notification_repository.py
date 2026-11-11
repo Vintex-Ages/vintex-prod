@@ -56,9 +56,11 @@ class NotificationRepository:
         Grava no mesmo commit da suspensão, como o aviso da venda: não pode
         existir peça fora do ar sem o vendedor saber por quê. O motivo fica na
         linha, e não só na peça: devolver a peça à vitrine apaga o motivo dela,
-        e o aviso continua dizendo o que aconteceu. Não duplica porque quem
-        chama só avisa na primeira suspensão — suspender de novo atualiza o
-        motivo pelo `update_moderation_reason`.
+        e o aviso continua dizendo o que aconteceu. Não duplica dentro da mesma
+        suspensão porque quem chama só avisa na primeira vez — suspender de novo
+        atualiza o motivo pelo `update_moderation_reason`. Devolvida à vitrine e
+        suspensa outra vez, é outro aviso: a suspensão anterior fica no
+        histórico com a data dela.
         """
         self.db.add(
             Notification(
@@ -74,18 +76,26 @@ class NotificationRepository:
     def update_moderation_reason(
         self, user_id: int, product_id: int, reason: str
     ) -> None:
-        """Troca o motivo do aviso já gravado, sem criar outro (RN-80).
+        """Troca o motivo do aviso da suspensão em curso, sem criar outro (RN-80).
 
         Suspender de novo a mesma peça muda a explicação ao vendedor; dois
-        avisos da mesma peça só repetiriam o sino.
+        avisos da mesma suspensão só repetiriam o sino. A linha que muda é a
+        mais recente da peça: depois de devolvê-la à vitrine, a suspensão
+        seguinte é outro episódio, com o seu próprio aviso, e sem esta restrição
+        o UPDATE reescreveria o motivo dos dois — apagando o histórico do
+        primeiro.
         """
+        da_peca = (
+            Notification.user_id == user_id,
+            Notification.product_id == product_id,
+            Notification.type == "moderation",
+        )
+        mais_recente = (
+            select(func.max(Notification.id)).where(*da_peca).scalar_subquery()
+        )
         self.db.execute(
             update(Notification)
-            .where(
-                Notification.user_id == user_id,
-                Notification.product_id == product_id,
-                Notification.type == "moderation",
-            )
+            .where(Notification.id == mais_recente)
             .values(moderation_reason=reason)
         )
 

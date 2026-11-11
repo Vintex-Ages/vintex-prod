@@ -4,7 +4,9 @@ Tirar do ar (RN-80) é despublicar com motivo gravado — o registro que o
 vendedor vê na peça dele —, e devolver é o mesmo caminho do `publish` do
 vendedor, inclusive a exigência de foto (RN-47). A diferença está em quem pode:
 só a administradora mexe na peça de qualquer vendedor (RN-32), e o vendedor não
-republica sozinho o que a moderação tirou (RN-80).
+republica sozinho o que a moderação tirou (RN-80). A devolução também respeita
+de onde a peça veio: a que o vendedor tinha pausado volta pausada, e não entra
+no feed por uma suspensão (RN-50).
 """
 
 from __future__ import annotations
@@ -49,19 +51,27 @@ class AdminModerationController:
 
         Peça `vendido`, `reservado` ou `rascunho` responde 409 e não muda de
         estado: a primeira é dinheiro contado (RN-53), a segunda está num
-        pedido aberto (RN-46) e a terceira nunca foi publicada — devolvê-la
-        depois gravaria `ativo` e poria no feed uma peça que o vendedor nunca
-        publicou (RN-50). A RN-80 não abre exceção, então o anúncio inadequado
-        já reservado continua no ar até o pedido resolver.
+        pedido aberto (RN-46) e a terceira nunca foi publicada — suspendê-la
+        sairia da aba de rascunhos do vendedor para um estado de moderação que
+        não tirou nada do ar. A RN-80 não abre exceção, então o anúncio
+        inadequado já reservado continua no ar até o pedido resolver.
+
+        A peça `despublicado` pode: é a que o vendedor pausou, e o estado de
+        origem fica gravado para o `restore` devolvê-la pausada (RN-50).
 
         Suspender de novo atualiza o motivo e a data, sem avisar outra vez: o
-        vendedor não precisa de dois avisos da mesma peça, mas o aviso que ele
-        já tem passa a dizer o motivo novo.
+        vendedor não precisa de dois avisos da mesma suspensão, mas o aviso que
+        ele já tem passa a dizer o motivo novo. Devolvida à vitrine e suspensa
+        de novo, é outra suspensão — e outro aviso, com a data dele.
         """
         product = self._get(product_id)
         self._recusar_status_incompativel(product)
 
         ja_estava = product.moderated_at is not None
+        if not ja_estava:
+            # Só na primeira suspensão: na segunda a peça já está em
+            # `despublicado`, e gravar isso apagaria de onde ela veio.
+            product.moderation_previous_status = product.status
         product.status = "despublicado"
         product.moderation_reason = reason
         product.moderated_at = utcnow_naive()
@@ -84,11 +94,17 @@ class AdminModerationController:
         return _resposta(product)
 
     def restore(self, product_id: int, admin: User) -> ModerationResponse:
-        """Devolve a peça Suspensa à vitrine (RN-80), com a checagem do `publish`.
+        """Devolve a peça Suspensa ao estado de onde a suspensão a tirou (RN-80).
 
         Sem foto, recusa: a `republish` saiu na `#230` justamente por usar o
         sentido `-> ativo` sem esta checagem e pôr peça sem imagem no feed
         público. Aqui é a mesma regra, pelo mesmo motivo.
+
+        `ativo` fixo seria a moderação publicando por conta própria: a peça que
+        o vendedor tinha pausado entraria no feed sem ele publicar (RN-50). O
+        status sai de `moderation_previous_status`, então a pausada volta
+        pausada — e o caminho dela de volta ao feed continua sendo o `publish`
+        do vendedor.
 
         Devolver uma peça que não está suspensa é conflito: esta rota não é o
         "publicar" geral da administradora.
@@ -104,13 +120,20 @@ class AdminModerationController:
                 "Devolver à vitrine exige ao menos uma foto.",
                 fields={"images": "A peça precisa de ao menos uma foto para voltar."},
             )
+        if product.moderation_previous_status is None:
+            # Invariante do `suspend`: toda Suspensa tem a origem gravada. Nulo
+            # aqui é defeito de gravação, não dado do usuário.
+            raise RuntimeError("Peça suspensa sem o estado anterior gravado.")
 
-        product.status = "ativo"
+        product.status = product.moderation_previous_status
         product.moderation_reason = None
         product.moderated_at = None
         product.moderated_by_id = None
+        product.moderation_previous_status = None
 
-        gerar_vetor = precisa_de_embedding(product)
+        # O vetor só vale para a peça no feed: devolvida a `despublicado`, ela
+        # continua fora da busca, e o vetor é pedido pelo `publish` do vendedor.
+        gerar_vetor = product.status == "ativo" and precisa_de_embedding(product)
         if gerar_vetor:
             pedir_embedding(product)
         self.products.commit()
@@ -140,7 +163,11 @@ class AdminModerationController:
 
     @staticmethod
     def _recusar_status_incompativel(product: Product) -> None:
-        """`vendido`, `reservado` e `rascunho` não mudam de estado (409)."""
+        """`vendido`, `reservado` e `rascunho` não mudam de estado (409).
+
+        `despublicado` passa: é a peça que o vendedor pausou, e a suspensão
+        guarda esse estado para o `restore` devolvê-la pausada (RN-50).
+        """
         if product.status == "vendido":
             raise AppError(
                 "Peça vendida não pode ser despublicada.",

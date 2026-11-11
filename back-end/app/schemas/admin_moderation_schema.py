@@ -42,10 +42,11 @@ class ModerationAuthor(BaseModel):
 
 
 class ModerationResponse(BaseModel):
-    """Resposta de suspender e de devolver à vitrine.
+    """Resposta de suspender e de devolver ao estado de origem.
 
     Nula no motivo e na data quando a peça voltou: a moderação deixou de
-    existir, e o status (`ativo`) diz o resto.
+    existir. O `status` é o de onde ela veio — `ativo` na peça que estava no
+    feed, `despublicado` na que o vendedor tinha pausado (RN-50).
     """
 
     product_id: int
