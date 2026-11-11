@@ -64,10 +64,10 @@ test.describe('vendedor', () => {
 
     await page.getByRole('button', { name: 'Continuar para revisão' }).click();
     await expect(page).toHaveURL(/\/seller\/products\/\d+\/review$/);
-    await expect(page.getByRole('heading', { name: 'Revisar anúncio' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Revise sua peça antes de publicar' })).toBeVisible();
     await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
 
-    await page.getByRole('button', { name: 'Publicar', exact: true }).click();
+    await page.getByRole('button', { name: /Confirmar e publicar peça/i }).click();
     await expect(page).toHaveURL(/\/seller$/);
     await expect(page.getByText(/Peça publicada/i)).toBeVisible();
     await expect(page.getByText(title)).toBeVisible();
