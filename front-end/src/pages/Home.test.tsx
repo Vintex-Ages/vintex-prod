@@ -453,11 +453,11 @@ describe('<Home />', () => {
     });
 
     it('não mostra o selo "98% seu estilo"', async () => {
-  renderHome(BUYER);
-  await screen.findByRole('link', { name: 'Vestido floral' });
+      renderHome(BUYER);
+      await screen.findByRole('link', { name: 'Vestido floral' });
 
-  expect(screen.queryByText(/98%\s*seu estilo/i)).not.toBeInTheDocument();
-});
+      expect(screen.queryByText(/98%\s*seu estilo/i)).not.toBeInTheDocument();
+    });
   });
 
   describe('favoritar de verdade no card (FE-US013-1, #328)', () => {

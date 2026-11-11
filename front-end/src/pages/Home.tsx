@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -23,11 +22,7 @@ import type { Preference, StyleOption } from '@/types/preference';
 
 const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
 
-const VINTEX_SUGGESTIONS = [
-  'Blazer de lã',
-  'Jeans anos 90',
-  'Camisa de seda',
-];
+const VINTEX_SUGGESTIONS = ['Blazer de lã', 'Jeans anos 90', 'Camisa de seda'];
 
 function Home() {
   const navigate = useNavigate();
@@ -68,9 +63,7 @@ function Home() {
         setPreferenceLabels(
           preferences
             .filter((preference) => preference.type === 'estilo')
-            .map((preference) =>
-              styles.find((style) => style.value === preference.value)?.label,
-            )
+            .map((preference) => styles.find((style) => style.value === preference.value)?.label)
             .filter((label): label is string => Boolean(label)),
         );
       })
@@ -92,11 +85,7 @@ function Home() {
   function searchCatalog(term: string) {
     const query = term.trim();
 
-    navigate(
-      query
-        ? `${paths.catalog}?q=${encodeURIComponent(query)}`
-        : paths.catalog,
-    );
+    navigate(query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog);
   }
 
   function askVintex(message: string) {
@@ -112,11 +101,7 @@ function Home() {
           </div>
 
           <div className="tablet:hidden">
-            <SearchBar
-              value={searchTerm}
-              onChange={setSearchTerm}
-              onSubmit={searchCatalog}
-            />
+            <SearchBar value={searchTerm} onChange={setSearchTerm} onSubmit={searchCatalog} />
           </div>
 
           <nav
@@ -161,9 +146,7 @@ function Home() {
                 className="max-w-4xl font-display text-[38px] leading-[1.12] tracking-[-1px] text-tinta tablet:text-[52px] web:text-[64px]"
               >
                 Olá{firstName ? `, ${firstName}` : ''}.
-                <span className="block">
-                  Novos achados do seu estilo.
-                </span>
+                <span className="block">Novos achados do seu estilo.</span>
               </h1>
 
               <div className="mt-4 max-w-2xl font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
@@ -177,8 +160,7 @@ function Home() {
                   </p>
                 ) : (
                   <p>
-                    Escolha seus estilos para receber uma curadoria
-                    personalizada.{' '}
+                    Escolha seus estilos para receber uma curadoria personalizada.{' '}
                     <Link
                       to={paths.profilePreferences}
                       className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
@@ -194,11 +176,7 @@ function Home() {
 
           {/* Convite exclusivo para quem ainda não possui brechó */}
           {showSellInvite && (
-            <Container
-              as="section"
-              aria-labelledby="vender-titulo"
-              className="pt-8 tablet:pt-10"
-            >
+            <Container as="section" aria-labelledby="vender-titulo" className="pt-8 tablet:pt-10">
               <div className="border border-linha bg-papel-profundo px-5 py-7 tablet:px-9 tablet:py-9">
                 <div className="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center tablet:justify-between tablet:gap-8">
                   <div className="max-w-2xl">
@@ -214,8 +192,7 @@ function Home() {
                     </h2>
 
                     <p className="mt-3 font-ui text-body-sm leading-relaxed text-texto-auxiliar">
-                      Transforme suas peças em novos achados.
-                      Cadastre seu brechó e pague apenas 9%
+                      Transforme suas peças em novos achados. Cadastre seu brechó e pague apenas 9%
                       de comissão quando vender.
                     </p>
                   </div>
@@ -232,11 +209,7 @@ function Home() {
           )}
 
           {/* Assistente Vintex: mesmo componente no mobile e desktop */}
-          <Container
-            as="section"
-            aria-label="Assistente Vintex"
-            className="pt-8 tablet:pt-10"
-          >
+          <Container as="section" aria-label="Assistente Vintex" className="pt-8 tablet:pt-10">
             <VintexSearchSpotlight
               headingAs="h2"
               eyebrow="IA Curadora • Vintex"
@@ -255,11 +228,7 @@ function Home() {
         as="section"
         aria-labelledby="feed-titulo"
         aria-busy={loading || loadingMore}
-        className={
-          isAuthenticated
-            ? 'pt-10 pb-12 tablet:pt-14'
-            : 'pt-4 tablet:pt-14'
-        }
+        className={isAuthenticated ? 'pt-10 pb-12 tablet:pt-14' : 'pt-4 tablet:pt-14'}
       >
         <div
           className={clsx(
@@ -312,11 +281,7 @@ function Home() {
             ].map(([label, query], index) => (
               <Link
                 key={label}
-                to={
-                  query
-                    ? `${paths.catalog}?q=${encodeURIComponent(query)}`
-                    : paths.catalog
-                }
+                to={query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog}
                 className={clsx(
                   'inline-flex min-h-touch shrink-0 items-center justify-center rounded-full border px-4 py-2 font-ui text-label font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
                   index === 0
@@ -333,32 +298,16 @@ function Home() {
               aria-label="Abrir filtros do catálogo"
               className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-full border border-linha bg-branco-quente text-texto-auxiliar transition-colors hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
             >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-              >
-                <path
-                  d="M4 7h16M7 12h10m-7 5h4"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-                <path
-                  d="m17 5 2 2-2 2"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+                <path d="M4 7h16M7 12h10m-7 5h4" stroke="currentColor" strokeWidth="1.8" />
+                <path d="m17 5 2 2-2 2" stroke="currentColor" strokeWidth="1.8" />
               </svg>
             </Link>
           </nav>
         )}
 
         {error && !hasItems ? (
-          <ErrorState
-            message="Não foi possível carregar as peças agora."
-            onRetry={load}
-          />
+          <ErrorState message="Não foi possível carregar as peças agora." onRetry={load} />
         ) : (
           <>
             {(loading || loadingMore) && (
@@ -372,14 +321,8 @@ function Home() {
               loading={loading}
               productPath={productDetail}
               compactCards={isAuthenticated}
-              onToggleFavorite={
-                isAuthenticated ? handleToggleFavorite : undefined
-              }
-              isFavorite={
-                isAuthenticated
-                  ? (id) => favoriteIds.has(id)
-                  : undefined
-              }
+              onToggleFavorite={isAuthenticated ? handleToggleFavorite : undefined}
+              isFavorite={isAuthenticated ? (id) => favoriteIds.has(id) : undefined}
               onOpen={() => {}}
               emptyState={
                 <EmptyState
@@ -394,10 +337,7 @@ function Home() {
         {hasMore && (
           <div className="mt-8 flex flex-col items-center gap-3">
             {error && hasItems ? (
-              <p
-                role="alert"
-                className="font-ui text-body-sm text-vermelho-escuro"
-              >
+              <p role="alert" className="font-ui text-body-sm text-vermelho-escuro">
                 Não foi possível carregar mais peças. Tente de novo.
               </p>
             ) : null}
