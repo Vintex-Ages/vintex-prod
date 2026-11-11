@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -20,50 +21,27 @@ import { getPreferences, getStyles } from '@/services/preferenceService';
 import { formatPieceCount } from '@/utils/format';
 import type { Preference, StyleOption } from '@/types/preference';
 
-/**
- * Termos que existem no catálogo — cada um devolve resultado tanto no mock
- * quanto na busca do back, que casa por nome, marca e categoria. Sugestão que
- * não acha nada é pior que sugestão nenhuma, ainda mais numa demonstração.
- */
 const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
 
-/**
- * Home — abertura do produto e feed de peças.
- *
- * Decisões da revisão visual:
- *
- * - **A página abre dizendo o que a Vintex é e deixa buscar dali.** Antes
- *   abria com "Feed de achados" em 72px e a grade logo abaixo: um rótulo do
- *   tamanho de uma manchete, e nenhuma forma de buscar sem antes navegar até o
- *   catálogo. O bloco de abertura é o `VintexSearchSpotlight`, que já existia
- *   no repositório, testado e sem nenhuma tela que o usasse.
- * - **O título da página é a frase de abertura**, e "Feed de achados" desce
- *   para `h2` de seção — a ordem dos títulos passa a descrever a página.
- * - **Erro e vazio têm saída.** O erro era um `<p>` vermelho sem ação; agora
- *   oferece tentar de novo. Falha ao carregar mais não derruba o que já está
- *   na tela: vira aviso ao lado do botão.
- * - **Convite para vender (FE-US006-1, #212).** A Home logada usa o banner do
- *   Figma e oferece "Anunciar Peça" (`/sell`) a quem ainda não tem loja.
- *   Como no `Header`, a fonte é `user.is_seller`, sem requisição extra.
- * - **"Garimpados para Você" vem das recomendações (FE-US029-1, #325).**
- *   Logado e sem categoria, a grade é `getRecommendations` (RN-64); se ela
- *   falhar, cai no feed sem aviso (RN-38). Com categoria ou deslogado, segue
- *   o feed. Fonte, paginação e descarte de resposta velha moram no
- *   `useHomeFeed`; aqui é só a tela.
- *
- * Usage:
- *   <Route path={paths.home} element={<Home />} />
- */
+const VINTEX_SUGGESTIONS = [
+  'Blazer de lã',
+  'Jeans anos 90',
+  'Camisa de seda',
+];
+
 function Home() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+
   const showSellInvite = isAuthenticated && !user?.is_seller;
+  const firstName = user?.name?.trim().split(/\s+/)[0] || '';
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
   const [preferenceLabels, setPreferenceLabels] = useState<string[]>([]);
-  // Favoritos vêm do contexto compartilhado (#328): o mesmo id marcado aqui
-  // aparece marcado no detalhe da peça, e vice-versa.
+
   const { ids: favoriteIds, toggle: toggleFavorite } = useFavorites();
+
   const {
     feed,
     loading,
@@ -82,13 +60,17 @@ function Home() {
     }
 
     let current = true;
+
     Promise.all([getStyles(), getPreferences()])
       .then(([styles, preferences]: [StyleOption[], Preference[]]) => {
         if (!current) return;
+
         setPreferenceLabels(
           preferences
             .filter((preference) => preference.type === 'estilo')
-            .map((preference) => styles.find((style) => style.value === preference.value)?.label)
+            .map((preference) =>
+              styles.find((style) => style.value === preference.value)?.label,
+            )
             .filter((label): label is string => Boolean(label)),
         );
       })
@@ -101,21 +83,20 @@ function Home() {
     };
   }, [isAuthenticated]);
 
-  /**
-   * Coração do card (FE-US013-1, #328). `toggle` é otimista e já desfaz o
-   * coração quando a API falha — inclusive no `404` de peça que deixou de
-   * existir. Por isso o erro morre aqui: a tela não mente nem mostra um erro
-   * genérico, o coração só volta ao que era.
-   */
   function handleToggleFavorite(id: string) {
     void toggleFavorite(id).catch(() => {
-      // Silencioso de propósito: o `FavoritesContext` desfez o coração.
+      // O contexto já desfaz a alteração quando ocorre uma falha.
     });
   }
 
   function searchCatalog(term: string) {
     const query = term.trim();
-    navigate(query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog);
+
+    navigate(
+      query
+        ? `${paths.catalog}?q=${encodeURIComponent(query)}`
+        : paths.catalog,
+    );
   }
 
   function askVintex(message: string) {
@@ -123,27 +104,21 @@ function Home() {
   }
 
   return (
-    <main className={isAuthenticated ? 'bg-white' : undefined}>
-      <Container
-        className={
-          isAuthenticated
-            ? 'pt-5 tablet:pt-8'
-            : 'flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8'
-        }
-      >
-        {!isAuthenticated && (
+    <main className={isAuthenticated ? 'bg-branco-quente' : undefined}>
+      {!isAuthenticated ? (
+        <Container className="flex flex-col gap-4 pt-6 pb-0 tablet:gap-6 tablet:py-8">
           <div className="-mx-4 -mt-6 tablet:hidden">
             <BrandSignature headingAs="p" />
           </div>
-        )}
 
-        {!isAuthenticated && (
           <div className="tablet:hidden">
-            <SearchBar value={searchTerm} onChange={setSearchTerm} onSubmit={searchCatalog} />
+            <SearchBar
+              value={searchTerm}
+              onChange={setSearchTerm}
+              onSubmit={searchCatalog}
+            />
           </div>
-        )}
 
-        {!isAuthenticated && (
           <nav
             aria-label="Categorias de peças"
             className="-mx-4 flex flex-nowrap items-center gap-2 overflow-x-auto px-4 hide-scrollbar tablet:hidden"
@@ -156,114 +131,135 @@ function Home() {
                 onToggle={() => setSelectedCategory(value)}
               />
             ))}
+
             <FilterToggle onClick={() => navigate(paths.catalog)} />
           </nav>
-        )}
 
-        {/* O spotlight segue como caminho de busca com IA na abertura desktop. */}
-        <div className="hidden tablet:block">
-          <VintexSearchSpotlight
-            headingAs="h1"
-            heading="Garimpe a peça certa nos brechós do Rio Grande do Sul."
-            // Sem eyebrow e sem selo "Online": a assistente ainda não responde de
-            // verdade, e anunciar disponibilidade que não existe é promessa que a
-            // própria demonstração desmente.
-            eyebrow=""
-            isOnline={false}
-            suggestions={SUGGESTIONS}
-            placeholder="O que você procura?"
-            // Enviar pelo spotlight é a via principal da IA (RN-94): leva direto
-            // para a conversa já com a pergunta, não para a busca tradicional do
-            // catálogo (#143 lê `location.state.message`).
-            onSubmit={(query) => navigate(paths.vintex, { state: { message: query } })}
-          />
-        </div>
-      </Container>
-
-      {isAuthenticated && (
-        <Container className="flex flex-col gap-4 pt-4 tablet:hidden">
-          <div className="flex flex-col gap-1">
-            <p className="font-ui text-[12px] font-bold uppercase tracking-[1.1px] text-vermelho-escuro">
-              Curadoria Personalizada
-            </p>
-            <p className="font-ui text-body-sm text-texto-auxiliar">
-              {preferenceLabels.length > 0 ? (
-                <>
-                  Seu perfil está afinado para{' '}
-                  <strong className="font-bold text-texto-auxiliar">
-                    {preferenceLabels.join(' e ')}
-                  </strong>
-                  . Explore as novidades da Vintex.
-                </>
-              ) : (
-                <>
-                  Escolha seus estilos para personalizar sua experiência.{' '}
-                  <Link
-                    to={paths.profilePreferences}
-                    className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
-                  >
-                    Defina suas preferências
-                  </Link>
-                  .
-                </>
-              )}
-            </p>
-          </div>
-
-          <SearchBar
-            value={searchTerm}
-            onChange={setSearchTerm}
-            onSubmit={searchCatalog}
-            placeholder="Busque por peça, marca ou brechó..."
-          />
-
-          <div aria-label="Sugestões da Vintex" className="flex flex-wrap gap-2">
-            {[
-              ['Sugerir Look', 'Sugira um look para mim.'],
-              ['Últimas Tendências', 'Quais são as últimas tendências?'],
-              ['Achados (Raros)', 'Mostre achados raros.'],
-            ].map(([label, message]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => askVintex(message)}
-                className="min-h-touch rounded-full border border-linha bg-verde-rs px-3 py-2 font-ui text-[11px] font-semibold text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente"
-              >
-                {label}
-              </button>
-            ))}
+          <div className="hidden tablet:block">
+            <VintexSearchSpotlight
+              headingAs="h1"
+              heading="Garimpe a peça certa nos brechós do Rio Grande do Sul."
+              eyebrow=""
+              isOnline={false}
+              suggestions={SUGGESTIONS}
+              placeholder="O que você procura?"
+              onSubmit={askVintex}
+            />
           </div>
         </Container>
+      ) : (
+        <>
+          {/* Saudação e curadoria personalizada */}
+          <Container className="pt-8 pb-0 tablet:pt-12 web:pt-16">
+            <section aria-labelledby="home-saudacao">
+              <p className="mb-3 font-ui text-[11px] font-bold uppercase tracking-[1.6px] text-vermelho-escuro">
+                Curadoria personalizada
+              </p>
+
+              <h1
+                id="home-saudacao"
+                className="max-w-4xl font-display text-[38px] leading-[1.12] tracking-[-1px] text-tinta tablet:text-[52px] web:text-[64px]"
+              >
+                Olá{firstName ? `, ${firstName}` : ''}.
+                <span className="block">
+                  Novos achados do seu estilo.
+                </span>
+              </h1>
+
+              <div className="mt-4 max-w-2xl font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
+                {preferenceLabels.length > 0 ? (
+                  <p>
+                    Seu estilo está calibrado para{' '}
+                    <strong className="font-semibold text-tinta">
+                      {preferenceLabels.join(' e ')}
+                    </strong>
+                    . Explore as peças selecionadas para você.
+                  </p>
+                ) : (
+                  <p>
+                    Escolha seus estilos para receber uma curadoria
+                    personalizada.{' '}
+                    <Link
+                      to={paths.profilePreferences}
+                      className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                    >
+                      Defina suas preferências
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
+            </section>
+          </Container>
+
+          {/* Convite exclusivo para quem ainda não possui brechó */}
+          {showSellInvite && (
+            <Container
+              as="section"
+              aria-labelledby="vender-titulo"
+              className="pt-8 tablet:pt-10"
+            >
+              <div className="border border-linha bg-papel-profundo px-5 py-7 tablet:px-9 tablet:py-9">
+                <div className="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center tablet:justify-between tablet:gap-8">
+                  <div className="max-w-2xl">
+                    <p className="mb-3 font-ui text-[10px] font-bold uppercase tracking-[1.5px] text-vermelho-escuro">
+                      Inscrição liberada
+                    </p>
+
+                    <h2
+                      id="vender-titulo"
+                      className="font-display text-[29px] leading-tight text-tinta tablet:text-[38px]"
+                    >
+                      Cadastre seu brechó para vender
+                    </h2>
+
+                    <p className="mt-3 font-ui text-body-sm leading-relaxed text-texto-auxiliar">
+                      Transforme suas peças em novos achados.
+                      Cadastre seu brechó e pague apenas 9%
+                      de comissão quando vender.
+                    </p>
+                  </div>
+
+                  <Link
+                    to={paths.sell}
+                    className="inline-flex min-h-touch w-full shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-6 py-3 font-ui text-label font-semibold uppercase tracking-[0.7px] text-branco-quente transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro tablet:w-auto"
+                  >
+                    Criar meu brechó
+                  </Link>
+                </div>
+              </div>
+            </Container>
+          )}
+
+          {/* Assistente Vintex: mesmo componente no mobile e desktop */}
+          <Container
+            as="section"
+            aria-label="Assistente Vintex"
+            className="pt-8 tablet:pt-10"
+          >
+            <VintexSearchSpotlight
+              headingAs="h2"
+              eyebrow="IA Curadora • Vintex"
+              heading="O que você procura hoje no RS?"
+              placeholder="Descreva a peça ou estilo..."
+              suggestions={VINTEX_SUGGESTIONS}
+              isOnline={false}
+              onSubmit={askVintex}
+            />
+          </Container>
+        </>
       )}
 
-      {showSellInvite ? (
-        <Container as="section" aria-labelledby="vender-titulo" className="pt-6 tablet:pt-8">
-          <div className="relative border border-linha bg-papel-profundo p-5 shadow-[4px_4px_0_0_#eee5d7,0_8px_16px_rgba(29,27,26,0.06)]">
-            <div aria-hidden className="absolute inset-2 border border-tinta/15" />
-            <div className="relative flex flex-col items-start gap-1">
-              <p className="font-ui text-[10px] font-bold uppercase leading-[15.6px] text-vermelho-escuro">
-                Taxa de apenas <span className="text-[12px]">9%</span> quando vender
-              </p>
-              <h2 id="vender-titulo" className="font-display text-h4 text-tinta">
-                Venda roupas do seu armário
-              </h2>
-              <p className="font-ui text-body-sm text-texto-auxiliar">Anuncie em 2 minutos.</p>
-              <Link
-                to={paths.sell}
-                className="mt-2 inline-flex min-h-touch w-full items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-3 py-2 font-ui text-label font-semibold uppercase tracking-[0.48px] text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-branco-quente tablet:w-auto"
-              >
-                Anunciar Peça
-              </Link>
-            </div>
-          </div>
-        </Container>
-      ) : null}
-
+      {/* Feed existente: preserva recomendações e paginação */}
       <Container
         as="section"
         aria-labelledby="feed-titulo"
         aria-busy={loading || loadingMore}
-        className={isAuthenticated ? 'pt-10 tablet:pt-14' : 'pt-4 tablet:pt-14'}
+        className={
+          isAuthenticated
+            ? 'pt-10 pb-12 tablet:pt-14'
+            : 'pt-4 tablet:pt-14'
+        }
       >
         <div
           className={clsx(
@@ -282,6 +278,7 @@ function Home() {
           >
             {isAuthenticated ? 'Garimpados para Você' : 'Feed de achados'}
           </h2>
+
           {isAuthenticated ? (
             <Link
               to={paths.profilePreferences}
@@ -294,6 +291,7 @@ function Home() {
               {formatPieceCount(feed.total)} à venda agora
             </p>
           ) : null}
+
           {!isAuthenticated && feed && feed.total > 0 ? (
             <p className="font-ui text-[12px] leading-normal text-texto-auxiliar tablet:hidden">
               {formatPieceCount(feed.total)} encontradas
@@ -314,7 +312,11 @@ function Home() {
             ].map(([label, query], index) => (
               <Link
                 key={label}
-                to={query ? `${paths.catalog}?q=${encodeURIComponent(query)}` : paths.catalog}
+                to={
+                  query
+                    ? `${paths.catalog}?q=${encodeURIComponent(query)}`
+                    : paths.catalog
+                }
                 className={clsx(
                   'inline-flex min-h-touch shrink-0 items-center justify-center rounded-full border px-4 py-2 font-ui text-label font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
                   index === 0
@@ -325,44 +327,59 @@ function Home() {
                 {label}
               </Link>
             ))}
+
             <Link
               to={paths.catalog}
               aria-label="Abrir filtros do catálogo"
               className="inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-full border border-linha bg-branco-quente text-texto-auxiliar transition-colors hover:bg-papel-profundo focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
-                <path d="M4 7h16M7 12h10m-7 5h4" stroke="currentColor" strokeWidth="1.8" />
-                <path d="m17 5 2 2-2 2" stroke="currentColor" strokeWidth="1.8" />
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+              >
+                <path
+                  d="M4 7h16M7 12h10m-7 5h4"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="m17 5 2 2-2 2"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
               </svg>
             </Link>
           </nav>
         )}
 
         {error && !hasItems ? (
-          <ErrorState message="Não foi possível carregar as peças agora." onRetry={load} />
+          <ErrorState
+            message="Não foi possível carregar as peças agora."
+            onRetry={load}
+          />
         ) : (
           <>
-            {/*
-              O aviso de carregamento continua existindo para leitor de tela,
-              mas sai da tela: os skeletons são `aria-hidden`, então sem ele a
-              espera fica muda — e com ele visível a mesma informação aparecia
-              duas vezes, como texto e como blocos.
-            */}
             {(loading || loadingMore) && (
               <p role="status" className="sr-only">
                 Carregando peças…
               </p>
             )}
+
             <ProductGrid
               products={feed?.items ?? []}
               loading={loading}
               productPath={productDetail}
               compactCards={isAuthenticated}
-              onToggleFavorite={isAuthenticated ? handleToggleFavorite : undefined}
-              isFavorite={isAuthenticated ? (id) => favoriteIds.has(id) : undefined}
-              // Com `productPath` real, quem navega é o `<Link>` do cartão. Navegar
-              // aqui também empilharia duas entradas no histórico e o "voltar" não
-              // sairia da peça; `onOpen` fica como ponto de telemetria.
+              onToggleFavorite={
+                isAuthenticated ? handleToggleFavorite : undefined
+              }
+              isFavorite={
+                isAuthenticated
+                  ? (id) => favoriteIds.has(id)
+                  : undefined
+              }
               onOpen={() => {}}
               emptyState={
                 <EmptyState
@@ -377,10 +394,14 @@ function Home() {
         {hasMore && (
           <div className="mt-8 flex flex-col items-center gap-3">
             {error && hasItems ? (
-              <p role="alert" className="font-ui text-body-sm text-vermelho-escuro">
+              <p
+                role="alert"
+                className="font-ui text-body-sm text-vermelho-escuro"
+              >
                 Não foi possível carregar mais peças. Tente de novo.
               </p>
             ) : null}
+
             <Button
               variant="secondary"
               disabled={loading || loadingMore}
