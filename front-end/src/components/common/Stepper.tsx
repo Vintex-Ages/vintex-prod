@@ -36,6 +36,11 @@ export type StepperProps = {
   current: number;
   /** Recebe o índice da etapa concluída clicada. Sem ele, nada é clicável. */
   onStepSelect?: (index: number) => void;
+  /**
+   * Esconde o resumo "2 de 3 · Dados" do mobile e deixa só o "Voltar para <etapa>". Para telas
+   * que já dizem a etapa por conta própria (ex.: o selo da revisão, no Figma).
+   */
+  hideProgressLabel?: boolean;
 };
 
 type StepState = 'completed' | 'current' | 'upcoming';
@@ -75,7 +80,7 @@ function StepMarker({ index, state }: { index: number; state: StepState }) {
   );
 }
 
-function Stepper({ steps, current, onStepSelect }: StepperProps) {
+function Stepper({ steps, current, onStepSelect, hideProgressLabel = false }: StepperProps) {
   const currentStep = steps[current];
   const previousStep = current > 0 ? steps[current - 1] : undefined;
 
@@ -83,14 +88,19 @@ function Stepper({ steps, current, onStepSelect }: StepperProps) {
     <div>
       {currentStep ? (
         <div className="flex flex-wrap items-center justify-between gap-2 tablet:hidden">
-          <p className="text-body-sm font-semibold text-tinta">
-            {`${current + 1} de ${steps.length} · ${currentStep.label}`}
-          </p>
+          {hideProgressLabel ? null : (
+            <p className="text-body-sm font-semibold text-tinta">
+              {`${current + 1} de ${steps.length} · ${currentStep.label}`}
+            </p>
+          )}
           {previousStep && onStepSelect ? (
             <button
               type="button"
               onClick={() => onStepSelect(current - 1)}
-              className="inline-flex min-h-touch items-center px-1 text-body-sm text-tinta underline underline-offset-4 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
+              className={clsx(
+                'inline-flex min-h-touch items-center px-1 text-body-sm text-tinta underline underline-offset-4 transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta',
+                hideProgressLabel && 'ml-auto',
+              )}
             >
               {`Voltar para ${previousStep.label}`}
             </button>
