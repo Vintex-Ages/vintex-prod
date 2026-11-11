@@ -330,3 +330,22 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     expect(error).toMatchObject({ name: 'OrderReportError', code: 'FORBIDDEN' });
   });
 });
+
+// #410: a mesma regra decide o botão "Reportar problema" no cartão e no detalhe.
+describe('canReportOrder', () => {
+  it.each(['confirmado', 'preparando', 'enviado', 'concluido'] as const)(
+    'Pedido %s pode ser reportado',
+    async (status) => {
+      const { canReportOrder } = await import('./reportService');
+      expect(canReportOrder(status)).toBe(true);
+    },
+  );
+
+  it.each(['aguardando_comprovante', 'em_analise', 'expirado'] as const)(
+    'Pedido %s não pode ser reportado',
+    async (status) => {
+      const { canReportOrder } = await import('./reportService');
+      expect(canReportOrder(status)).toBe(false);
+    },
+  );
+});
