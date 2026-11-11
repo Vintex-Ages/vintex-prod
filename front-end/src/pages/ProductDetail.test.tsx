@@ -42,8 +42,16 @@ vi.mock('@/services/favoriteService', async (importOriginal) => {
   };
 });
 
+/** Combine e monte o look (#412): a rota de combinações é sempre mockada aqui. */
+vi.mock('@/services/combinationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/combinationService')>()),
+  getCombinations: vi.fn(),
+}));
+
 import { addItem, getCart, removeItem } from '@/services/cartService';
+import { CombinationError, getCombinations } from '@/services/combinationService';
 import { addFavorite, listFavoriteIds, removeFavorite } from '@/services/favoriteService';
+import type { LookSuggestion } from '@/types/look';
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedAddItem = vi.mocked(addItem);
@@ -51,6 +59,34 @@ const mockedRemoveItem = vi.mocked(removeItem);
 const mockedAddFavorite = vi.mocked(addFavorite);
 const mockedListFavoriteIds = vi.mocked(listFavoriteIds);
 const mockedRemoveFavorite = vi.mocked(removeFavorite);
+const mockedGetCombinations = vi.mocked(getCombinations);
+
+const LOOK: LookSuggestion = {
+  pieces: [
+    {
+      id: '7',
+      name: 'Bolsa baú de couro caramelo',
+      price: 90,
+      category: 'Acessórios',
+      coverImageUrl: null,
+      store: { id: '2', name: 'Brechó da Redenção' },
+    },
+    {
+      id: '8',
+      name: 'Lenço de seda estampado',
+      price: 35.5,
+      category: 'Acessórios',
+      coverImageUrl: null,
+      store: { id: '3', name: 'Garimpo Serrano' },
+    },
+  ],
+  matchType: 'exact',
+  totalAmount: 125.5,
+};
+
+const EMPTY_LOOK: LookSuggestion = { pieces: [], matchType: 'exact', totalAmount: 0 };
+
+const LOOK_TITLE = 'Combine esta peça e monte o look';
 
 afterEach(() => {
   cleanup();
@@ -228,6 +264,8 @@ beforeEach(() => {
   mockedGetCart.mockResolvedValue(EMPTY_CART);
   mockedAddItem.mockResolvedValue(CART_WITH_PRODUCT);
   mockedRemoveItem.mockResolvedValue(EMPTY_CART);
+  // Padrão: sem peças que combinem, a seção não aparece e não interfere nos demais testes.
+  mockedGetCombinations.mockResolvedValue(EMPTY_LOOK);
 });
 
 describe('<ProductDetail />', () => {
@@ -248,21 +286,252 @@ describe('<ProductDetail />', () => {
     expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeTruthy();
   });
 
-  it('mostra a curadoria do Figma e alterna o item localmente no look', async () => {
-    const user = userEvent.setup();
-    renderAt('/product/1');
+  describe('Combine e monte o look (FE-US030-1, #412)', () => {
+    const BOLSA = /Adicionar Bolsa baú de couro caramelo à sacola/;
 
-    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
-    expect(screen.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Bolsa Baú de Couro Caramelo' })).toBeInTheDocument();
+    async function secaoDoLook() {
+      return screen.findByRole('region', { name: LOOK_TITLE });
+    }
 
-    const addToLook = screen.getByRole('button', { name: '+ Adicionar' });
-    await user.click(addToLook);
+    /** Deixa as promessas pendentes (getCombinations) resolverem. */
+    async function flush() {
+      await waitFor(() => expect(mockedGetCombinations).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
 
-    expect(screen.getByRole('button', { name: '✓ Adicionada ao look' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // Teste 1.
+    it('mostra título, peças, loja, preço e total', async () => {
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1');
+
+      const secao = within(await secaoDoLook());
+      expect(secao.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
+      expect(secao.getByText('Bolsa baú de couro caramelo')).toBeInTheDocument();
+      expect(secao.getByText('Brechó da Redenção')).toBeInTheDocument();
+      expect(secao.getByText('R$ 90,00')).toBeInTheDocument();
+      expect(secao.getByText('Lenço de seda estampado')).toBeInTheDocument();
+      expect(secao.getByText('Total do conjunto')).toBeInTheDocument();
+      expect(secao.getByText('R$ 125,50')).toBeInTheDocument();
+      expect(mockedGetCombinations).toHaveBeenCalledWith('1');
+      // O placeholder fixo saiu.
+      expect(screen.queryByRole('img', { name: /Bolsa Baú de Couro/ })).not.toBeInTheDocument();
+    });
+
+    // Teste 2.
+    it('fallback mostra a linha de alternativa', async () => {
+      mockedGetCombinations.mockResolvedValue({ ...LOOK, matchType: 'fallback' });
+      renderAt('/product/1');
+
+      expect(
+        within(await secaoDoLook()).getByText(/estas são alternativas próximas/),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 3.
+    it('sem peças, a seção não aparece, nem o título', async () => {
+      mockedGetCombinations.mockResolvedValue(EMPTY_LOOK);
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+      await flush();
+      expect(screen.queryByText(LOOK_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText('Curadoria da IA Vintex')).not.toBeInTheDocument();
+    });
+
+    // Teste 4.
+    it('falha da rota não derruba o detalhe e a seção não aparece', async () => {
+      mockedGetCombinations.mockRejectedValue(new CombinationError('INTERNAL_ERROR', 'falhou'));
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+      await flush();
+      expect(screen.queryByRole('region', { name: LOOK_TITLE })).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+      expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeInTheDocument();
+    });
+
+    // Teste 5.
+    describe('só carrega depois da peça principal', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('não chama getCombinations enquanto a peça principal carrega', async () => {
+        const real = await catalogService.getProduct('1');
+        let resolveProduct: (value: ProductDetailData) => void = () => {};
+        vi.spyOn(catalogService, 'getProduct').mockReturnValue(
+          new Promise((resolve) => (resolveProduct = resolve)),
+        );
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/1');
+
+        expect(screen.getByRole('status')).toHaveTextContent('Carregando produto...');
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+
+        resolveProduct(real);
+        expect(await secaoDoLook()).toBeInTheDocument();
+        expect(mockedGetCombinations).toHaveBeenCalledOnce();
+        expect(mockedGetCombinations).toHaveBeenCalledWith('1');
+      });
+
+      it('peça não encontrada não chama getCombinations', async () => {
+        renderAt('/product/inexistente');
+
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/não encontrada/i));
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+      });
+
+      it('erro ao carregar a peça não chama getCombinations', async () => {
+        vi.spyOn(catalogService, 'getProduct').mockRejectedValue(new Error('rede'));
+        renderAt('/product/1');
+
+        await waitFor(() =>
+          expect(screen.getByRole('alert')).toHaveTextContent(/Não foi possível carregar/),
+        );
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+      });
+    });
+
+    // Teste 6.
+    it('logado: "+ Adicionar" põe a peça sugerida na sacola e mostra o toast', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { authenticated: true, cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      await waitFor(() => expect(add).toHaveBeenCalledWith('7'));
+      expect(add).toHaveBeenCalledOnce();
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Ver carrinho' })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('logado: falha ao adicionar a peça sugerida mostra o toast de erro', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockRejectedValue(new Error('falhou'));
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { authenticated: true, cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      expect(
+        await screen.findByText('Não foi possível adicionar ao carrinho. Tente novamente.'),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 7.
+    it('deslogado: abre o LoginInterceptor sem chamar add e guarda a peça clicada', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(add).not.toHaveBeenCalled();
+      const pending = JSON.parse(
+        window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY) ?? '{}',
+      ) as { returnTo?: string; intent?: { payload?: Record<string, unknown> } };
+      expect(pending.returnTo).toBe('/product/1');
+      expect(pending.intent?.payload).toEqual({ productId: '1', pieceId: '7' });
+    });
+
+    it('deslogado: depois do login, a peça clicada é adicionada uma única vez', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await user.click(await screen.findByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      await waitFor(() => expect(add).toHaveBeenCalledWith('7'));
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(add).toHaveBeenCalledOnce();
+      expect(window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY)).toBeNull();
+    });
+
+    it('deslogado: "Agora não" cancela e o login depois não adiciona nada', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await user.click(await screen.findByRole('button', { name: 'Agora não' }));
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY)).toBeNull();
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    // Teste 8.
+    describe('peça de origem indisponível continua mostrando a seção', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('reservada', async () => {
+        const real = await catalogService.getProduct('1');
+        vi.spyOn(catalogService, 'getProduct').mockResolvedValue({ ...real, status: 'reservado' });
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/1');
+
+        expect(await secaoDoLook()).toBeInTheDocument();
+      });
+
+      it('vendida', async () => {
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/4');
+
+        expect(await secaoDoLook()).toBeInTheDocument();
+        expect(mockedGetCombinations).toHaveBeenCalledWith('4');
+      });
+    });
+
+    // Teste 9.
+    it('peça sugerida já na sacola não é adicionada de novo, sem erro', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      const cartComBolsa: Cart = {
+        groups: [
+          {
+            store: { id: '2', name: 'Brechó da Redenção', city: 'Porto Alegre' },
+            items: [
+              {
+                product: {
+                  id: '7',
+                  name: 'Bolsa baú de couro caramelo',
+                  price: 90,
+                  coverImageUrl: null,
+                  store: { id: '2', name: 'Brechó da Redenção', city: 'Porto Alegre' },
+                },
+                addedAt: '2026-09-26T12:00:00Z',
+              },
+            ],
+            subtotalCents: 9000,
+          },
+        ],
+      };
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ cart: cartComBolsa, count: 1, add }),
+      });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(add).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Não foi possível adicionar/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('mostra a trilha de navegação (início / cidade / loja / produto)', async () => {
