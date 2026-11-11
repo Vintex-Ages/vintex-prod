@@ -1,4 +1,3 @@
-
 /**
  * Contrato de dados da loja do vendedor (FE-SVC-store). Único ponto de
  * verdade para o shape de `StoreProfile` e do que é necessário para criar uma

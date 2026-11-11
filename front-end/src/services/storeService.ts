@@ -1,4 +1,3 @@
-
 // Edição da própria loja (FE-US006-4, #335).
 import type { MyStoreDetails, StoreAddress, StoreDocument, StoreUpdate } from '@/types/store';
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
@@ -320,7 +319,8 @@ function mockGetStore(id: string): StoreProfile {
     const baseCount = store.metrics?.ratingCount ?? 0;
     const baseRating = store.metrics?.rating ?? null;
     const total = baseCount + ratings.length;
-    const sum = (baseRating ?? 0) * baseCount + ratings.reduce((acc, rating) => acc + rating.score, 0);
+    const sum =
+      (baseRating ?? 0) * baseCount + ratings.reduce((acc, rating) => acc + rating.score, 0);
     return {
       ...store,
       metrics: store.metrics
@@ -929,7 +929,11 @@ function mapStoreRating(rating: ApiStoreRating): StoreRating {
 const mockRatingsByOrder = new Map<string, StoreRating>();
 let mockRatingSequence = 0;
 
-async function mockRateStore(storeId: string, orderId: string, score: number): Promise<StoreRating> {
+async function mockRateStore(
+  storeId: string,
+  orderId: string,
+  score: number,
+): Promise<StoreRating> {
   await me();
 
   if (!Number.isInteger(score) || score < 1 || score > 5) {
@@ -972,7 +976,5 @@ export async function rateStore(
   orderId: string,
   score: number,
 ): Promise<StoreRating> {
-  return useMocks
-    ? mockRateStore(storeId, orderId, score)
-    : apiRateStore(storeId, orderId, score);
+  return useMocks ? mockRateStore(storeId, orderId, score) : apiRateStore(storeId, orderId, score);
 }

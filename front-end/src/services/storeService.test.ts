@@ -277,12 +277,12 @@ describe('storeService', () => {
     const created = await createStore(input);
 
     expect(created.metrics).toEqual({
-  activeProducts: 0,
-  soldProducts: 0,
-  monthsOnPlatform: 0,
-  rating: null,
-  ratingCount: 0,
-});
+      activeProducts: 0,
+      soldProducts: 0,
+      monthsOnPlatform: 0,
+      rating: null,
+      ratingCount: 0,
+    });
     expect((await getStore(created.id)).metrics).toEqual(created.metrics);
   });
 });
@@ -1100,7 +1100,6 @@ describe('#422 — avaliação da loja', () => {
   });
 });
 
-
 describe('#422 — avaliação da loja no mock', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -1115,8 +1114,6 @@ describe('#422 — avaliação da loja no mock', () => {
       password: 'senha123',
     });
   });
-
-
 
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -1149,7 +1146,7 @@ describe('#422 — avaliação da loja no mock', () => {
     const { rateStore } = await import('./storeService');
     const { createStore } = await import('./storeService');
 
-const store = await createStore(input);
+    const store = await createStore(input);
 
     await rateStore(store.id, '999422', 5);
 
@@ -1158,5 +1155,4 @@ const store = await createStore(input);
       code: 'ALREADY_RATED',
     });
   });
-
 });
