@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test';
 import {
   ADDRESS,
   adoptSession,
-  firstAvailableProduct,
   interceptViaCep,
   registerBuyer,
   TINY_PNG,
 } from '../fixtures/api';
+import { createBuyableProduct } from '../fixtures/shop';
 
 /**
  * Jornada do dinheiro: cadastro (API) → peça → checkout → pedido → Pix →
@@ -17,7 +17,7 @@ test.describe('compra', () => {
     const buyer = await registerBuyer(request);
     await adoptSession(page, buyer);
 
-    const product = await firstAvailableProduct(request);
+    const product = await createBuyableProduct(request);
 
     await page.goto(`/product/${product.id}`);
     await expect(page.getByRole('button', { name: /Comprar Agora/ })).toBeVisible();

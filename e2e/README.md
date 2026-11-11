@@ -18,7 +18,7 @@ IA usa um provider determinístico do back-end.
 | `admin` | aprovar comprovante; rejeitar com motivo e comprador reenviar |
 | `chat` | pergunta na conversa da Vintex com resposta SSE e peças do catálogo |
 | `busca-imagem` | foto no catálogo vira resultados |
-| `a11y` | axe (WCAG 2 A/AA) sem violações critical/serious nas telas principais |
+| `a11y` | axe (WCAG 2 A/AA) sem violações critical/serious nas telas públicas e no pedido em análise/recusado |
 
 ## Pré-requisitos
 
@@ -66,6 +66,7 @@ cd ../front-end && corepack pnpm install --frozen-lockfile
 # 5. Suíte
 cd ../e2e && corepack pnpm install
 npx playwright install chromium webkit
+corepack pnpm typecheck   # esbuild do Playwright não confere tipos
 corepack pnpm test
 ```
 
@@ -81,10 +82,16 @@ fora do CI). Se os servidores já estiverem no ar, a suíte reaproveita.
 - **IA**: `AI_PROVIDER=fake` no back-end devolve análise de imagem fixa,
   filtros por palavra-chave e embeddings estáveis (768 dimensões). Nenhuma
   chamada real, nenhuma cota, nenhum flake.
+  Ele prova que o **encanamento** da IA funciona — contrato de request e
+  response, eventos do chat, tool calling e os vetores que a busca consome — e
+  **não** prova que o modelo responde bem: qualidade de resposta é da avaliação
+  da IA, não do E2E. Ler esta suíte como "a IA está testada" seria um engano.
 - **Storage**: comprovante e foto exigem bucket; sem `MEDIA_BUCKET` o upload
   responde 503. Local e CI usam um S3 compatível (moto) no `:9001`.
 - **Dados**: cada teste cria a própria conta (`@vintex.example.com`) e, quando
-  precisa de peça, cria e publica pela API. Nenhum teste depende do outro.
+  precisa de peça, publica a sua (`createBuyableProduct`). Nenhum teste depende
+  do outro nem dos seeds: a peça vira `reservado` ao entrar no checkout, e dois
+  testes em paralelo na mesma peça travavam um deles no carrinho.
 - **ViaCEP**: interceptado com `page.route` para não depender de rede externa.
 
 ## Limitações conhecidas

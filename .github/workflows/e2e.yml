@@ -126,6 +126,13 @@ jobs:
           pnpm install --frozen-lockfile --dir front-end
           pnpm install --frozen-lockfile --dir e2e
 
+      # O Playwright transpila com esbuild, que descarta tipos sem conferir:
+      # sem este passo, um campo errado no contrato só aparece como falha de
+      # locator. Roda antes dos navegadores para falhar rápido.
+      - name: Typecheck da suíte
+        working-directory: e2e
+        run: pnpm typecheck
+
       - name: Instalar navegadores do Playwright
         working-directory: e2e
         run: pnpm exec playwright install --with-deps chromium webkit

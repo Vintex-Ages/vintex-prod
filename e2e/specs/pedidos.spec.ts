@@ -1,16 +1,16 @@
 import { expect, test } from '@playwright/test';
 import {
   adoptSession,
-  firstAvailableProduct,
   interceptViaCep,
   registerBuyer,
 } from '../fixtures/api';
+import { createBuyableProduct } from '../fixtures/shop';
 
 /** Lista consolidada de pedidos e detalhe do pedido. */
 test.describe('pedidos', () => {
   test('lista mostra o pedido e abre o detalhe', async ({ page, request }) => {
     const buyer = await registerBuyer(request);
-    const product = await firstAvailableProduct(request);
+    const product = await createBuyableProduct(request);
 
     await adoptSession(page, buyer);
     await page.goto(`/product/${product.id}`);

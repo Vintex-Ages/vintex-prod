@@ -10,6 +10,9 @@ test.describe('vitrine', () => {
     const firstStore = page.locator('article h3 button').first();
     await expect(firstStore).toBeVisible();
     const storeName = (await firstStore.textContent())?.trim() ?? '';
+    // `?? ''` sozinho casaria com qualquer heading (toda string contém ''):
+    // exige nome antes de usá-lo como asserção do h1 da loja.
+    expect(storeName, 'nome da loja no cartão').not.toBe('');
     await firstStore.click();
 
     await expect(page).toHaveURL(/\/store\/\d+$/);

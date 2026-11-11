@@ -2,11 +2,12 @@ import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import {
   ADDRESS,
   adoptSession,
-  firstAvailableProduct,
+  createStore,
   interceptViaCep,
+  publishProduct,
   registerBuyer,
   TINY_PNG,
-  type FeedProduct,
+  type PublishedProduct,
   type Session,
 } from './api';
 
@@ -18,8 +19,24 @@ export type PlacedOrder = {
 };
 
 /**
+ * Peça exclusiva do teste: vendedora nova, loja nova e peça publicada.
+ *
+ * O catálogo é compartilhado e a peça vira `reservado` ao entrar no checkout,
+ * então dois testes em paralelo pegando a primeira peça ativa disputam a
+ * mesma reserva — um deles fica preso no carrinho. Publicar a própria peça
+ * elimina a corrida e a dependência dos seeds.
+ */
+export async function createBuyableProduct(
+  request: APIRequestContext,
+): Promise<PublishedProduct> {
+  const seller = await registerBuyer(request, { name: 'Vendedora E2E' });
+  await createStore(request, seller);
+  return publishProduct(request, seller);
+}
+
+/**
  * Compra pela UI (produto → checkout → pedido), parando na tela de pagamento.
- * Sem `product`, usa a primeira peça ativa do catálogo.
+ * Sem `product`, publica uma peça só deste teste (`createBuyableProduct`).
  */
 export async function placeOrder(
   page: Page,
@@ -27,7 +44,7 @@ export async function placeOrder(
   product?: { id: number },
 ): Promise<PlacedOrder> {
   const buyer = await registerBuyer(request);
-  const chosen = product ?? (await firstAvailableProduct(request));
+  const chosen = product ?? (await createBuyableProduct(request));
 
   await adoptSession(page, buyer);
   await page.goto(`/product/${chosen.id}`);

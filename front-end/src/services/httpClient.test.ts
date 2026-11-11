@@ -124,6 +124,25 @@ describe('httpClient', () => {
     expect(onAuthRequired).toHaveBeenCalledWith('/product?id=10');
   });
 
+  it('não grava /login como destino de retorno (401 em paralelo)', async () => {
+    window.history.pushState({}, '', '/profile/favorites');
+
+    const onAuthRequired = vi.fn();
+    setOnAuthRequired(onAuthRequired);
+
+    // Primeiro 401: a origem real ainda está na tela e vira o destino.
+    httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED', '/profile/favorites');
+
+    await expect(httpClient.get('/favorites')).rejects.toBeInstanceOf(AxiosError);
+
+    // Segundo 401, da mesma leva: quando ele é avaliado a tela já é o login.
+    httpClient.defaults.adapter = unauthorizedAdapter('AUTH_REQUIRED', '/login');
+
+    await expect(httpClient.get('/me')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(window.sessionStorage.getItem(REDIRECT_STORAGE_KEY)).toBe('/profile/favorites');
+  });
+
   it('no 401 sem handler registrado faz fallback para /login', async () => {
     const assign = vi.fn();
 

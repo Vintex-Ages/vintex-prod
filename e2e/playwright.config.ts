@@ -33,8 +33,14 @@ export default defineConfig({
 
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // Zero retry de propósito enquanto a suíte é nova: um teste intermitente sai
+  // como `flaky` com código 0 e o job fica verde, escondendo qual seletor ou
+  // espera está frágil. Depois que a suíte assentar, 1 no CI.
+  retries: 0,
+  // Dois workers local e no CI. Com o padrão do Playwright (metade dos cores)
+  // as jornadas afogam a API e o Vite, e o teste falha por latência — falha
+  // que o CI não reproduz e que ensina a ignorar vermelho.
+  workers: 2,
 
   reporter: [['list'], ['html', { open: 'never' }]],
 

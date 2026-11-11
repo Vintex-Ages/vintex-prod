@@ -26,7 +26,8 @@ export type Session = {
   user: { id: number; name: string; email: string; is_admin: boolean };
 };
 
-const PASSWORD = 'Vintex#2026e2e';
+/** Senha das contas criadas pela suíte — o teste de sessão vencida loga pela UI. */
+export const BUYER_PASSWORD = 'Vintex#2026e2e';
 
 async function assertOk(response: Awaited<ReturnType<APIRequestContext['post']>>, label: string) {
   if (!response.ok()) {
@@ -64,7 +65,7 @@ export async function registerBuyer(
     data: {
       name: overrides.name ?? 'Compradora E2E',
       email,
-      password: overrides.password ?? PASSWORD,
+      password: overrides.password ?? BUYER_PASSWORD,
       accepted_terms_version: await termsVersion(request),
     },
   });
@@ -281,4 +282,22 @@ export async function approvePayment(
     headers: { Authorization: `Bearer ${adminToken}` },
   });
   await assertOk(response, `approve order ${orderId}`);
+}
+
+/**
+ * Rejeita o comprovante pela API (RN-23): o Pedido volta a
+ * `aguardando_comprovante` com o motivo gravado, e o comprador reenvia.
+ * O fluxo de rejeição pela UI tem spec próprio em `admin.spec.ts`.
+ */
+export async function rejectPayment(
+  request: APIRequestContext,
+  orderId: number,
+  adminToken: string,
+  reason: string,
+): Promise<void> {
+  const response = await request.post(`${API_URL}/admin/payments/${orderId}/reject`, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+    data: { reason },
+  });
+  await assertOk(response, `reject order ${orderId}`);
 }

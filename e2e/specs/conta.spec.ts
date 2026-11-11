@@ -1,13 +1,12 @@
 import { expect, test } from '@playwright/test';
 import {
   ADDRESS,
+  BUYER_PASSWORD,
   interceptViaCep,
   registerBuyer,
   uniqueEmail,
 } from '../fixtures/api';
 import { acceptDocumentModal } from '../fixtures/ui';
-
-const PASSWORD = 'Vintex#2026e2e';
 
 test.describe('conta', () => {
   test('cadastro pela UI, termos e onboarding', async ({ page }) => {
@@ -20,7 +19,7 @@ test.describe('conta', () => {
     await page.getByLabel('E-mail').fill(uniqueEmail('ui'));
     await page.getByLabel('Telefone celular com DDD').fill('(51) 99999-0000');
     await page.getByLabel('CEP (auto-preenchimento)').fill(ADDRESS.cep);
-    await page.getByLabel('Senha').fill(PASSWORD);
+    await page.getByLabel('Senha').fill(BUYER_PASSWORD);
 
     // O CEP resolve pelo ViaCEP interceptado; o formulário exige status resolvido.
     await expect(page.getByText(/Cidade Baixa, Porto Alegre/)).toBeVisible();
@@ -47,7 +46,7 @@ test.describe('conta', () => {
     await expect(page.getByRole('heading', { name: 'Entre na Vintex' })).toBeVisible();
 
     await page.getByLabel('E-mail').fill(buyer.user.email);
-    await page.getByLabel('Senha').fill(PASSWORD);
+    await page.getByLabel('Senha').fill(BUYER_PASSWORD);
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
     await expect(page).toHaveURL(/\/$/);
@@ -59,7 +58,10 @@ test.describe('conta', () => {
     await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible();
   });
 
-  test('sessão vencida volta ao login preservando o destino', async ({ page }) => {
+  test('sessão vencida volta ao login preservando o destino', async ({ page, request }) => {
+    // Conta real: depois de cair no login, o teste entra pela tela de verdade.
+    const buyer = await registerBuyer(request);
+
     await page.addInitScript(() => {
       window.sessionStorage.setItem('vintex.auth.token', 'token-invalido');
       window.sessionStorage.setItem(
@@ -72,5 +74,14 @@ test.describe('conta', () => {
     await page.goto('/profile/favorites');
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByRole('heading', { name: 'Entre na Vintex' })).toBeVisible();
+
+    // O destino vive em `state.from` do history, não na URL: nenhuma asserção
+    // de URL o observa. Só o pós-login prova que a guarda (e o 401) o guardaram.
+    await page.getByLabel('E-mail').fill(buyer.user.email);
+    await page.getByLabel('Senha').fill(BUYER_PASSWORD);
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/profile\/favorites$/);
+    await expect(page.getByRole('heading', { name: 'Meus favoritos' })).toBeVisible();
   });
 });

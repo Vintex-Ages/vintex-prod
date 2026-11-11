@@ -361,6 +361,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Sem storage, utiliza a origem recebida diretamente do httpClient.
       }
 
+      // 401 em paralelo: o que chega depois de a tela já ser o login traz
+      // `/login` como origem, e voltar para lá depois de autenticar é um
+      // beco sem saída. Sem destino conhecido, a home é a saída honesta.
+      if (redirectTo === paths.login) redirectTo = DEFAULT_AFTER_LOGIN_PATH;
+
       logout();
 
       navigate(paths.login, {
