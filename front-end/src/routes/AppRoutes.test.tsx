@@ -11,6 +11,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { listReceipts } from '@/services/adminReceiptService';
+import { listReports } from '@/services/reportService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -34,6 +35,11 @@ vi.mock('@/services/adminReceiptService', async (importOriginal) => ({
   listReceipts: vi.fn(),
 }));
 
+vi.mock('@/services/reportService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/reportService')>()),
+  listReports: vi.fn(),
+}));
+
 const STORE: StoreProfile = {
   id: 'store-1',
   name: 'Brechó da Ana',
@@ -49,6 +55,9 @@ beforeEach(() => {
   // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
   vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
   vi.mocked(listReceipts)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+  vi.mocked(listReports)
     .mockReset()
     .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
 });
@@ -122,6 +131,9 @@ const NEW_ADMIN_ROUTES = [
   { key: 'adminReports', path: '/admin/reports', label: 'Reclamações' },
 ] as const;
 
+/** As que ainda são placeholder: Reclamações já tem tela (FE-US025-2, #427). */
+const PLACEHOLDER_ADMIN_ROUTES = NEW_ADMIN_ROUTES.filter(({ key }) => key !== 'adminReports');
+
 function LocationProbe() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
@@ -174,7 +186,7 @@ describe('<AppRoutes />', () => {
       expect((paths as Readonly<Record<string, string>>)[key]).toBe(path);
     });
 
-    it.each(NEW_ADMIN_ROUTES)(
+    it.each(PLACEHOLDER_ADMIN_ROUTES)(
       'admin acessa $path com placeholder, navegação e apenas um Header',
       async ({ path, label }) => {
         renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
@@ -198,8 +210,30 @@ describe('<AppRoutes />', () => {
           expect(nav.getByRole('link', { name: route.label })).toHaveAttribute('href', route.path);
         }
         expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
       },
     );
+
+    // #427: Reclamações deixou de ser placeholder.
+    it('admin em /admin/reports vê a lista de Reclamações, com cabeçalho próprio e sem rodapé', async () => {
+      renderAtWithAuth(paths.adminReports, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Reclamações' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/ainda não foi implementada/i)).not.toBeInTheDocument();
+      expect(await screen.findByText('Nenhuma reclamação recebida')).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(paths.adminReports);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('navigation', { name: 'Área administrativa' })).getByRole('link', {
+          name: 'Reclamações',
+        }),
+      ).toHaveAttribute('aria-current', 'page');
+      expect(listReports).toHaveBeenCalledWith({ page: 1 });
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
 
     it.each(
       NEW_ADMIN_ROUTES.flatMap((route) => [
@@ -214,6 +248,8 @@ describe('<AppRoutes />', () => {
         screen.queryByRole('navigation', { name: 'Área administrativa' }),
       ).not.toBeInTheDocument();
       expect(listReceipts).not.toHaveBeenCalled();
+      // RN-78: quem não é admin nem dispara a consulta das Reclamações.
+      expect(listReports).not.toHaveBeenCalled();
     });
 
     it.each(NEW_ADMIN_ROUTES)(
@@ -229,6 +265,7 @@ describe('<AppRoutes />', () => {
           screen.queryByRole('navigation', { name: 'Área administrativa' }),
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
       },
     );
 
@@ -247,10 +284,11 @@ describe('<AppRoutes />', () => {
           screen.queryByRole('navigation', { name: 'Área administrativa' }),
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
       },
     );
 
-    it('navega da fila pelos três placeholders e volta sem duplicar Header ou consultar a fila nos placeholders', async () => {
+    it('navega da fila pelas outras três telas e volta sem duplicar Header ou consultar a fila nelas', async () => {
       const user = userEvent.setup();
       renderAtWithAuth(paths.adminReceipts, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
       await screen.findByRole('heading', { name: 'Repasses de pagamentos Pix' });
