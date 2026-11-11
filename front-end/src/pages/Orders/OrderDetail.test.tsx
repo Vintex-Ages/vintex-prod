@@ -4,12 +4,18 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { paths, productDetail, storeProfile } from '@/routes/paths';
 import { getOrder, OrderError } from '@/services/orderService';
+import { OrderReportError, reportOrder } from '@/services/reportService';
 import type { Order, OrderStatus } from '@/types/order';
 import OrderDetail from './OrderDetail';
 
 vi.mock('@/services/orderService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/orderService')>()),
   getOrder: vi.fn(),
+}));
+
+vi.mock('@/services/reportService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/reportService')>()),
+  reportOrder: vi.fn(),
 }));
 
 /**
@@ -91,6 +97,7 @@ function etapas() {
 
 beforeEach(() => {
   vi.mocked(getOrder).mockReset();
+  vi.mocked(reportOrder).mockReset();
 });
 
 afterEach(cleanup);
@@ -252,8 +259,8 @@ describe('<OrderDetail />', () => {
     expect(container.textContent).not.toContain('R$ 14,40');
   });
 
-  // RN-83: sem rastreio de transportadora. "Avaliar loja"/"Reportar problema" são Sprint 4.
-  it('não mostra rastreio, avaliação nem reporte', async () => {
+  // RN-83: sem rastreio de transportadora. "Avaliar loja" é outra issue.
+  it('não mostra rastreio nem avaliação', async () => {
     vi.mocked(getOrder).mockResolvedValue(
       makeOrder({
         status: 'enviado',
@@ -270,8 +277,98 @@ describe('<OrderDetail />', () => {
     await pronto();
 
     expect(container.textContent).not.toMatch(
-      /rastrei|rastreamento|transportadora|código de|avaliar|reportar/i,
+      /rastrei|rastreamento|transportadora|código de|avaliar/i,
     );
+  });
+
+  // #410 (FE-US025-1), teste 5: "Reportar problema" nos 4 status válidos (RN-77).
+  it.each(['confirmado', 'preparando', 'enviado', 'concluido'] as const)(
+    'Pedido %s tem "Reportar problema" no detalhe',
+    async (status) => {
+      vi.mocked(getOrder).mockResolvedValue(
+        makeOrder({ status, payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+      );
+      renderDetail();
+      await pronto();
+
+      expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+    },
+  );
+
+  // #410, teste 2: antes da confirmação ou expirado, sem o botão.
+  it.each([
+    ['aguardando_comprovante', null],
+    ['em_analise', { status: 'pendente' as const, receiptName: 'pix.pdf' }],
+    ['expirado', null],
+  ] as const)('Pedido %s não tem "Reportar problema"', async (status, payment) => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder({ status, payment }));
+    renderDetail();
+    await pronto();
+
+    expect(screen.queryByRole('button', { name: 'Reportar problema' })).not.toBeInTheDocument();
+  });
+
+  // #410, teste 1: fluxo completo no detalhe.
+  it('reporta um Pedido confirmado e vê só a confirmação', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'confirmado', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(reportOrder).mockResolvedValue({
+      id: 'r_1',
+      orderId: 'ped-1',
+      reason: 'danificado',
+      description: 'A manga veio rasgada.',
+      createdAt: '2026-10-29T12:00:00Z',
+    });
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Reportar problema' });
+    fireEvent.change(within(dialogo).getByRole('combobox', { name: 'Motivo' }), {
+      target: { value: 'danificado' },
+    });
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Descrição' }), {
+      target: { value: 'A manga veio rasgada.' },
+    });
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar reclamação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(
+      /enviada à administradora/i,
+    );
+    expect(reportOrder).toHaveBeenCalledWith('ped-1', 'danificado', 'A manga veio rasgada.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Entendi' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // RN-78: nada da Reclamação fica exposto no Pedido.
+    expect(screen.queryByText('A manga veio rasgada.')).not.toBeInTheDocument();
+  });
+
+  // #410, teste 4: erro do back no detalhe, sem quebrar a página.
+  it('erro do back ao reportar mostra a mensagem dele e a página continua', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'enviado', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(reportOrder).mockRejectedValue(
+      new OrderReportError('INTERNAL_ERROR', 'Erro ao processar a Reclamação.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Reportar problema' });
+    fireEvent.change(within(dialogo).getByRole('combobox', { name: 'Motivo' }), {
+      target: { value: 'nao_recebido' },
+    });
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Descrição' }), {
+      target: { value: 'Não chegou.' },
+    });
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar reclamação' }));
+
+    expect(await within(dialogo).findByRole('alert')).toHaveTextContent(
+      'Erro ao processar a Reclamação.',
+    );
+    expect(screen.getByRole('region', { name: 'Andamento do pedido' })).toBeInTheDocument();
   });
 
   it('Pedido inexistente ou de outro usuário mostra o ErrorState, sem tentar de novo', async () => {

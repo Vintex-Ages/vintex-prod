@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import OrderStatusTimeline from '@/components/orders/OrderStatusTimeline';
+import ReportProblemDialog from '@/components/orders/ReportProblemDialog';
 import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
 import { useOrderDetail } from '@/hooks/useOrderDetail';
 import { orderPaymentPath, paths, productDetail, storeProfile } from '@/routes/paths';
+import { canReportOrder } from '@/services/reportService';
 import type { Order, PaymentStatus } from '@/types/order';
 import { formatCentsToBRL } from '@/utils/format';
 
@@ -21,9 +23,13 @@ import { formatCentsToBRL } from '@/utils/format';
  * aguardando comprovante traz "Enviar comprovante" e o prazo (`expiresAt`);
  * expirado não oferece pagamento.
  *
+ * "Reportar problema" (#410, botão de contorno) aparece quando
+ * `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
+ * `ReportProblemDialog`; a Reclamação não aparece depois no Pedido (RN-78).
+ *
  * Fica de fora, de propósito: a chave Pix da loja (é da tela de pagamento) e a
- * comissão (`platformFee`, é do vendedor); rastreio (RN-83); "Avaliar loja" e
- * "Reportar problema" (Sprint 4).
+ * comissão (`platformFee`, é do vendedor); rastreio (RN-83); "Avaliar loja"
+ * (issue própria).
  *
  * Só apresentação: carga, recarga ao voltar à aba e o que oferecer para o
  * pagamento vêm do `useOrderDetail`.
@@ -178,6 +184,7 @@ export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { state, view, reload } = useOrderDetail(id);
+  const [reporting, setReporting] = useState(false);
 
   function content() {
     if (state.status === 'loading') {
@@ -206,10 +213,21 @@ export default function OrderDetail() {
 
     return (
       <>
-        <p className="text-body text-texto-auxiliar">
-          {`Pedido #${order.id}`}
-          {createdAt ? ` · feito em ${createdAt}` : null}
-        </p>
+        <div className="flex flex-col gap-3 tablet:flex-row tablet:items-center tablet:justify-between">
+          <p className="text-body text-texto-auxiliar">
+            {`Pedido #${order.id}`}
+            {createdAt ? ` · feito em ${createdAt}` : null}
+          </p>
+          {canReportOrder(order.status) ? (
+            <Button variant="outline" onClick={() => setReporting(true)}>
+              Reportar problema
+            </Button>
+          ) : null}
+        </div>
+
+        {reporting ? (
+          <ReportProblemDialog open orderId={order.id} onClose={() => setReporting(false)} />
+        ) : null}
 
         {view?.paymentAction === 'resend' ? (
           <div className="flex flex-col gap-3 border border-vermelho-escuro bg-vermelho-suave p-4 tablet:flex-row tablet:items-center tablet:justify-between">
