@@ -283,6 +283,15 @@ const EXAMPLE_ORDERS: Order[] = [
   }),
 ];
 
+/**
+ * Pedido de exemplo pelo id, ou `undefined`. Para o mock do `reportService`
+ * (#410): os exemplos aparecem em "Meus pedidos" de todo comprador mas não
+ * vivem no `sessionStorage`. Só leitura; não muda `listMyOrders`/`getOrder`.
+ */
+export function findExampleOrder(id: string): Order | undefined {
+  return EXAMPLE_ORDERS.find((order) => order.id === id);
+}
+
 /** Peça do mock por id — o array compartilhado de `mocks/products.ts`. */
 function findMockProduct(productId: string) {
   return mockProducts.find((product) => product.id === productId);

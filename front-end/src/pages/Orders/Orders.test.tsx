@@ -286,6 +286,38 @@ describe('<Orders />', () => {
     ).not.toBeInTheDocument();
   });
 
+  // Revisão do #410: com os services reais (mock), o Pedido de exemplo é reportável.
+  it('reporta o Pedido de exemplo confirmado com os services reais do mock', async () => {
+    window.sessionStorage.clear();
+    const orders =
+      await vi.importActual<typeof import('@/services/orderService')>('@/services/orderService');
+    const report = await vi.importActual<typeof import('@/services/reportService')>(
+      '@/services/reportService',
+    );
+    vi.mocked(listMyOrders).mockImplementation(orders.listMyOrders);
+    vi.mocked(reportOrder).mockImplementation(report.reportOrder);
+    renderOrders();
+    await screen.findByRole('list', { name: 'Pedidos' });
+
+    fireEvent.click(
+      within(cartao('example-confirmado')).getByRole('button', { name: 'Reportar problema' }),
+    );
+    const dialogo = screen.getByRole('dialog', { name: 'Reportar problema' });
+    fireEvent.change(within(dialogo).getByRole('combobox', { name: 'Motivo' }), {
+      target: { value: 'nao_recebido' },
+    });
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Descrição' }), {
+      target: { value: 'Não chegou.' },
+    });
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar reclamação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(
+      /enviada à administradora/i,
+    );
+    expect(within(dialogo).queryByRole('alert')).not.toBeInTheDocument();
+    window.sessionStorage.clear();
+  });
+
   // #410, teste 1: fluxo completo pelo cartão, sem abrir o detalhe.
   it('reporta um Pedido confirmado pelo cartão e vê só a confirmação', async () => {
     vi.mocked(listMyOrders).mockResolvedValue(pagina([pedido('ped-1', { status: 'confirmado' })]));

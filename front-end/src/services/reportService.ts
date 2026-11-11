@@ -1,4 +1,5 @@
 import { httpClient } from '@/services/httpClient';
+import { findExampleOrder } from '@/services/orderService';
 import {
   ORDER_REPORT_REASONS,
   type AdminOrderReport,
@@ -104,6 +105,12 @@ const ORDERS_KEY_PREFIX = 'orders:';
 
 const REPORTS_KEY = 'orderReports';
 
+/**
+ * Comprador gravado na Reclamação de um Pedido de exemplo: os exemplos são
+ * compartilhados por todos os compradores do mock e não têm dono.
+ */
+const EXAMPLE_BUYER_ID = 'exemplo';
+
 interface StoredOrder {
   id: string;
   status: string;
@@ -115,14 +122,19 @@ function readReports(): AdminOrderReport[] {
   return raw ? (JSON.parse(raw) as AdminOrderReport[]) : [];
 }
 
-/** Pedido real com o dono dele; `null` se não existe (o mock não distingue "de outra pessoa"). */
+/**
+ * Pedido com o dono dele; `null` se não existe (o mock não distingue "de outra
+ * pessoa"). Primeiro os Pedidos criados no `sessionStorage`; depois os de
+ * exemplo de "Meus pedidos", que ficam no `orderService` e não têm dono.
+ */
 function findOrder(orderId: string): { userId: string; order: StoredOrder } | null {
   for (const [key, value] of Object.entries(window.sessionStorage)) {
     if (!key.startsWith(ORDERS_KEY_PREFIX)) continue;
     const order = (JSON.parse(value) as StoredOrder[]).find(({ id }) => id === orderId);
     if (order) return { userId: key.slice(ORDERS_KEY_PREFIX.length), order };
   }
-  return null;
+  const example = findExampleOrder(orderId);
+  return example ? { userId: EXAMPLE_BUYER_ID, order: example } : null;
 }
 
 function mockReportOrder(
