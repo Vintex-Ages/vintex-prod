@@ -48,16 +48,20 @@ _ANALYZE_IMAGE_PROMPT = ANALYZE_IMAGE_PROMPT
 # muda o preenchimento de 2 campos para 5.
 # Teto para a chamada ao modelo (o SDK conta em milissegundos).
 _GOOGLE_TIMEOUT_MS = 30_000
-# Teto da leitura da pergunta do chat, menor que o geral. A leitura é opcional
-# (sem ela a busca segue por similaridade), e a pergunta inteira, com leitura,
-# vetor e busca, teve mediana de 1,2s nas rodadas de 11/11
-# (`scripts/avaliar_ia.py`).
-# Com 30s, um modelo travado segurava a conversa meio minuto antes de tentar o
-# próximo. Com 10s, a cadeia de três modelos cabe em 30s no pior caso.
+# A leitura da pergunta do chat tem prazo próprio. Ela é opcional (sem ela a
+# busca segue por similaridade), e com o teto geral um modelo travado segurava
+# a conversa meio minuto antes de tentar o próximo.
+#
+# Cada tentativa tem teto de 10s, e a cadeia inteira, com as trocas de modelo,
+# as repetições do 503 e as esperas entre elas, para quando o que sobra do prazo
+# não cabe mais uma tentativa. Assim a leitura não passa de ~30s em nenhuma
+# combinação de 503 e tempo esgotado.
+#
 # 10s é o mínimo que a API aceita: com 8s ela responde 400 "Minimum allowed
 # deadline is 10s" em toda chamada (rodada de 12/11), e a leitura nunca sai.
 _TETO_MINIMO_DA_API_MS = 10_000
-_LEITURA_TIMEOUT_MS = _TETO_MINIMO_DA_API_MS
+_LEITURA_TETO_POR_TENTATIVA_MS = _TETO_MINIMO_DA_API_MS
+_LEITURA_PRAZO_MS = 30_000
 
 
 def _lista(valor: str) -> list[str]:
@@ -136,9 +140,11 @@ def _e_tempo_esgotado(exc: Exception) -> bool:
     Medido em 11/11: 6 leituras da pergunta em 111 caíram com 504
     `DEADLINE_EXCEEDED` perto dos 30s. Nas 5 que ficaram no log, o primeiro
     modelo tinha dado 503, e em 4 o 504 veio do segundo: a cadeia parava ali,
-    sem tentar o terceiro. Outro modelo pode responder, então troca; mas não
-    entra na repetição da cadeia (`_RODADAS`), porque cada tentativa já gastou
-    o teto.
+    sem tentar o terceiro. O SDK manda o teto do cliente ao servidor
+    (`X-Server-Timeout`), então o 504 perto dos 30s era o nosso próprio prazo.
+
+    O httpx levanta `ReadTimeout`, que não herda de `TimeoutError`: por isso o
+    nome da classe.
     """
     codigo = getattr(exc, "code", None) or getattr(exc, "status_code", None)
     if codigo == 504:
@@ -147,6 +153,17 @@ def _e_tempo_esgotado(exc: Exception) -> bool:
         return True
     texto = str(exc).upper()
     return "DEADLINE_EXCEEDED" in texto or "TIMED OUT" in texto
+
+
+def _erro_de_prazo(
+    tarefa: str, prazo_ms: int | None, ultimo: Exception | None
+) -> AIProviderError:
+    """O erro de quando a cadeia para pelo prazo. Leva o último erro junto: só
+    a mensagem do último modelo esconderia que houve tempo esgotado antes."""
+    return AIProviderError(
+        f"Falha ao {tarefa}: prazo de {(prazo_ms or 0) / 1000:.0f}s esgotado "
+        f"antes da próxima tentativa (último erro: {ultimo})"
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -312,7 +329,7 @@ class GoogleAIProvider(AIProvider):
             parts,
             schema=InterpretacaoDaPergunta,
             tarefa="interpretar a pergunta",
-            timeout_ms=_LEITURA_TIMEOUT_MS,
+            prazo_ms=_LEITURA_PRAZO_MS,
         )
 
         parsed = result.parsed
@@ -335,7 +352,7 @@ class GoogleAIProvider(AIProvider):
         *,
         schema: type[BaseModel] = ImageAnalysisResult,
         tarefa: str = "analisar as fotos",
-        timeout_ms: int | None = None,
+        prazo_ms: int | None = None,
     ) -> types.GenerateContentResponse:
         """Tenta os modelos configurados em ordem, pulando os que dão 503 ou 429.
 
@@ -349,10 +366,15 @@ class GoogleAIProvider(AIProvider):
         minutos. A cadeia falha em menos de um segundo, então trocar de modelo
         não cobre o congestionamento simultâneo -- só esperar cobre.
 
-        Tempo esgotado (504 ou o teto do cliente) também pula para o próximo,
-        mas a cadeia não se repete depois dele: cada tentativa já gastou o
-        teto inteiro, e repetir passaria de minutos (`_e_tempo_esgotado`).
-        `timeout_ms` troca o teto geral só nesta chamada.
+        Tempo esgotado (504 ou o teto do cliente) depende de `prazo_ms`:
+
+        - sem prazo (a análise da foto), levanta na hora, como sempre fez: cada
+          tentativa leva o teto geral de 30s, e trocar de modelo levaria a
+          chamada a minutos;
+        - com prazo (a leitura da pergunta), cada tentativa tem teto de 10s e
+          tempo esgotado pula para o próximo modelo, como o 503. A cadeia para
+          quando o que sobra do prazo não cabe mais uma tentativa, inclusive
+          antes de esperar para repetir.
         """
         modelos = modelos_de_visao()
         if not modelos:
@@ -362,16 +384,25 @@ class GoogleAIProvider(AIProvider):
                 "GOOGLE_VISION_MODEL está vazio: nenhum modelo para tentar."
             )
         ultimo: Exception | None = None
-        esgotou = False
         opcoes_http = (
-            types.HttpOptions(timeout=timeout_ms) if timeout_ms is not None else None
+            types.HttpOptions(timeout=_LEITURA_TETO_POR_TENTATIVA_MS)
+            if prazo_ms is not None
+            else None
         )
+        inicio = time.monotonic()
+
+        def cabe(espera_s: float = 0.0) -> bool:
+            if prazo_ms is None:
+                return True
+            gasto_ms = (time.monotonic() - inicio) * 1000
+            sobra_ms = prazo_ms - gasto_ms - espera_s * 1000
+            return sobra_ms >= _LEITURA_TETO_POR_TENTATIVA_MS
 
         for rodada in range(_RODADAS):
-            if esgotou:
-                break
             if rodada:
                 espera = _ESPERA_ENTRE_RODADAS_S[rodada - 1]
+                if not cabe(espera):
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo)
                 logger.warning(
                     "Os %d modelos responderam 503; esperando %.0fs e repetindo "
                     "a cadeia (rodada %d de %d)",
@@ -383,6 +414,8 @@ class GoogleAIProvider(AIProvider):
                 time.sleep(espera)
 
             for indice, modelo in enumerate(modelos):
+                if not cabe():
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo)
                 try:
                     return self._client.models.generate_content(
                         model=modelo,
@@ -395,8 +428,7 @@ class GoogleAIProvider(AIProvider):
                     )
                 except Exception as exc:  # SDK do Google não documenta uma exceção só
                     ultimo = exc
-                    if _e_tempo_esgotado(exc):
-                        esgotou = True
+                    if _e_tempo_esgotado(exc) and prazo_ms is not None:
                         motivo = "tempo esgotado"
                     elif _e_indisponibilidade(exc):
                         motivo = "indisponível (503)"
