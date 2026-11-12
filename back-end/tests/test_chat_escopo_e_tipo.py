@@ -88,6 +88,10 @@ def test_palavra_conta_inteira(nome: str, tipo: str) -> None:
         ("Moleton cinza", "Moletom"),
         ("Babylook branca", "Camiseta"),
         ("Botina de couro", "Bota"),
+        ("Ankle boot de couro", "Bota"),
+        ("Calção de banho", "Shorts"),
+        ("Cinturão de couro", "Cinto"),
+        ("Chapelão de praia", "Chapéu"),
     ],
 )
 def test_nome_e_do_tipo_no_plural_no_diminutivo_e_no_aumentativo(
@@ -111,6 +115,8 @@ def test_nome_e_do_tipo_no_plural_no_diminutivo_e_no_aumentativo(
         ("Bolsa em bom estado", "Boné"),
         ("Camisa com botãozinho", "Bota"),
         ("Calça com bolsozinho", "Bolsa"),
+        ("Calção de banho", "Calça"),
+        ("Camiseta estampa macaco", "Macacão"),
     ],
 )
 def test_raiz_nao_inventa_tipo(nome: str, tipo: str) -> None:
