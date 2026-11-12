@@ -1,7 +1,7 @@
 {
   "sobre": "Conjuntos de referência da busca conversacional (back-end#326). O esperado é escrito contra o seed (app/seeds/pecas.py, random.Random(42)), pelo tipo de cada modelo, nunca pelo id: o script calcula as peças esperadas no banco a cada rodada. Os números de 'meta' são as propostas das histórias; quem os calibra é a primeira rodada, registrada em 'calibrada_em'.",
   "catalogo": {
-    "definicao": "acerto = pelo menos uma peça esperada entre as 5 devolvidas, com match_type 'exact'",
+    "definicao": "acerto = a pergunta lida (evento interpreted) e pelo menos uma peça esperada entre as 5 devolvidas, com match_type 'exact'; no caso com corte, o filtro de preço lido e respeitado. 'ao_acaso' é a chance de cinco peças sorteadas do catálogo trazerem uma esperada: caso acima de 0,9 não discrimina",
     "meta": {"proposta": 0.8, "calibrada_em": null},
     "casos": [
       {"pergunta": "bolsa de palha", "esperado": {"tipo": ["Bolsa"], "nome_contem": ["palha"]}},
@@ -18,7 +18,7 @@
       {"pergunta": "rasteirinha para o verão", "esperado": {"tipo": ["Sandália"]}, "nota": "diminutivo"},
       {"pergunta": "bota preta", "esperado": {"tipo": ["Bota"]}, "nota": "sinônimo: a única bota se chama coturno"},
       {"pergunta": "sandalia", "esperado": {"tipo": ["Sandália"]}, "nota": "sinônimo e sem acento: as sandálias se chamam rasteira"},
-      {"pergunta": "casaco para o inverno", "esperado": {"tipo": ["Casaco", "Jaqueta"]}, "nota": "sinônimo: o casaco se chama sobretudo"},
+      {"pergunta": "casaco para o inverno", "esperado": {"tipo": ["Casaco"]}, "nota": "sinônimo: o único casaco ativo se chama sobretudo, e jaqueta não conta"},
       {"pergunta": "blusa bordada", "esperado": {"tipo": ["Blusa"]}, "nota": "sinônimo: a blusa bordada se chama bata"},
       {"pergunta": "chapéu de praia", "esperado": {"tipo": ["Chapéu"]}},
       {"pergunta": "BONÉ", "esperado": {"tipo": ["Boné"]}, "nota": "caixa trocada (RN-41)"},
@@ -28,7 +28,7 @@
       {"pergunta": "tênis plataforma", "esperado": {"nome_contem": ["plataforma"]}},
       {"pergunta": "baby look", "esperado": {"nome_contem": ["baby look"]}},
       {"pergunta": "roupa gótica", "esperado": {"categoria": "Roupas", "estilo": ["gotico-dark"]}},
-      {"pergunta": "algo bem anos 90", "esperado": {"estilo": ["vintage-80-90"]}, "nota": "paráfrase, sem palavra do nome"}
+      {"pergunta": "algo bem da década de noventa", "esperado": {"estilo": ["vintage-80-90"]}, "nota": "paráfrase: nenhum nome do seed tem 'década' nem 'noventa' (dois têm 'anos 90')"}
     ]
   },
   "nao_temos": {

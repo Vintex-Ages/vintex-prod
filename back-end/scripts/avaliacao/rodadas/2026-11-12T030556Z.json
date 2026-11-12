@@ -1,5 +1,6 @@
 {
   "quando": "2026-11-12T03:05:56Z",
+  "nota": "Nota escrita depois da rodada, em 12/11: repetição da medição da foto, na develop em 01b1e4b, com o esperado da cópia da camisa com instrução conferindo só o que a instrução planta (marca e a cor Verde).",
   "commit": "01b1e4b",
   "modelos": {
     "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",

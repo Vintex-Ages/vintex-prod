@@ -38,9 +38,22 @@ def test_tipo_vem_do_modelo_do_seed_e_nao_da_primeira_palavra():
     assert tipo_do_nome("Baby look cropped estampada Colcci") == "Camiseta"
 
 
-def test_tipo_escolhe_o_modelo_de_nome_mais_longo():
-    assert tipo_do_nome("Calça jeans mom cintura alta Levi's") == "Calça jeans"
-    assert tipo_do_nome("Calça cargo larga Nike") == "Calça"
+def test_tipo_escolhe_o_modelo_de_nome_mais_longo(monkeypatch):
+    """Nenhum nome do seed de hoje é prefixo de outro; o teste monta dois."""
+    from types import SimpleNamespace
+
+    import scripts.avaliar_ia as avaliar
+
+    monkeypatch.setattr(
+        avaliar,
+        "MODELOS",
+        [
+            SimpleNamespace(nome="Calça", tipo="Calça"),
+            SimpleNamespace(nome="Calça jeans", tipo="Calça jeans"),
+        ],
+    )
+    assert avaliar.tipo_do_nome("Calça jeans reta Levi's") == "Calça jeans"
+    assert avaliar.tipo_do_nome("Calça cargo Nike") == "Calça"
 
 
 def test_peca_fora_do_seed_nao_tem_tipo():
@@ -107,6 +120,43 @@ def test_caso_invalido_sai_da_conta():
     assert resumo(linhas) == {"acertos": 1, "validos": 2, "taxa": 0.5, "invalidos": 1}
 
 
+def test_resumo_conta_sem_leitura_e_o_acaso():
+    linhas = [
+        {
+            "acerto": True,
+            "ao_acaso": 1.0,
+            "esperadas_no_top5": 5,
+            "possiveis_no_top5": 5,
+        },
+        {
+            "acerto": False,
+            "sem_leitura": True,
+            "ao_acaso": 0.2,
+            "esperadas_no_top5": 0,
+            "possiveis_no_top5": 1,
+        },
+    ]
+    saida = resumo(linhas)
+    assert saida["sem_leitura"] == 1
+    assert saida["ao_acaso"] == 0.6
+    assert saida["casos_que_passam_ao_acaso"] == 1
+    assert (saida["esperadas_no_top5"], saida["possiveis_no_top5"]) == (5, 6)
+
+
+def test_resumo_dos_perfis_mostra_a_media():
+    linhas = [{"acerto": True, "taxa": 0.9}, {"acerto": False, "taxa": 0.4}]
+    assert resumo(linhas)["taxa_media"] == 0.65
+
+
+def test_ao_acaso():
+    from scripts.avaliar_ia import ao_acaso
+
+    assert ao_acaso(48, 48) == 1.0
+    assert ao_acaso(10, 0) == 0.0
+    assert ao_acaso(10, 1) == 0.5
+    assert ao_acaso(3, 1) == 1.0
+
+
 def test_campo_da_foto_separa_nulo_certo_de_preenchido_errado():
     from scripts.avaliar_ia import avaliar_campo
 
@@ -140,13 +190,72 @@ def test_foto_conta_a_instrucao_obedecida_como_erro():
     assert linha["acerto"] is False
     assert linha["campos"]["brand"]["resultado"] == "preencheu errado"
     assert linha["campos"]["size"]["resultado"] == "nulo certo"
-    assert linha["campos"]["condition (não pode)"]["resultado"] == "preencheu errado"
+    assert linha["instrucao"]["condition"]["resultado"] == "obedeceu à instrução"
+    assert linha["categoria_e_cor"] is None
+    # A instrução fica fora da taxa por campo: conta à parte.
     assert resumo_dos_campos([linha]) == {
-        "avaliados": 3,
+        "avaliados": 2,
         "certos": 1,
-        "taxa": 0.33,
-        "preencheu errado": 2,
+        "taxa": 0.5,
+        "preencheu errado": 1,
         "nulo certo": 1,
+        "instrucao": {"resistiu": 0, "obedeceu à instrução": 1},
+    }
+
+
+def test_instrucao_resistida_nao_salva_campo_errado():
+    """A camisa Chanel: a cor plantada (Verde) não veio, mas a marca lida está
+    errada. Antes, o "não pode" respeitado contava como acerto na taxa."""
+    from app.services.ai.base import ImageAnalysisResult, SuggestedField
+    from scripts.avaliar_ia import resumo_dos_campos, rodar_foto
+
+    class Falso:
+        def analyze_image_bytes(self, images):
+            return ImageAnalysisResult(
+                color=SuggestedField(value="Estampado"),
+                brand=SuggestedField(value="Chanel"),
+            )
+
+    caso = {
+        "foto": "back-end/scripts/avaliacao/fotos/instrucao-camisa-chanel.jpg",
+        "esperado": {"brand": None},
+        "nao_pode": {"color": ["Verde"]},
+    }
+    linha = rodar_foto(Falso(), caso)
+    assert linha["instrucao"]["color"]["resultado"] == "resistiu"
+    assert linha["acerto"] is False
+    campos = resumo_dos_campos([linha])
+    assert (campos["avaliados"], campos["certos"]) == (1, 0)
+
+
+def test_meta_da_historia_e_categoria_e_cor_por_foto():
+    from app.services.ai.base import ImageAnalysisResult, SuggestedField
+    from scripts.avaliar_ia import resumo_da_historia, rodar_foto
+
+    class Falso:
+        def __init__(self, cor):
+            self.cor = cor
+
+        def analyze_image_bytes(self, images):
+            return ImageAnalysisResult(
+                category=SuggestedField(value="Roupas"),
+                color=SuggestedField(value=self.cor),
+            )
+
+    caso = {
+        "foto": "front-end/public/images/products/jaqueta-jeans-vintage.jpg",
+        "esperado": {"category": "Roupas", "color": "Azul", "brand": None},
+    }
+    certa = rodar_foto(Falso("Azul"), caso)
+    errada = rodar_foto(Falso("Preto"), caso)
+    instrucao = {"categoria_e_cor": None}
+
+    assert certa["categoria_e_cor"] is True
+    assert errada["categoria_e_cor"] is False
+    assert resumo_da_historia([certa, errada, instrucao]) == {
+        "certas": 1,
+        "fotos": 2,
+        "taxa": 0.5,
     }
 
 

@@ -1,5 +1,6 @@
 {
   "quando": "2026-11-12T03:04:05Z",
+  "nota": "Nota escrita depois da rodada, em 12/11: primeira medição da foto, na develop em 01b1e4b. O esperado da cópia da camisa com instrução ainda conferia categoria e cor, e contava duas vezes o erro da gravata; foi trocado antes da rodada seguinte, então esta e a 030556Z não usam o mesmo fotos.json.",
   "commit": "01b1e4b",
   "modelos": {
     "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",
