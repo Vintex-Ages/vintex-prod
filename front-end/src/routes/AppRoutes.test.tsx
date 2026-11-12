@@ -631,7 +631,10 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
           publicVerified = validationResult;
           data = { verified: validationResult };
         }
-     } else if (call === 'get /users/me/notifications' || call === 'get /api/users/me/notifications') {
+      } else if (
+        call === 'get /users/me/notifications' ||
+        call === 'get /api/users/me/notifications'
+      ) {
         data = { items: [], page: 1, page_size: 50, total: 0, unread_count: 0 };
       } else if (call === 'get /users/me/products') {
         data = { items: [], page: 1, page_size: 100, total: 0 };
