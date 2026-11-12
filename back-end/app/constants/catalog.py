@@ -43,20 +43,19 @@ SIZES: tuple[str, ...] = ("PP", "P", "M", "G", "GG", "36", "38", "40", "42")
 # Tipo de peça (back-end#231). A categoria tem três valores, então "vestido" e
 # "calça" são os dois "Roupas", e a conversa devolvia calça como resposta certa
 # para quem pediu vestido. A peça não guarda o tipo: ele é lido do nome. Cada
-# tipo leva as palavras de nome que o identificam, comparadas inteiras, sem
-# acento e pela raiz (`_raiz`), para "camisa" não casar com "camiseta" nem
-# "calça" com "calçado", e "Botas" ou "Bolsinha" casarem com o tipo.
-# A lista tem tipo que o seed de hoje não deixa ativo (os dois modelos de
-# vestido caem entre os vendidos e despublicados): é para esses que a conversa
-# precisa saber dizer "não temos".
+# tipo leva as palavras de nome que o identificam, comparadas palavra a palavra,
+# sem acento e pela raiz (`_raiz`), para "camisa" não casar com "camiseta" nem
+# "calça" com "calçado", e "Botas", "Bolsinha" ou "Vestidão" casarem com o tipo.
+# A lista tem tipo que o seed de hoje não tem ativo (vestido): é para esses que
+# a conversa precisa saber dizer "não temos".
 TIPOS_DE_PECA: dict[str, tuple[str, ...]] = {
-    "Camiseta": ("camiseta", "baby look", "t-shirt"),
+    "Camiseta": ("camiseta", "baby look", "babylook", "t-shirt", "tshirt"),
     "Regata": ("regata",),
     "Camisa": ("camisa",),
     "Blusa": ("blusa", "bata"),
     "Moletom": ("moletom",),
     "Jaqueta": ("jaqueta",),
-    "Casaco": ("casaco", "sobretudo", "trench coat"),
+    "Casaco": ("casaco", "sobretudo", "trench coat", "trenchcoat"),
     "Blazer": ("blazer",),
     "Vestido": ("vestido",),
     "Saia": ("saia", "minissaia"),
@@ -64,7 +63,7 @@ TIPOS_DE_PECA: dict[str, tuple[str, ...]] = {
     "Shorts": ("shorts", "short", "bermuda"),
     "Macacão": ("macacão", "macaquinho"),
     "Tênis": ("tênis",),
-    "Bota": ("bota", "coturno"),
+    "Bota": ("bota", "botina", "coturno"),
     "Sandália": ("sandália", "rasteira", "rasteirinha"),
     "Scarpin": ("scarpin",),
     "Mocassim": ("mocassim",),
@@ -93,32 +92,78 @@ def _palavras(texto: str) -> list[str]:
     return [_raiz(p) for p in re.findall(r"\w+", sem_acento)]
 
 
-_DIMINUTIVOS = ("zinhas", "zinhos", "zinha", "zinho", "inhas", "inhos", "inha", "inho")
+# Palavras de nome de peça que a raiz confundiria com um tipo: "Camisa de
+# botão" não é bota, "Calça cargo com bolsos" não é bolsa.
+_NAO_SAO_TIPO = frozenset(
+    {
+        "botao",
+        "botoes",
+        "bolso",
+        "bolsos",
+        "bolsinho",
+        "bolsinhos",
+        "calcinha",
+        "calcinhas",
+        "calcao",
+        "calcoes",
+        "cinta",
+        "cintas",
+        "colarinho",
+        "colarinhos",
+        "bote",
+        "boto",
+        "sai",
+    }
+)
+# Com "z" o diminutivo vem da palavra inteira ("bonezinho" é "bone" mais
+# "zinho"); sem "z" ele substitui a vogal final ("botinha" é "bot" mais "inha").
+_DIMINUTIVOS_COM_Z = ("zinhas", "zinhos", "zinha", "zinho")
+_DIMINUTIVOS = ("inhas", "inhos", "inha", "inho")
 
 
 def _raiz(palavra: str) -> str:
-    """A palavra sem diminutivo, plural e vogal final, para comparar nome de
-    peça, que é texto livre do vendedor: "Botinha", "Botas" e "Bota" dão
-    "bot"; "Bolsinha" e "Bolsa" dão "bols"; "Brincos" e "Brinco" dão "brinc".
+    """A palavra sem diminutivo, aumentativo, plural e vogal final, para
+    comparar nome de peça, que é texto livre do vendedor: "Botinha", "Botas" e
+    "Bota" dão "bot"; "Bolsinha" e "Bolsa" dão "bols"; "Vestidão" e "Vestido"
+    dão "vestid".
 
     Não é um radicalizador de português: é o bastante para os termos de
-    `TIPOS_DE_PECA`. "Botão" fica "botao" e não vira bota. Erra em
-    "colarinho" (vira colar, Bijuteria) e "calcinha" (vira calça).
+    `TIPOS_DE_PECA`. Palavra de `_NAO_SAO_TIPO` não vira raiz de tipo nenhum.
     """
-    for sufixo in _DIMINUTIVOS:
+    if palavra in _NAO_SAO_TIPO:
+        return f"~{palavra}"
+    for sufixo in _DIMINUTIVOS_COM_Z:
         if palavra.endswith(sufixo) and len(palavra) - len(sufixo) >= 3:
-            return palavra[: -len(sufixo)]
-    if palavra.endswith(("oes", "aes")):
+            palavra = palavra[: -len(sufixo)]
+            break
+    else:
+        for sufixo in _DIMINUTIVOS:
+            if palavra.endswith(sufixo) and len(palavra) - len(sufixo) >= 3:
+                raiz = palavra[: -len(sufixo)]
+                # "casaquinho" é "casac", "sandalinha" é "sandal".
+                if raiz.endswith(("qu", "gu")):
+                    raiz = raiz[:-1]
+                    raiz = raiz[:-1] + ("c" if raiz.endswith("q") else "g")
+                return raiz
+    if palavra.endswith(("oes", "aes", "aos")):
         palavra = palavra[:-3] + "ao"
     elif palavra.endswith("eis"):
         palavra = palavra[:-3] + "el"
-    elif palavra.endswith("ns"):
-        palavra = palavra[:-2] + "m"
     elif palavra.endswith("s") and len(palavra) > 3:
         palavra = palavra[:-1]
-    if palavra.endswith(("a", "e", "o")) and not palavra.endswith("ao"):
-        if len(palavra) > 3:
-            palavra = palavra[:-1]
+    # Aumentativo: "vestidão", "casacão", "bolsão".
+    if palavra.endswith("zao") and len(palavra) > 5:
+        palavra = palavra[:-3]
+    elif palavra.endswith("ao") and len(palavra) > 4:
+        palavra = palavra[:-2]
+    # "sandália" e "sandalinha", "relógio" e "relogião".
+    if palavra.endswith(("ia", "io")) and len(palavra) > 4:
+        palavra = palavra[:-2]
+    elif palavra.endswith(("a", "e", "o")) and len(palavra) > 3:
+        palavra = palavra[:-1]
+    # "mocassim" e "mocassins", "moletom" e "moleton".
+    if palavra.endswith("m"):
+        palavra = palavra[:-1] + "n"
     return palavra
 
 
@@ -131,21 +176,11 @@ def _contem(palavras: list[str], termo: str) -> bool:
 
 
 def nome_e_do_tipo(nome: str, tipo: str) -> bool:
-    """Se o nome da peça tem uma das palavras do tipo, inteira.
+    """Se o nome da peça tem uma das palavras do tipo, pela raiz.
 
     "Rasteira de couro trançado" é Sandália; "Camiseta de banda" não é Camisa.
-    Tipo fora de `TIPOS_DE_PECA` nunca casa.
+    Tipo fora de `TIPOS_DE_PECA` nunca casa. Nome que só diz o modelo ("Nike
+    Air Force 1") não é de tipo nenhum.
     """
     palavras = _palavras(nome)
     return any(_contem(palavras, termo) for termo in TIPOS_DE_PECA.get(tipo, ()))
-
-
-def tipos_do_nome(nome: str) -> set[str]:
-    """Os tipos que o nome diz. Vazio quando o nome não diz nenhum, como em
-    "Nike Air Force 1"."""
-    palavras = _palavras(nome)
-    return {
-        tipo
-        for tipo, termos in TIPOS_DE_PECA.items()
-        if any(_contem(palavras, termo) for termo in termos)
-    }

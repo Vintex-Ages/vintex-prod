@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.constants.catalog import TIPOS_DE_PECA, nome_e_do_tipo, tipos_do_nome
+from app.constants.catalog import TIPOS_DE_PECA, nome_e_do_tipo
 from app.controllers.assistant_controller import (
     _FORA_DO_ESCOPO,
     _aviso_de_alternativas,
@@ -80,22 +80,40 @@ def test_palavra_conta_inteira(nome: str, tipo: str) -> None:
         ("Vestidinho floral", "Vestido"),
         ("Mocassins de couro", "Mocassim"),
         ("Bonés de aba reta", "Boné"),
+        ("Bonézinho infantil", "Boné"),
+        ("Vestidão longo com cinto", "Vestido"),
+        ("Casaquinho de moletom", "Casaco"),
+        ("Sandalinha de couro", "Sandália"),
+        ("Scarpins nude", "Scarpin"),
+        ("Moleton cinza", "Moletom"),
+        ("Babylook branca", "Camiseta"),
+        ("Botina de couro", "Bota"),
     ],
 )
-def test_nome_e_do_tipo_no_plural_e_no_diminutivo(nome: str, tipo: str) -> None:
+def test_nome_e_do_tipo_no_plural_no_diminutivo_e_no_aumentativo(
+    nome: str, tipo: str
+) -> None:
     """O nome é texto livre do vendedor; antes, "Botas" com botas na tela dava
     "Não encontrei bota"."""
     assert nome_e_do_tipo(nome, tipo)
 
 
-@pytest.mark.parametrize("nome", ["Camisa de botão", "Botões dourados"])
-def test_botao_nao_e_bota(nome: str) -> None:
-    assert not nome_e_do_tipo(nome, "Bota")
-
-
-def test_nome_sem_tipo_nao_diz_tipo_nenhum() -> None:
-    assert tipos_do_nome("Nike Air Force 1") == set()
-    assert tipos_do_nome("Calça jeans reta") == {"Calça"}
+@pytest.mark.parametrize(
+    ("nome", "tipo"),
+    [
+        ("Camisa de botão", "Bota"),
+        ("Botões dourados", "Bota"),
+        ("Calcinha de renda", "Calça"),
+        ("Cinta modeladora", "Cinto"),
+        ("Calça cargo com bolsos", "Bolsa"),
+        ("Vestidão com bolsos", "Bolsa"),
+        ("Nike Air Force 1", "Tênis"),
+    ],
+)
+def test_raiz_nao_inventa_tipo(nome: str, tipo: str) -> None:
+    """Palavra que a raiz confundiria fica de fora, e nome que só diz o modelo
+    não é de tipo nenhum."""
+    assert not nome_e_do_tipo(nome, tipo)
 
 
 # O seed separa calça jeans de calça; para a conversa, calça jeans é calça.
@@ -153,6 +171,13 @@ def test_aviso_so_com_tipo() -> None:
     assert aviso.startswith("Não encontrei vestido no catálogo.")
 
 
+def test_aviso_sem_filtro_nem_tipo_nao_quebra() -> None:
+    """Critério da #231. Antes, `pedidos[0]` levantava IndexError."""
+    aviso = _aviso_de_alternativas(ProductFilters())
+
+    assert aviso.startswith("Não encontrei o que você pediu.")
+
+
 # --- rota -------------------------------------------------------------------
 
 
@@ -168,7 +193,11 @@ def test_fora_do_escopo_vira_alternativa_sem_filtro(
     _usar(
         monkeypatch,
         _Provedor(
-            InterpretedQuery(filters={"brand": "Brastemp"}, in_scope=False),
+            InterpretedQuery(
+                filters={"brand": "Brastemp"},
+                similarity="400 litros",
+                in_scope=False,
+            ),
             _vetor(1),
         ),
     )
@@ -176,8 +205,10 @@ def test_fora_do_escopo_vira_alternativa_sem_filtro(
     eventos = _perguntar(pg_client, "geladeira brastemp 400 litros")
 
     assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
-    # A marca lida não cortou nada, então não aparece como chip na tela.
+    # A marca lida não cortou nada, então não aparece como chip na tela, nem o
+    # "parecido com".
     assert eventos[0]["filters"] == {}
+    assert eventos[0]["similarity"] is None
     assert eventos[0]["in_scope"] is False
     assert eventos[1]["delta"] == _FORA_DO_ESCOPO
     assert eventos[2]["match_type"] == "fallback"
@@ -306,29 +337,31 @@ def test_leitura_que_falha_mantem_o_resultado_direto(
 
 
 @pytest.mark.postgres
-def test_nome_que_nao_diz_o_tipo_nao_vira_nao_encontrei(
+def test_peca_de_nome_sem_tipo_nao_salva_o_rotulo(
     pg_client: TestClient, pg_session: Session, monkeypatch
 ) -> None:
-    """Um nome como "Nike Air Force 1" pode ser o tênis pedido: a conversa só
-    diz que não tem quando todas as peças são, pelo nome, de outro tipo."""
+    """O critério da #231: nenhuma peça do tipo pedido entre as devolvidas é
+    alternativa. Um "Cropped" entre as cinco não vira vestido."""
     loja = _loja(pg_session)
-    nike = _peca(pg_session, loja, "Nike Air Force 1", _vetor(1), category="Sapatos")
-    scarpin = _peca(
-        pg_session, loja, "Scarpin de couro", _vetor(1, 0.5), category="Sapatos"
+    cropped = _peca(
+        pg_session, loja, "Cropped de alcinha", _vetor(1), category="Roupas"
+    )
+    calca = _peca(
+        pg_session, loja, "Calça pantalona", _vetor(1, 0.5), category="Roupas"
     )
     pg_session.commit()
     _usar(
         monkeypatch,
         _Provedor(
             InterpretedQuery(
-                filters={"category": "Sapatos"}, tipo="Tênis", in_scope=True
+                filters={"category": "Roupas"}, tipo="Vestido", in_scope=True
             ),
             _vetor(1),
         ),
     )
 
-    eventos = _perguntar(pg_client, "tênis")
+    eventos = _perguntar(pg_client, "vestido")
 
-    assert [e["type"] for e in eventos] == ["interpreted", "products", "done"]
-    assert eventos[1]["match_type"] == "exact"
-    assert _ids(eventos) == [nike.id, scarpin.id]
+    assert eventos[1]["delta"].startswith("Não encontrei vestido no catálogo.")
+    assert eventos[2]["match_type"] == "fallback"
+    assert _ids(eventos) == [cropped.id, calca.id]

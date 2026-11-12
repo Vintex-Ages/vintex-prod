@@ -11,7 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.constants.catalog import nome_e_do_tipo, tipos_do_nome
+from app.constants.catalog import nome_e_do_tipo
 from app.core.errors import ErrorCode, ServiceUnavailable
 from app.core.pagination import PageParams
 from app.repositories.product_repository import ProductRepository, ProductSimilarRow
@@ -127,9 +127,12 @@ class AssistantController:
         interpretada = await _interpretar(provider, query, _historico(messages))
         if interpretada is not None:
             # Fora do escopo a busca não filtra (`_buscar`), e a tela não pode
-            # mostrar chip de filtro que não foi usado (back-end#231).
+            # mostrar chip de filtro nem "parecido com" que não foram usados
+            # (back-end#231).
             if interpretada.in_scope is False:
-                yield interpretada.model_copy(update={"filters": {}})
+                yield interpretada.model_copy(
+                    update={"filters": {}, "similarity": None}
+                )
             else:
                 yield interpretada
 
@@ -308,20 +311,15 @@ def _pecas(
 
 def _tem_o_tipo(rows: Sequence[ProductSimilarRow], tipo: str | None) -> bool:
     """Sem tipo pedido, qualquer peça serve. Com tipo, basta uma das devolvidas
-    ser dele pelo nome (`nome_e_do_tipo`), ou ter um nome que não diz tipo
-    nenhum: o nome é texto livre do vendedor, e "Nike Air Force 1" pode ser o
-    tênis pedido. A conversa só diz que não tem quando todas as peças
-    devolvidas são, pelo nome, de outro tipo.
+    ser dele pelo nome (`nome_e_do_tipo`).
 
     Só olha as que vão para a tela: uma peça do tipo na sexta posição não
-    salva o rótulo.
+    salva o rótulo. Limite: peça cujo nome só diz o modelo ("Nike Air Force
+    1") não é de tipo nenhum, e sozinha não salva o rótulo de quem pediu tênis.
+    Tratar esse nome como do tipo pedido deixava "vestido" sair como resultado
+    direto bastando um "Cropped" entre as cinco.
     """
-    if tipo is None:
-        return True
-    return any(
-        nome_e_do_tipo(row["name"], tipo) or not tipos_do_nome(row["name"])
-        for row in rows
-    )
+    return tipo is None or any(nome_e_do_tipo(row["name"], tipo) for row in rows)
 
 
 def _aviso_de_alternativas(filtros: ProductFilters, tipo: str | None = None) -> str:
@@ -351,13 +349,16 @@ def _aviso_de_alternativas(filtros: ProductFilters, tipo: str | None = None) -> 
     else:
         pedido = ""
 
-    # Sempre há tipo ou filtro: sem nenhum dos dois, `_buscar` não avisa.
     if tipo and pedido:
         falta = f"{tipo.lower()} com {pedido}"
     elif tipo:
         falta = f"{tipo.lower()} no catálogo"
-    else:
+    elif pedido:
         falta = f"peças com {pedido}"
+    else:
+        # `_buscar` sempre avisa com tipo ou filtro; o critério da #231 pede
+        # que a função não quebre sem os dois.
+        falta = "o que você pediu"
     return (
         f"Não encontrei {falta}. Estas são alternativas, as mais "
         "parecidas com o que você pediu."
