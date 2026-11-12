@@ -434,9 +434,10 @@ class GoogleAIProvider(AIProvider):
                 )
                 time.sleep(espera)
 
-            for indice, modelo in enumerate(da_vez):
+            for modelo in da_vez:
                 if not cabe():
                     raise _erro_de_prazo(tarefa, prazo_ms, ultimo) from ultimo
+                comeco = time.monotonic()
                 try:
                     return self._client.models.generate_content(
                         model=modelo,
@@ -457,13 +458,15 @@ class GoogleAIProvider(AIProvider):
                     else:
                         raise AIProviderError(f"Falha ao {tarefa}: {exc}") from exc
 
-                    if indice < len(da_vez) - 1:
-                        logger.warning(
-                            "Modelo %s %s; tentando %s",
-                            modelo,
-                            motivo,
-                            da_vez[indice + 1],
-                        )
+                    # Sem "tentando o próximo": quem decide se ele cabe é o
+                    # prazo, na volta do laço. A duração é o que diz se o 503
+                    # respondeu na hora ou gastou o prazo.
+                    logger.warning(
+                        "Modelo %s %s em %.1fs",
+                        modelo,
+                        motivo,
+                        time.monotonic() - comeco,
+                    )
 
         raise AIProviderError(f"Falha ao {tarefa}: {ultimo}") from ultimo
 

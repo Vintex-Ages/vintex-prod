@@ -332,25 +332,45 @@ def test_espera_entre_rodadas_conta_no_prazo(monkeypatch) -> None:
 
 
 def test_503_e_tempo_esgotado_repete_so_o_do_503(monkeypatch) -> None:
-    """503 no primeiro e tempo esgotado no segundo: a repetição volta só ao
-    primeiro, que é o que pode ter voltado."""
-    esperado = ImageAnalysisResult()
-    respostas: dict[str, Any] = {
-        "a": _Erro(503, "UNAVAILABLE"),
-        "b": ReadTimeout("x"),
-    }
-    p, duble, relogio = _provider_com_prazo(monkeypatch, "a,b", respostas)
+    """503 no primeiro e tempo esgotado no segundo: as repetições voltam só ao
+    primeiro. Com o lento junto, a segunda rodada chamaria "b" de novo."""
+    p, duble, relogio = _provider_com_prazo(
+        monkeypatch,
+        "a,b",
+        {"a": _Erro(503, "UNAVAILABLE"), "b": ReadTimeout("x")},
+    )
 
-    def segunda_rodada_responde(segundos: float) -> None:
-        relogio.esperas.append(segundos)
-        relogio.agora += segundos
-        respostas["a"] = _Resposta(esperado)
+    with pytest.raises(AIProviderError, match="prazo"):
+        p._gerar_com_fallback([], prazo_ms=_PRAZO)
 
-    relogio.sleep = segunda_rodada_responde
-
-    assert p._gerar_com_fallback([], prazo_ms=_PRAZO).parsed == esperado
+    # a e b (10,3s), espera de 2s, a de novo; a espera de 4s já não cabe.
     assert duble.chamados == ["a", "b", "a"]
     assert relogio.esperas == [mod._ESPERA_ENTRE_RODADAS_S[0]]
+
+
+def test_folga_nao_espera_para_depois_desistir(monkeypatch) -> None:
+    """Gasto 12,8s, espera de 2s: sem folga sobrariam 10,2s, a espera
+    aconteceria e um `sleep` 300ms atrasado faria a tentativa não caber.
+    Com a folga de 500ms, a cadeia para antes de esperar."""
+
+    class _ComCusto(_ModelosComTempo):
+        custos = {"a": 2.6, "b": 10.2}
+
+        def generate_content(self, *, model: str, **kwargs: Any) -> Any:  # noqa: ANN401
+            self.configs.append(kwargs.get("config"))
+            self.relogio.agora += self.custos[model]
+            return _Modelos.generate_content(self, model=model, **kwargs)
+
+    p, _ = _provider(monkeypatch, "a,b", {})
+    relogio = _Relogio(monkeypatch)
+    duble = _ComCusto({"a": _Erro(503, "UNAVAILABLE"), "b": ReadTimeout("x")}, relogio)
+    p._client = type("C", (), {"models": duble})()
+
+    with pytest.raises(AIProviderError, match="prazo"):
+        p._gerar_com_fallback([], prazo_ms=_PRAZO)
+
+    assert duble.chamados == ["a", "b"]
+    assert relogio.esperas == []
 
 
 def test_tempo_esgotado_seguido_de_503_repete_sem_o_lento(monkeypatch) -> None:
