@@ -135,6 +135,9 @@ def _raiz(palavra: str) -> str:
     for sufixo in _DIMINUTIVOS_COM_Z:
         if palavra.endswith(sufixo) and len(palavra) - len(sufixo) >= 3:
             palavra = palavra[: -len(sufixo)]
+            # "botãozinho" é "botão" mais "zinho", e continua não sendo bota.
+            if palavra in _NAO_SAO_TIPO:
+                return f"~{palavra}"
             break
     else:
         for sufixo in _DIMINUTIVOS:
@@ -156,13 +159,14 @@ def _raiz(palavra: str) -> str:
         palavra = palavra[:-3]
     elif palavra.endswith("ao") and len(palavra) > 4:
         palavra = palavra[:-2]
-    # "sandália" e "sandalinha", "relógio" e "relogião".
+    # "sandália" e "sandalinha", "relógio" e "relógios".
     if palavra.endswith(("ia", "io")) and len(palavra) > 4:
         palavra = palavra[:-2]
     elif palavra.endswith(("a", "e", "o")) and len(palavra) > 3:
         palavra = palavra[:-1]
-    # "mocassim" e "mocassins", "moletom" e "moleton".
-    if palavra.endswith("m"):
+    # "mocassim" e "mocassins", "moletom" e "moleton". Só em palavra longa:
+    # "bom", de "bom estado", viraria "bon", a raiz de boné.
+    if palavra.endswith("m") and len(palavra) > 4:
         palavra = palavra[:-1] + "n"
     return palavra
 

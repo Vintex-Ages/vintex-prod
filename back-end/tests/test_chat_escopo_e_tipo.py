@@ -108,6 +108,9 @@ def test_nome_e_do_tipo_no_plural_no_diminutivo_e_no_aumentativo(
         ("Calça cargo com bolsos", "Bolsa"),
         ("Vestidão com bolsos", "Bolsa"),
         ("Nike Air Force 1", "Tênis"),
+        ("Bolsa em bom estado", "Boné"),
+        ("Camisa com botãozinho", "Bota"),
+        ("Calça com bolsozinho", "Bolsa"),
     ],
 )
 def test_raiz_nao_inventa_tipo(nome: str, tipo: str) -> None:
