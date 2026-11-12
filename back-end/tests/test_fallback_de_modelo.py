@@ -8,6 +8,7 @@ central da sprint sujeita a uma moeda.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -178,3 +179,108 @@ def test_todos_sem_cota_levanta_o_mesmo_erro_do_503(monkeypatch) -> None:
         p._gerar_com_fallback([])
 
     assert duble.chamados == ["a", "b"] * mod._RODADAS
+
+
+# --- tempo esgotado (504 e teto do cliente) ---------------------------------
+
+
+class ReadTimeout(Exception):
+    """Mesmo nome da exceção do httpx, que o SDK deixa subir."""
+
+
+@pytest.mark.parametrize(
+    ("exc", "esperado"),
+    [
+        (_Erro(504, "DEADLINE_EXCEEDED"), True),
+        (Exception("504 DEADLINE_EXCEEDED. Deadline expired"), True),
+        (TimeoutError("timed out"), True),
+        (ReadTimeout("The read operation timed out"), True),
+        (_Erro(503, "UNAVAILABLE"), False),
+        (Exception("qualquer outra coisa"), False),
+    ],
+)
+def test_reconhece_tempo_esgotado(exc: Exception, esperado: bool) -> None:
+    assert mod._e_tempo_esgotado(exc) is esperado
+
+
+def test_504_no_segundo_tenta_o_terceiro(monkeypatch) -> None:
+    """O caso medido em 11/11: 503 no primeiro, 504 no segundo, e a cadeia
+    parava sem tentar o terceiro."""
+    esperado = ImageAnalysisResult()
+    p, duble = _provider(
+        monkeypatch,
+        "a,b,c",
+        {
+            "a": _Erro(503, "UNAVAILABLE"),
+            "b": _Erro(504, "DEADLINE_EXCEEDED"),
+            "c": _Resposta(esperado),
+        },
+    )
+
+    assert p._gerar_com_fallback([]).parsed == esperado
+    assert duble.chamados == ["a", "b", "c"]
+
+
+def test_tempo_esgotado_nao_repete_a_cadeia(monkeypatch) -> None:
+    """Cada tentativa já gastou o teto: repetir as rodadas passaria de minutos."""
+    p, duble = _provider(
+        monkeypatch,
+        "a,b",
+        {"a": _Erro(503, "UNAVAILABLE"), "b": _Erro(504, "DEADLINE_EXCEEDED")},
+    )
+    esperas: list[float] = []
+    monkeypatch.setattr(mod.time, "sleep", esperas.append)
+
+    with pytest.raises(AIProviderError, match="DEADLINE_EXCEEDED"):
+        p._gerar_com_fallback([])
+
+    assert duble.chamados == ["a", "b"]
+    assert esperas == []
+
+
+class _ModelosQueGuardamAConfig(_Modelos):
+    def __init__(self, respostas: dict[str, Any]) -> None:
+        super().__init__(respostas)
+        self.configs: list[Any] = []
+
+    def generate_content(self, *, model: str, **kwargs: Any) -> Any:  # noqa: ANN401
+        self.configs.append(kwargs.get("config"))
+        return super().generate_content(model=model, **kwargs)
+
+
+def test_teto_por_chamada_vai_na_config(monkeypatch) -> None:
+    p, _ = _provider(monkeypatch, "a", {})
+    duble = _ModelosQueGuardamAConfig({"a": _Resposta(ImageAnalysisResult())})
+    p._client = type("C", (), {"models": duble})()
+
+    p._gerar_com_fallback([], timeout_ms=1234)
+    p._gerar_com_fallback([])
+
+    assert duble.configs[0].http_options.timeout == 1234
+    assert duble.configs[1].http_options is None
+
+
+def test_leitura_da_pergunta_usa_o_teto_menor(monkeypatch) -> None:
+    from app.services.ai.search_interpretation import InterpretacaoDaPergunta
+
+    p, _ = _provider(monkeypatch, "a", {})
+    resposta = _Resposta(ImageAnalysisResult())
+    resposta.parsed = InterpretacaoDaPergunta(category="Sapatos")
+    duble = _ModelosQueGuardamAConfig({"a": resposta})
+    p._client = type("C", (), {"models": duble})()
+
+    async def ler() -> list:
+        return [e async for e in p.stream_interpret_search("tênis")]
+
+    asyncio.run(ler())
+
+    assert duble.configs[0].http_options.timeout == mod._LEITURA_TIMEOUT_MS
+    assert mod._LEITURA_TIMEOUT_MS < mod._GOOGLE_TIMEOUT_MS
+
+
+def test_nenhum_teto_fica_abaixo_do_minimo_da_api() -> None:
+    # Abaixo de 10s a API responde 400 INVALID_ARGUMENT em toda chamada, e o
+    # dublê deste arquivo não reproduz isso: com 8s, os testes passavam e as
+    # 37 leituras da rodada de 12/11 falharam.
+    for teto in (mod._LEITURA_TIMEOUT_MS, mod._GOOGLE_TIMEOUT_MS):
+        assert teto >= mod._TETO_MINIMO_DA_API_MS == 10_000
