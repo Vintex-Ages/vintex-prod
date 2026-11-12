@@ -609,7 +609,13 @@ def mostrar_diferenca(
     taxas = (velho.get("resumo", {}).get("taxa"), novo.get("resumo", {}).get("taxa"))
     if taxas[0] != taxas[1]:
         mudou = True
-        print(f"  [{conjunto}] taxa: {taxas[0]} -> {taxas[1]} {desde}")
+        # Leitura que cai é o provedor fora do ar, não a busca: uma taxa que
+        # cai junto com ela não é regressão do código.
+        caidas = [r.get("resumo", {}).get("sem_leitura", 0) for r in (velho, novo)]
+        extra = (
+            "" if caidas == [0, 0] else f" (sem leitura: {caidas[0]} -> {caidas[1]})"
+        )
+        print(f"  [{conjunto}] taxa: {taxas[0]} -> {taxas[1]}{extra} {desde}")
     for linha in novo["casos"]:
         chave = _chave(linha)
         velha = antes.get(chave)

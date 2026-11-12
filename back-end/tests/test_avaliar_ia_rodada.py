@@ -319,6 +319,22 @@ def test_diferenca_mostra_caso_que_virou_invalido(monkeypatch, tmp_path, capsys)
     assert "nada mudou" not in saida
 
 
+def test_diferenca_diz_quantas_leituras_cairam(capsys):
+    def rodada(taxa, caidas):
+        return {
+            "quando": "q",
+            "conjuntos": {
+                "catalogo": {
+                    "resumo": {"taxa": taxa, "sem_leitura": caidas},
+                    "casos": [],
+                }
+            },
+        }
+
+    avaliar.mostrar_diferenca("catalogo", rodada(0.84, 4), rodada(0.24, 19))
+    assert "taxa: 0.84 -> 0.24 (sem leitura: 4 -> 19)" in capsys.readouterr().out
+
+
 def test_diferenca_mostra_a_taxa_do_perfil(capsys):
     def rodada(taxa):
         return {
