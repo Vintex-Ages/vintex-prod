@@ -65,10 +65,12 @@ def peca(
     *,
     preco: str = "100.00",
     status: str = "ativo",
+    marca: str | None = None,
 ) -> Product:
     product = Product(
         store=store,
         name=nome,
+        brand=marca,
         category=categoria,
         price=Decimal(preco),
         status=status,
@@ -219,6 +221,44 @@ def test_devolve_no_maximo_o_limite_na_ordem_da_semelhanca(pg_client, pg_session
 
 
 @pytest.mark.postgres
+def test_o_conjunto_alterna_as_categorias(pg_client, pg_session):
+    """As três bolsas são as mais parecidas, mas o sapato entra em segundo:
+    um look não é quatro peças da mesma categoria."""
+    store = loja(pg_session, "Aurora")
+    origem = peca(pg_session, store, "Calça", "Calças", eixo(0))
+    bolsas = [
+        peca(
+            pg_session, store, f"Bolsa {i}", "Bolsas", perto_de(i + 1, (0, 1 - i / 10))
+        )
+        for i in range(3)
+    ]
+    sapato = peca(pg_session, store, "Sapato", "Sapatos", perto_de(9, (0, 0.2)))
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [bolsas[0].id, sapato.id, bolsas[1].id, bolsas[2].id]
+
+
+@pytest.mark.postgres
+def test_o_mesmo_modelo_entra_uma_vez(pg_client, pg_session):
+    """Duas lojas com a mesma bolsa: a mais parecida entra, a outra não. O nome
+    compara sem acento, sem caixa e sem espaço sobrando."""
+    aurora = loja(pg_session, "Aurora")
+    bento = loja(pg_session, "Bento")
+    origem = peca(pg_session, aurora, "Calça", "Calças", eixo(0))
+    bolsa = peca(pg_session, aurora, "Bolsa de palha Farm", "Bolsas", eixo(0))
+    peca(pg_session, bento, "bolsa de  palha farm", "Bolsas", perto_de(1, (0, 0.9)))
+    peca(pg_session, bento, "Bolsa de Palha Farm", "Bolsas", perto_de(2, (0, 0.8)))
+    cinto = peca(pg_session, bento, "Cinto", "Bolsas", perto_de(3, (0, 0.5)))
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [bolsa.id, cinto.id]
+
+
+@pytest.mark.postgres
 def test_origem_com_vetor_sem_peca_parecida_cai_para_o_fallback(pg_client, pg_session):
     """As outras peças ainda não têm vetor (catálogo sem backfill): vem o
     catálogo de outras categorias, e não lista vazia (RN-61)."""
@@ -259,6 +299,52 @@ def test_origem_sem_vetor_devolve_outras_categorias_em_fallback(client, db_sessi
     assert body["match_type"] == "fallback"
     assert set(ids(body)) == {sapato.id, bolsa.id}
     assert body["total_amount"] == pytest.approx(120.0)
+
+
+@pytest.mark.postgres
+def test_o_mesmo_modelo_de_outra_marca_entra_uma_vez(pg_client, pg_session):
+    store = loja(pg_session, "Aurora")
+    origem = peca(pg_session, store, "Calça", "Calças", eixo(0))
+    converse = peca(
+        pg_session,
+        store,
+        "Tênis cano alto Converse",
+        "Sapatos",
+        eixo(0),
+        marca="Converse",
+    )
+    peca(
+        pg_session,
+        store,
+        "Tenis cano alto Adidas",
+        "Sapatos",
+        perto_de(1, (0, 0.9)),
+        marca="Adidas",
+    )
+    # Sem marca gravada, o nome inteiro conta: "Converse" no nome fica.
+    sem_marca = peca(
+        pg_session, store, "Tênis cano alto Converse", "Sapatos", perto_de(2, (0, 0.8))
+    )
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [converse.id, sem_marca.id]
+
+
+def test_fallback_tambem_nao_repete_modelo(client, db_session):
+    store = loja(db_session, "Aurora")
+    origem = peca(db_session, store, "Calça", "Calças")
+    peca(db_session, store, "Tênis branco", "Sapatos")
+    peca(db_session, store, "Tenis Branco", "Sapatos")
+    peca(db_session, store, "Bolsa", "Bolsas")
+    db_session.commit()
+
+    body = combinar(client, origem.id).json()
+
+    assert body["match_type"] == "fallback"
+    assert len(body["pieces"]) == 2
+    assert {piece["category"] for piece in body["pieces"]} == {"Sapatos", "Bolsas"}
 
 
 def test_resposta_segue_o_contrato(client, db_session):

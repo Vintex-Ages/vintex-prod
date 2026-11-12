@@ -389,6 +389,17 @@ class ProductRepository:
         melhor = (rows[0].acertos, rows[0].extras)
         return [row.embedding for row in rows if (row.acertos, row.extras) == melhor]
 
+    def marcas(self, product_ids: Sequence[int]) -> dict[int, str | None]:
+        """A marca de cada peça, para a combinação reconhecer o mesmo modelo de
+        marcas diferentes (back-end#328). Fica fora do `_feed_select`, que é
+        de todas as listagens."""
+        if not product_ids:
+            return {}
+        rows = self.db.execute(
+            select(Product.id, Product.brand).where(Product.id.in_(product_ids))
+        )
+        return {row.id: row.brand for row in rows}
+
     def get_detail_by_id(self, product_id: int) -> Product | None:
         stmt = (
             select(Product)
