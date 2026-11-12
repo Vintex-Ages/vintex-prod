@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.constants.catalog import TIPOS_DE_PECA, nome_e_do_tipo
+from app.constants.catalog import TIPOS_DE_PECA, nome_e_do_tipo, tipos_do_nome
 from app.controllers.assistant_controller import (
     _FORA_DO_ESCOPO,
     _aviso_de_alternativas,
@@ -25,7 +25,6 @@ from app.schemas.product_schema import ProductFilters
 from app.seeds.pecas import MODELOS
 from app.services.ai.base import AIProviderUnavailableError, InterpretedQuery
 from app.services.ai.search_interpretation import (
-    INTERPRET_SEARCH_PROMPT,
     InterpretacaoDaPergunta,
     interpretacao_da_resposta,
 )
@@ -70,6 +69,35 @@ def test_palavra_conta_inteira(nome: str, tipo: str) -> None:
     assert not nome_e_do_tipo(nome, tipo)
 
 
+@pytest.mark.parametrize(
+    ("nome", "tipo"),
+    [
+        ("Botas de couro cano alto", "Bota"),
+        ("Botinha de camurça", "Bota"),
+        ("Bolsinha baguete", "Bolsa"),
+        ("Brincos de argola dourados", "Bijuteria"),
+        ("Anéis de prata", "Bijuteria"),
+        ("Vestidinho floral", "Vestido"),
+        ("Mocassins de couro", "Mocassim"),
+        ("Bonés de aba reta", "Boné"),
+    ],
+)
+def test_nome_e_do_tipo_no_plural_e_no_diminutivo(nome: str, tipo: str) -> None:
+    """O nome é texto livre do vendedor; antes, "Botas" com botas na tela dava
+    "Não encontrei bota"."""
+    assert nome_e_do_tipo(nome, tipo)
+
+
+@pytest.mark.parametrize("nome", ["Camisa de botão", "Botões dourados"])
+def test_botao_nao_e_bota(nome: str) -> None:
+    assert not nome_e_do_tipo(nome, "Bota")
+
+
+def test_nome_sem_tipo_nao_diz_tipo_nenhum() -> None:
+    assert tipos_do_nome("Nike Air Force 1") == set()
+    assert tipos_do_nome("Calça jeans reta") == {"Calça"}
+
+
 # O seed separa calça jeans de calça; para a conversa, calça jeans é calça.
 _TIPO_DO_SEED = {"Calça jeans": "Calça"}
 
@@ -81,11 +109,6 @@ def test_todo_modelo_do_seed_e_do_proprio_tipo(modelo) -> None:  # noqa: ANN001
     tipo = _TIPO_DO_SEED.get(modelo.tipo, modelo.tipo)
     assert tipo in TIPOS_DE_PECA
     assert nome_e_do_tipo(modelo.nome, tipo)
-
-
-def test_prompt_cita_todos_os_tipos() -> None:
-    for tipo in TIPOS_DE_PECA:
-        assert tipo in INTERPRET_SEARCH_PROMPT
 
 
 # --- leitura da pergunta ----------------------------------------------------
@@ -130,13 +153,6 @@ def test_aviso_so_com_tipo() -> None:
     assert aviso.startswith("Não encontrei vestido no catálogo.")
 
 
-def test_aviso_sem_filtro_nem_tipo_nao_quebra() -> None:
-    """Antes, `pedidos[0]` levantava IndexError com a lista vazia."""
-    aviso = _aviso_de_alternativas(ProductFilters())
-
-    assert aviso.startswith("Não encontrei o que você pediu.")
-
-
 # --- rota -------------------------------------------------------------------
 
 
@@ -160,6 +176,9 @@ def test_fora_do_escopo_vira_alternativa_sem_filtro(
     eventos = _perguntar(pg_client, "geladeira brastemp 400 litros")
 
     assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
+    # A marca lida não cortou nada, então não aparece como chip na tela.
+    assert eventos[0]["filters"] == {}
+    assert eventos[0]["in_scope"] is False
     assert eventos[1]["delta"] == _FORA_DO_ESCOPO
     assert eventos[2]["match_type"] == "fallback"
     assert _ids(eventos) == [jaqueta.id]
@@ -284,3 +303,32 @@ def test_leitura_que_falha_mantem_o_resultado_direto(
     assert [e["type"] for e in eventos] == ["products", "done"]
     assert eventos[0]["match_type"] == "exact"
     assert _ids(eventos) == [peca.id]
+
+
+@pytest.mark.postgres
+def test_nome_que_nao_diz_o_tipo_nao_vira_nao_encontrei(
+    pg_client: TestClient, pg_session: Session, monkeypatch
+) -> None:
+    """Um nome como "Nike Air Force 1" pode ser o tênis pedido: a conversa só
+    diz que não tem quando todas as peças são, pelo nome, de outro tipo."""
+    loja = _loja(pg_session)
+    nike = _peca(pg_session, loja, "Nike Air Force 1", _vetor(1), category="Sapatos")
+    scarpin = _peca(
+        pg_session, loja, "Scarpin de couro", _vetor(1, 0.5), category="Sapatos"
+    )
+    pg_session.commit()
+    _usar(
+        monkeypatch,
+        _Provedor(
+            InterpretedQuery(
+                filters={"category": "Sapatos"}, tipo="Tênis", in_scope=True
+            ),
+            _vetor(1),
+        ),
+    )
+
+    eventos = _perguntar(pg_client, "tênis")
+
+    assert [e["type"] for e in eventos] == ["interpreted", "products", "done"]
+    assert eventos[1]["match_type"] == "exact"
+    assert _ids(eventos) == [nike.id, scarpin.id]

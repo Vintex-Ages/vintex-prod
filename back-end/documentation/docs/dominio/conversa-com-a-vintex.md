@@ -14,8 +14,8 @@ Fonte de verdade: `AssistantController.chat` (`app/controllers/assistant_control
 
 | `type` | Quando | Campos |
 |---|---|---|
-| `interpreted` | a pergunta foi interpretada | `filters` (nomes do catálogo: `category`, `price_max`...), `similarity` |
-| `text` | nada casou com os filtros e as peças são alternativas | `delta`: o aviso, com o que faltou |
+| `interpreted` | a pergunta foi interpretada | `filters` (nomes do catálogo: `category`, `price_max`...), `similarity`, `tipo`, `in_scope`. Fora do escopo, `filters` vem vazio |
+| `text` | as peças são alternativas: nada casou com os filtros, nenhuma é do tipo pedido, ou a pergunta é fora do escopo | `delta`: o aviso, com o que faltou |
 | `products` | a busca respondeu, mesmo sem nada parecido | `products`: as peças, no formato do feed; `match_type`: `exact` ou `fallback` |
 | `error` | sem pergunta, ou falha do provedor de IA | `message` |
 | `error` com `code: quota_exceeded` | a cota do dia acabou | `message`, `retry_at` (ISO 8601, UTC) |
@@ -36,6 +36,14 @@ Antes da [#260](https://github.com/Vintex-Ages/back-end/issues/260), tudo era si
 A conversa anterior vai junto para a IA (os 6 últimos turnos): "e em vermelho?", depois de "tênis de corrida", vira `Sapatos` e `Vermelho`.
 
 **Nada casou com o filtro** (RN-61): a resposta nunca vem vazia enquanto houver catálogo. Primeiro, só a categoria: quem pediu "bota bege" e não tem nenhuma vê botas de outra cor. Se nem a categoria tiver peça, o catálogo todo. Nos dois casos, `products` vem com `match_type: "fallback"`, e um evento `text` antes diz o que faltou: "Não encontrei peças com Sapatos e Bege. Estas são alternativas, as mais parecidas com o que você pediu."
+
+## Tipo de peça e fora do escopo
+
+A categoria tem três valores, e "vestido" e "calça" são os dois `Roupas` ([#231](https://github.com/Vintex-Ages/back-end/issues/231)). A leitura da pergunta diz também o **tipo** pedido (`tipo`, um valor de `TIPOS_DE_PECA`) e se a pergunta é sobre o que a Vintex vende (`in_scope`). Nenhum dos dois vira filtro: os dois só mudam o rótulo e o aviso.
+
+- **Tipo**: a peça não guarda o tipo, ele é lido do nome, palavra inteira, sem acento e pela raiz ("Botas" e "Botinha" são Bota). Se nenhuma das cinco peças é do tipo pedido e todas são, pelo nome, de outro tipo, as mesmas peças vêm como `fallback`, com "Não encontrei vestido no catálogo." antes. Peça cujo nome não diz tipo nenhum ("Nike Air Force 1") não conta como outro tipo.
+- **Fora do escopo** (`in_scope: false`, "geladeira brastemp"): a busca ignora os filtros lidos e devolve as mais parecidas como `fallback`, com o aviso de que a Vintex vende roupas, sapatos e acessórios de brechó.
+- Sem `tipo` e sem `in_scope` (o modelo não preencheu), o comportamento é o de antes.
 
 **A interpretação falhou** (modelo fora do ar, cota do provedor): a busca segue só por similaridade, sem o evento `interpreted`, como era antes. A IA ajuda, mas não trava a conversa (RN-57).
 
