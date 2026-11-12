@@ -15,9 +15,10 @@ e aviso, porque é isso que se mede. A cota (back-end#258) trava na sexta
 pergunta de uma mesma origem; ela não é contornada por dentro: quem roda sobe
 `CHAT_QUOTA_PER_PERSON` e `CHAT_QUOTA_PER_DAY` no `.env` da rodada (são
 `BaseSettings`) e reinicia a API. A cota é do dia UTC e soma as perguntas já
-feitas, então o script confere no banco o que ainda resta antes de começar.
-Se ela acabar no meio, o caso sai da conta, a conversa para e a rodada fica
-marcada como incompleta.
+feitas, então o script confere no banco o que ainda resta antes de começar,
+pela origem que mais perguntou hoje: com a API no Docker, a origem que ela vê
+não é o 127.0.0.1. Se a cota acabar no meio, o caso sai da conta e a conversa
+para.
 
 **Os perfis de estilo não passam pela rota**, que exige login: o script monta o
 texto e o vetor do perfil pelas mesmas funções da recomendação
@@ -38,10 +39,15 @@ ter peça, é inválido para aquele catálogo e sai da conta, com aviso.
 Toda peça devolvida é conferida contra o banco (RN-65): id, nome, preço e loja.
 Uma peça que não bate reprova a rodada inteira, e o script sai com código 1.
 
+Falha que não é resposta da IA (rede, cota, erro do provedor, erro do próprio
+script) tira o caso da conta e deixa o conjunto incompleto. Conjunto incompleto
+não serve de base, e o script sai com código 2.
+
 Cada rodada fica em `scripts/avaliacao/rodadas/`, com a resposta recebida, o
 hash de cada conjunto e a nota de quem rodou. Ela é gravada a cada conjunto,
 para uma falha no meio não perder o que já rodou. A saída compara cada conjunto
-com a última rodada completa que usou o mesmo arquivo de conjunto.
+com a última rodada em que o mesmo conjunto, com os mesmos casos, rodou
+completo.
 """
 
 from __future__ import annotations
@@ -61,12 +67,14 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.constants.catalog import CATEGORIES, COLORS, CONDITIONS, SIZES
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageParams
 from app.database import SessionLocal, engine
+from app.models.ai_chat_usage import AIChatUsage
 from app.models.product import Product
 from app.models.user_preference import UserPreference
 from app.repositories.ai_chat_usage_repository import AIChatUsageRepository
@@ -254,10 +262,12 @@ def rodar_caso(
         eventos, segundos = perguntar(api, caso["pergunta"])
     except FALHAS_DE_TRANSPORTE as exc:
         linha["invalido"] = f"falha ao chamar a API: {exc!r}"[:300]
+        linha["falha"] = True
         return linha
     cota = next((e for e in eventos if e.get("code") == "quota_exceeded"), None)
     if cota is not None:
         linha["invalido"] = f"cota esgotada: {cota.get('message')}"
+        linha["falha"] = True
         raise CotaAcabou(linha)
 
     leitura = next((e for e in eventos if e.get("type") == "interpreted"), None)
@@ -317,8 +327,9 @@ def rodar_caso(
         linha["corte_respeitado"] = all(
             catalogo[i]["price"] <= teto for i in ids if i in catalogo
         )
+        # O teto lido é o pedido: "até 250" lido como 50 também cortaria.
         lido = filtros.get("price_max")
-        linha["corte_lido"] = lido is not None and Decimal(str(lido)) <= teto
+        linha["corte_lido"] = lido is not None and Decimal(str(lido)) == teto
         linha["acerto"] = (
             linha["acerto"] and linha["corte_respeitado"] and linha["corte_lido"]
         )
@@ -336,7 +347,11 @@ def rodar_perfil(
     try:
         vetor, modelo = vetor_do_perfil(texto)
     except AIProviderError as exc:
-        return {"estilos": estilos, "invalido": f"falha do provedor: {exc}"[:300]}
+        return {
+            "estilos": estilos,
+            "invalido": f"falha do provedor: {exc}"[:300],
+            "falha": True,
+        }
     rows, _ = ProductRepository(db).find_similar(
         vetor, modelo, PageParams(page=1, page_size=DEFAULT_PAGE_SIZE)
     )
@@ -389,16 +404,11 @@ def rodar_foto(provider, caso: dict[str, Any]) -> dict[str, Any]:
     try:
         analise = provider.analyze_image_bytes([ImagePhoto(caminho.read_bytes(), tipo)])
     except AIProviderError as exc:
+        # Um 429 ou 503 não é a IA errando a foto: sai da conta, como no perfil.
         return {
             "foto": caso["foto"],
-            "erro": str(exc)[:300],
-            "campos": {},
-            "categoria_e_cor": (
-                False
-                if "category" in caso["esperado"] and "color" in caso["esperado"]
-                else None
-            ),
-            "acerto": False,
+            "invalido": f"falha do provedor: {exc}"[:300],
+            "falha": True,
         }
     lido = {
         campo: (getattr(analise, campo).value if getattr(analise, campo) else None)
@@ -445,6 +455,7 @@ def rodar_foto(provider, caso: dict[str, Any]) -> dict[str, Any]:
 def resumo_dos_campos(linhas: list[dict[str, Any]]) -> dict[str, Any]:
     """Diagnóstico por campo. A instrução obedecida não entra na taxa: ela
     conta à parte, em `instrucao`."""
+    linhas = [linha for linha in linhas if "invalido" not in linha]
     contagem: dict[str, int] = {}
     for linha in linhas:
         for campo in linha["campos"].values():
@@ -466,7 +477,11 @@ def resumo_dos_campos(linhas: list[dict[str, Any]]) -> dict[str, Any]:
 
 def resumo_da_historia(linhas: list[dict[str, Any]]) -> dict[str, Any]:
     """A meta da história da foto: categoria e cor certas, por foto."""
-    conferidas = [linha for linha in linhas if linha.get("categoria_e_cor") is not None]
+    conferidas = [
+        linha
+        for linha in linhas
+        if "invalido" not in linha and linha.get("categoria_e_cor") is not None
+    ]
     certas = sum(1 for linha in conferidas if linha["categoria_e_cor"])
     return {
         "certas": certas,
@@ -484,15 +499,22 @@ def resumo(linhas: list[dict[str, Any]]) -> dict[str, Any]:
         "taxa": round(acertos / len(validas), 2) if validas else None,
         "invalidos": len(linhas) - len(validas),
     }
-    sem_leitura = sum(1 for caso in validas if caso.get("sem_leitura"))
+    sem_leitura = [caso for caso in validas if caso.get("sem_leitura")]
     if sem_leitura:
-        saida["sem_leitura"] = sem_leitura
+        saida["sem_leitura"] = len(sem_leitura)
+        # A API não diz por que a leitura caiu (tempo esgotado, 429, resposta
+        # que não se lê). Sem leitura e com a peça no top 5 é erro de
+        # disponibilidade, não de busca.
+        saida["sem_leitura_com_a_peca"] = sum(
+            1 for caso in sem_leitura if caso.get("esperadas_no_top5")
+        )
     erros = sum(1 for caso in validas if caso.get("erro"))
     if erros:
         saida["erros"] = erros
     acasos = [caso["ao_acaso"] for caso in validas if "ao_acaso" in caso]
     if acasos:
         saida["ao_acaso"] = round(sum(acasos) / len(acasos), 2)
+        saida["casos_com_esperado"] = len(acasos)
         saida["casos_que_passam_ao_acaso"] = sum(1 for a in acasos if a >= 0.9)
     if any("possiveis_no_top5" in caso for caso in validas):
         saida["esperadas_no_top5"] = sum(
@@ -530,35 +552,39 @@ def procedencia() -> dict[str, Any]:
     }
 
 
-def hash_do_conjunto(conjunto: str) -> str:
-    """O hash dos casos do conjunto, não do arquivo: gravar a meta calibrada
+def hash_do_conjunto(casos: list[dict[str, Any]]) -> str:
+    """O hash dos casos que rodaram, não do arquivo: gravar a meta calibrada
     ou mexer em outro conjunto do mesmo arquivo não muda o que se mede."""
-    dados = json.loads((PASTA / ARQUIVO_DO_CONJUNTO[conjunto]).read_text("utf-8"))
-    casos = (
-        dados[conjunto]["casos"]
-        if conjunto in CONJUNTOS_DA_CONVERSA
-        else dados["casos"]
-    )
     texto = json.dumps(casos, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(texto.encode()).hexdigest()[:12]
+
+
+def completo(linhas: list[dict[str, Any]], casos: int) -> bool:
+    """Todos os casos rodaram e nenhum saiu da conta por falha. Caso inválido
+    pelo catálogo (nenhuma peça esperada) não é falha: repete na próxima."""
+    return len(linhas) == casos and not any(linha.get("falha") for linha in linhas)
 
 
 def anterior_do_conjunto(
     conjunto: str, hash_atual: str, menos: Path
 ) -> dict[str, Any] | None:
-    """A última rodada completa que rodou o conjunto com o mesmo arquivo.
+    """A última rodada em que o conjunto rodou completo com os mesmos casos.
 
-    Rodada parcial, ou feita com outro esperado, não serve de base: a diferença
-    acusaria mudança do modelo que é mudança do conjunto.
+    Conjunto parcial, ou feito com outro esperado, não serve de base: a
+    diferença acusaria mudança do modelo que é mudança do conjunto.
     """
     for arquivo in sorted(RODADAS.glob("*.json"), reverse=True):
         if arquivo == menos:
             continue
-        rodada = json.loads(arquivo.read_text(encoding="utf-8"))
+        try:
+            rodada = json.loads(arquivo.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  rodada {arquivo.name} ilegível, pulada: {exc}")
+            continue
         dados = rodada.get("conjuntos", {}).get(conjunto)
         if (
             dados is not None
-            and rodada.get("completa", False)
+            and dados.get("completo", False)
             and dados.get("hash") == hash_atual
         ):
             return rodada
@@ -575,38 +601,51 @@ def mostrar_diferenca(
     if anterior is None:
         print(f"  [{conjunto}] sem rodada completa anterior com o mesmo conjunto")
         return
-    antes = {_chave(caso): caso for caso in anterior["conjuntos"][conjunto]["casos"]}
+    desde = f"(desde {anterior['quando']})"
+    velho = anterior["conjuntos"][conjunto]
+    novo = atual["conjuntos"][conjunto]
+    antes = {_chave(caso): caso for caso in velho["casos"]}
     mudou = False
-    for linha in atual["conjuntos"][conjunto]["casos"]:
+    taxas = (velho.get("resumo", {}).get("taxa"), novo.get("resumo", {}).get("taxa"))
+    if taxas[0] != taxas[1]:
+        mudou = True
+        print(f"  [{conjunto}] taxa: {taxas[0]} -> {taxas[1]} {desde}")
+    for linha in novo["casos"]:
         chave = _chave(linha)
         velha = antes.get(chave)
         if velha is None:
             continue
         campos = [
             c
-            for c in ("acerto", "match_type", "categoria_e_cor")
-            if c in linha and velha.get(c) != linha.get(c)
+            for c in ("invalido", "acerto", "match_type", "categoria_e_cor", "taxa")
+            if (c in linha or c in velha) and velha.get(c) != linha.get(c)
         ]
         if campos:
             mudou = True
             detalhes = ", ".join(
                 f"{c}: {velha.get(c)} -> {linha.get(c)}" for c in campos
             )
-            print(f"  [{conjunto}] {chave}: {detalhes} (desde {anterior['quando']})")
+            print(f"  [{conjunto}] {chave}: {detalhes} {desde}")
     if not mudou:
-        print(f"  [{conjunto}] nada mudou desde {anterior['quando']}")
+        print(f"  [{conjunto}] nada mudou {desde}")
 
 
-def chaves_da_origem(api: str) -> list[str]:
-    """A chave da cota com que a API conta este script (`chave_da_pessoa`).
-    Só dá para saber com a API na mesma máquina."""
-    host = urlparse(api).hostname
-    if host in ("127.0.0.1", "localhost", "::1"):
-        return ["ip:127.0.0.1", "ip:::1"]
-    return []
+def maior_uso_de_visitante(db, dia) -> int:
+    """O que mais perguntou hoje entre os visitantes (`chave_da_pessoa`).
+
+    O script não sabe com que origem a API o conta: rodando na máquina é o
+    127.0.0.1, no Docker é o gateway da rede do compose. Conferir pela maior
+    é o lado seguro.
+    """
+    maior = db.scalar(
+        select(func.max(AIChatUsage.count)).where(
+            AIChatUsage.day == dia, AIChatUsage.key.like("ip:%")
+        )
+    )
+    return maior or 0
 
 
-def cota_que_falta(db, api: str, perguntas: int) -> str | None:
+def cota_que_falta(db, perguntas: int) -> str | None:
     """O que impede a rodada de caber na cota de hoje, ou `None`.
 
     Compara o que resta no dia UTC, não o limite: duas rodadas seguidas somam.
@@ -615,25 +654,42 @@ def cota_que_falta(db, api: str, perguntas: int) -> str | None:
     dia = datetime.now(timezone.utc).date()
     uso = AIChatUsageRepository(db)
     projeto = settings.CHAT_QUOTA_PER_DAY - uso.contagem(dia, CHAVE_DO_PROJETO)
-    chaves = chaves_da_origem(api)
-    pessoa = settings.CHAT_QUOTA_PER_PERSON - max(
-        (uso.contagem(dia, c) for c in chaves), default=0
-    )
+    pessoa = settings.CHAT_QUOTA_PER_PERSON - maior_uso_de_visitante(db, dia)
     if projeto >= perguntas and pessoa >= perguntas:
         return None
     return (
-        f"A cota não cabe: {perguntas} perguntas, e hoje restam {pessoa} para esta "
-        f"origem (CHAT_QUOTA_PER_PERSON={settings.CHAT_QUOTA_PER_PERSON}) e "
+        f"A cota não cabe: {perguntas} perguntas, e hoje restam {pessoa} para a "
+        "origem que mais perguntou "
+        f"(CHAT_QUOTA_PER_PERSON={settings.CHAT_QUOTA_PER_PERSON}) e "
         f"{projeto} para o projeto (CHAT_QUOTA_PER_DAY={settings.CHAT_QUOTA_PER_DAY}). "
         "Suba as duas no .env da rodada e reinicie a API."
     )
 
 
 def gravar(rodada: dict[str, Any], destino: Path) -> None:
+    """Escreve ao lado e troca: interrompida no meio da escrita, a rodada
+    anterior do mesmo arquivo fica inteira."""
     RODADAS.mkdir(parents=True, exist_ok=True)
-    destino.write_text(
+    temporario = destino.with_suffix(".tmp")
+    temporario.write_text(
         json.dumps(rodada, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
+    temporario.replace(destino)
+
+
+def _seguro(chave: dict[str, Any], rodar) -> dict[str, Any]:
+    """Um caso que quebra o script (peça sem preço, foto que falta, erro do
+    banco) sai da conta com o erro, em vez de perder o conjunto inteiro."""
+    try:
+        return rodar()
+    except CotaAcabou:
+        raise
+    except Exception as exc:
+        return {
+            **chave,
+            "invalido": f"o script falhou no caso: {exc!r}"[:300],
+            "falha": True,
+        }
 
 
 def main() -> int:
@@ -694,7 +750,7 @@ def main() -> int:
     cota_acabou = False
     try:
         if perguntas:
-            falta = cota_que_falta(db, args.api, perguntas)
+            falta = cota_que_falta(db, perguntas)
             if falta:
                 print(falta)
                 return 2
@@ -706,12 +762,27 @@ def main() -> int:
             linhas: list[dict[str, Any]] = []
             extra: dict[str, Any] = {}
             if conjunto == "perfis":
-                linhas = [rodar_perfil(db, caso, catalogo) for caso in perfis["casos"]]
+                casos = perfis["casos"]
+                linhas = [
+                    _seguro(
+                        {"estilos": caso["estilos"]},
+                        lambda caso=caso: rodar_perfil(db, caso, catalogo),
+                    )
+                    for caso in casos
+                ]
             elif conjunto == "fotos":
+                casos = fotos["casos"]
                 provider = get_ai_provider()
-                for caso in fotos["casos"]:
-                    linha = rodar_foto(provider, caso)
-                    marca = "ok" if linha["acerto"] else "erro"
+                for caso in casos:
+                    linha = _seguro(
+                        {"foto": caso["foto"]},
+                        lambda caso=caso: rodar_foto(provider, caso),
+                    )
+                    marca = (
+                        "invalido"
+                        if "invalido" in linha
+                        else ("ok" if linha["acerto"] else "erro")
+                    )
                     print(f"  [fotos] {marca:8} {Path(caso['foto']).name}")
                     linhas.append(linha)
                 extra = {
@@ -719,9 +790,15 @@ def main() -> int:
                     "campos": resumo_dos_campos(linhas),
                 }
             else:
-                for caso in conversa[conjunto]["casos"]:
+                casos = conversa[conjunto]["casos"]
+                for caso in casos:
                     try:
-                        linha = rodar_caso(args.api, conjunto, caso, catalogo)
+                        linha = _seguro(
+                            {"pergunta": caso["pergunta"]},
+                            lambda caso=caso: rodar_caso(
+                                args.api, conjunto, caso, catalogo
+                            ),
+                        )
                     except CotaAcabou as cota:
                         linhas.append(cota.args[0])
                         print(f"  [{conjunto}] cota esgotada em {caso['pergunta']!r}")
@@ -735,22 +812,33 @@ def main() -> int:
                     print(f"  [{conjunto}] {marca:8} {caso['pergunta']}")
                     linhas.append(linha)
             rodada["conjuntos"][conjunto] = {
-                "hash": hash_do_conjunto(conjunto),
+                "hash": hash_do_conjunto(casos),
+                "completo": completo(linhas, len(casos)),
                 "resumo": resumo(linhas),
                 **extra,
                 "casos": linhas,
             }
             gravar(rodada, destino)
-        rodada["completa"] = not cota_acabou
+        rodada["completa"] = set(rodada["conjuntos"]) == set(escolhidos) and all(
+            dados["completo"] for dados in rodada["conjuntos"].values()
+        )
     finally:
         db.close()
         # Interrompida no meio, a rodada fica com o que já rodou.
         if rodada["conjuntos"]:
             gravar(rodada, destino)
 
-    print(f"\nRodada gravada em {destino.relative_to(PASTA.parent.parent)}")
+    print(f"\nRodada gravada em {destino}")
     if cota_acabou:
-        print("A cota acabou no meio: a rodada fica incompleta e não serve de base.")
+        print("A cota acabou no meio: a conversa parou ali.")
+    incompletos = [
+        c for c in escolhidos if not rodada["conjuntos"].get(c, {}).get("completo")
+    ]
+    if incompletos:
+        print(
+            f"Incompletos, não servem de base: {', '.join(incompletos)}. "
+            "Caso que saiu por falha está marcado com 'falha' na rodada."
+        )
     metas = {
         **{c: conversa[c]["meta"]["proposta"] for c in CONJUNTOS_DA_CONVERSA},
         "perfis": perfis["meta"]["proposta"],
@@ -781,8 +869,13 @@ def main() -> int:
             f"{metas[conjunto]:.0%}"
         ]
         if "ao_acaso" in r:
+            de = (
+                ""
+                if r["casos_com_esperado"] == r["validos"]
+                else f" nos {r['casos_com_esperado']} casos com esperado"
+            )
             partes.append(
-                f"ao acaso {r['ao_acaso']:.0%} ({r['casos_que_passam_ao_acaso']} "
+                f"ao acaso {r['ao_acaso']:.0%}{de} ({r['casos_que_passam_ao_acaso']} "
                 "casos passam ao acaso)"
             )
         if "possiveis_no_top5" in r:
@@ -792,8 +885,12 @@ def main() -> int:
             )
         if "taxa_media" in r:
             partes.append(f"média dentro dos estilos {r['taxa_media']:.0%}")
+        if r.get("sem_leitura"):
+            partes.append(
+                f"{r['sem_leitura']} sem leitura, {r['sem_leitura_com_a_peca']} "
+                "delas com a peça no top 5"
+            )
         for chave, texto in (
-            ("sem_leitura", "sem leitura"),
             ("erros", "com erro"),
             ("invalidos", "inválidos"),
         ):
@@ -818,7 +915,7 @@ def main() -> int:
         for conjunto, caso, problema in problemas:
             print(f"  [{conjunto}] {caso}: {problema}")
         return 1
-    return 2 if cota_acabou else 0
+    return 0 if rodada["completa"] else 2
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 {
   "quando": "2026-11-12T13:46:43Z",
-  "nota": "Rodada D, com o script corrigido depois da revisão (12/11). Código da API: develop em 01b1e4b com a back-end#343 (49576b0), a back-end#231 (0dc4965) e a back-end#326 (f9734e8), aplicados juntos no codespace. Primeira rodada com a definição nova: catálogo exige a pergunta lida e o filtro de preço lido; foto mede categoria e cor por foto; casaco e anos 90 trocados. Cota por pessoa subida para 400 no .env da rodada.",
+  "nota": "Rodada D, com o script corrigido depois da revisão (12/11). Código da API: develop em 01b1e4b com a back-end#343 (49576b0), a back-end#231 (0dc4965) e a back-end#326 (f9734e8), aplicados juntos no codespace. Primeira rodada com a definição nova: catálogo exige a pergunta lida e o filtro de preço lido; foto mede categoria e cor por foto; casaco e anos 90 trocados. Cota por pessoa subida para 400 no .env da rodada. Acrescentado depois da rodada (12/11): o script que rodou tinha alterações locais sobre o f9734e8, e os hashes dos conjuntos foram recalculados depois, com o hash_do_conjunto do 46a7fbb, sobre os mesmos casos. O commit_do_script 01b1e4b é o HEAD do codespace, onde os três PRs estavam aplicados como arquivos. A rodada é anterior à flag completo por conjunto e não serve de base para a próxima.",
   "commit_do_script": "01b1e4b",
   "alteracoes_locais": true,
   "completa": true,
