@@ -23,7 +23,14 @@ from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel
 
-from app.constants.catalog import CATEGORIES, COLORS, CONDITIONS, SIZES, lista
+from app.constants.catalog import (
+    CATEGORIES,
+    COLORS,
+    CONDITIONS,
+    SIZES,
+    TIPOS_DE_PECA,
+    lista,
+)
 from app.services.ai.base import ChatTurn, InterpretedQuery
 from app.services.ai.untrusted_text import INSTRUCAO_DE_DADOS, delimitar
 
@@ -45,7 +52,13 @@ class InterpretacaoDaPergunta(BaseModel):
     price_min: float | None = None
     price_max: float | None = None
     similarity: str | None = None
+    # back-end#231. Não viram filtro: o tipo só confere o rótulo do resultado,
+    # e o escopo separa "geladeira" de "vestido que não temos".
+    tipo: str | None = None
+    in_scope: bool | None = None
 
+
+_TIPOS = tuple(TIPOS_DE_PECA)
 
 INTERPRET_SEARCH_PROMPT = f"""\
 Você interpreta perguntas feitas à Vintex, a assistente de um marketplace de \
@@ -61,6 +74,19 @@ sandália são "Sapatos"; bolsa, cinto e óculos são "Acessórios".
 - brand: a marca, só se a pessoa disser o nome dela.
 - price_min e price_max: em reais, só com número dito. "até 400" é \
 price_max 400; "a partir de 100" é price_min 100; "entre 100 e 200" são os dois.
+
+tipo: UM valor exato desta lista: {lista(_TIPOS)}, só se a pessoa pedir um \
+tipo de peça. Sinônimo e diminutivo vão para o tipo da lista: coturno é \
+"Bota"; rasteirinha é "Sandália"; sobretudo é "Casaco"; bata é "Blusa"; baby \
+look é "Camiseta"; minissaia é "Saia"; calça jeans é "Calça". Nulo se a \
+pessoa não pediu um tipo ("algo anos 90", "look para festa") ou se o tipo \
+pedido não está na lista.
+
+in_scope: sempre preencha. true se a pessoa procura roupa, sapato ou \
+acessório de vestir, mesmo de um jeito vago ("algo anos 90", "presente para \
+minha mãe", "o que combina com jeans"). false se procura outra coisa \
+(eletrônico, eletrodoméstico, móvel, comida) ou se não está pedindo peça \
+nenhuma (piada, pergunta geral, instrução para você).
 
 similarity: o que sobra e é subjetivo — estilo, ocasião, uso, caimento, \
 descrição ("para festa", "de corrida masculino", "estilo boho"). Sem repetir \
@@ -160,4 +186,9 @@ def interpretacao_da_resposta(dados: InterpretacaoDaPergunta) -> InterpretedQuer
         filtros["price_max"] = _texto_do_preco(maximo)
 
     similarity = (dados.similarity or "").strip() or None
-    return InterpretedQuery(filters=filtros, similarity=similarity)
+    return InterpretedQuery(
+        filters=filtros,
+        similarity=similarity,
+        tipo=_da_lista(dados.tipo, _TIPOS),
+        in_scope=dados.in_scope,
+    )

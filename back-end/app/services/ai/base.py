@@ -102,6 +102,11 @@ class InterpretedQuery(BaseModel):
     type: Literal["interpreted"] = "interpreted"
     filters: dict[str, str] = {}
     similarity: str | None = None
+    # back-end#231: não são filtro. `tipo` é um valor de `TIPOS_DE_PECA`, e
+    # `in_scope` é falso quando a pergunta não é sobre roupa, sapato ou
+    # acessório. Nulos quando o modelo não disse.
+    tipo: str | None = None
+    in_scope: bool | None = None
 
 
 class SearchDone(BaseModel):
