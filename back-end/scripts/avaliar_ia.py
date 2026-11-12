@@ -530,8 +530,17 @@ def procedencia() -> dict[str, Any]:
     }
 
 
-def hash_do_arquivo(nome: str) -> str:
-    return hashlib.sha256((PASTA / nome).read_bytes()).hexdigest()[:12]
+def hash_do_conjunto(conjunto: str) -> str:
+    """O hash dos casos do conjunto, não do arquivo: gravar a meta calibrada
+    ou mexer em outro conjunto do mesmo arquivo não muda o que se mede."""
+    dados = json.loads((PASTA / ARQUIVO_DO_CONJUNTO[conjunto]).read_text("utf-8"))
+    casos = (
+        dados[conjunto]["casos"]
+        if conjunto in CONJUNTOS_DA_CONVERSA
+        else dados["casos"]
+    )
+    texto = json.dumps(casos, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(texto.encode()).hexdigest()[:12]
 
 
 def anterior_do_conjunto(
@@ -726,7 +735,7 @@ def main() -> int:
                     print(f"  [{conjunto}] {marca:8} {caso['pergunta']}")
                     linhas.append(linha)
             rodada["conjuntos"][conjunto] = {
-                "hash": hash_do_arquivo(ARQUIVO_DO_CONJUNTO[conjunto]),
+                "hash": hash_do_conjunto(conjunto),
                 "resumo": resumo(linhas),
                 **extra,
                 "casos": linhas,

@@ -249,6 +249,25 @@ def test_sem_base_a_diferenca_diz_que_nao_tem(monkeypatch, tmp_path, capsys):
     assert "sem rodada completa anterior" in capsys.readouterr().out
 
 
+def test_hash_muda_com_os_casos_e_nao_com_a_meta(monkeypatch, tmp_path):
+    monkeypatch.setattr(avaliar, "PASTA", tmp_path)
+    arquivo = tmp_path / "perfis.json"
+
+    def escrever(meta, estilos):
+        arquivo.write_text(
+            json.dumps({"meta": meta, "casos": [{"estilos": estilos}]}),
+            encoding="utf-8",
+        )
+        return avaliar.hash_do_conjunto("perfis")
+
+    antes = escrever({"proposta": 0.8, "calibrada_em": None}, ["y2k"])
+    calibrada = escrever({"proposta": 0.6, "calibrada_em": "rodada"}, ["y2k"])
+    outro_caso = escrever({"proposta": 0.6, "calibrada_em": "rodada"}, ["boho"])
+
+    assert antes == calibrada
+    assert outro_caso != antes
+
+
 # --- cota ----------------------------------------------------------------------
 
 
