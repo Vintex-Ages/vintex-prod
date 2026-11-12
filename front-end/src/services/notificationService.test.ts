@@ -148,7 +148,7 @@ describe('notificationService', () => {
       const service = await import('@/services/notificationService');
       const result = await service.listNotifications('user-1');
 
-      expect(mockedGet).toHaveBeenCalledWith('/api/users/me/notifications', {
+      expect(mockedGet).toHaveBeenCalledWith('/users/me/notifications', {
         params: {
           page: 1,
           page_size: 50,
@@ -242,7 +242,7 @@ describe('notificationService', () => {
 
       await service.markAsRead('user-1', '12');
 
-      expect(mockedPost).toHaveBeenCalledWith('/api/users/me/notifications/12/read');
+      expect(mockedPost).toHaveBeenCalledWith('/users/me/notifications/12/read');
     });
 
     it('codifica o ID da notificação na URL', async () => {
@@ -253,7 +253,7 @@ describe('notificationService', () => {
       await service.markAsRead('user-1', 'id/com espaço');
 
       expect(mockedPost).toHaveBeenCalledWith(
-        '/api/users/me/notifications/id%2Fcom%20espa%C3%A7o/read',
+        '/users/me/notifications/id%2Fcom%20espa%C3%A7o/read',
       );
     });
 
@@ -264,7 +264,7 @@ describe('notificationService', () => {
 
       await service.markAllAsRead('user-1');
 
-      expect(mockedPost).toHaveBeenCalledWith('/api/users/me/notifications/read');
+      expect(mockedPost).toHaveBeenCalledWith('/users/me/notifications/read');
     });
 
     it('converte resposta 404 em erro NOT_FOUND', async () => {

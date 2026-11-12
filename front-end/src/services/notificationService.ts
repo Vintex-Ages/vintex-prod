@@ -84,7 +84,7 @@ export async function listNotifications(userId: string): Promise<NotificationPag
     };
   }
 
-  const response = await httpClient.get<ApiNotificationResponse>('/api/users/me/notifications', {
+  const response = await httpClient.get<ApiNotificationResponse>('/users/me/notifications', {
     params: {
       page: 1,
       page_size: 50,
@@ -113,7 +113,7 @@ export async function markAsRead(userId: string, notificationId: string): Promis
   }
 
   try {
-    await httpClient.post(`/api/users/me/notifications/${encodeURIComponent(notificationId)}/read`);
+    await httpClient.post(`/users/me/notifications/${encodeURIComponent(notificationId)}/read`);
   } catch (error: unknown) {
     if ((error as { response?: { status?: number } } | null)?.response?.status === 404) {
       throw new NotificationServiceError('NOT_FOUND', 'Notificação não encontrada.');
@@ -131,5 +131,5 @@ export async function markAllAsRead(userId: string): Promise<void> {
     return;
   }
 
-  await httpClient.post('/api/users/me/notifications/read');
+  await httpClient.post('/users/me/notifications/read');
 }
