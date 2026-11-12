@@ -124,23 +124,29 @@ def test_resumo_conta_sem_leitura_e_o_acaso():
     linhas = [
         {
             "acerto": True,
+            "sem_leitura": False,
             "ao_acaso": 1.0,
             "esperadas_no_top5": 5,
             "possiveis_no_top5": 5,
         },
         {
-            "acerto": False,
+            "invalido": "sem leitura: o provedor falhou",
             "sem_leitura": True,
             "ao_acaso": 0.2,
-            "esperadas_no_top5": 0,
+            "esperadas_no_top5": 1,
             "possiveis_no_top5": 1,
         },
+        {"invalido": "nenhuma peça ativa atende ao esperado"},
     ]
     saida = resumo(linhas)
+    # A sem leitura sai da taxa, mas conta nas leituras e no diagnóstico.
+    assert (saida["acertos"], saida["validos"], saida["taxa"]) == (1, 1, 1.0)
+    assert (saida["perguntas_feitas"], saida["leituras"]) == (2, 1)
     assert saida["sem_leitura"] == 1
-    assert saida["ao_acaso"] == 0.6
-    assert saida["casos_que_passam_ao_acaso"] == 1
-    assert (saida["esperadas_no_top5"], saida["possiveis_no_top5"]) == (5, 6)
+    assert saida["sem_leitura_com_a_peca"] == 1
+    assert saida["invalidos"] == 1
+    assert saida["ao_acaso"] == 1.0
+    assert (saida["esperadas_no_top5"], saida["possiveis_no_top5"]) == (5, 5)
 
 
 def test_resumo_dos_perfis_mostra_a_media():

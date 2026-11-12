@@ -1,9 +1,13 @@
 {
   "quando": "2026-11-12T15:28:31Z",
-  "nota": "Rodada E (12/11), primeira com o código final dos três PRs: back-end#343 em 9ca4e06 (prazo da leitura 25s), back-end#231 em e4106fb, back-end#326 em c7defd9, aplicados como arquivos sobre a develop 01b1e4b no codespace. API reiniciada com esse código antes da rodada. Cota por pessoa e do projeto em 400 no .env da rodada. Acrescentado depois da rodada (12/11): o provedor estava fora do ar. 29 de 37 leituras caíram, 17 com 429 por último (o gemini-3.8-flash passou da cota de 20 pedidos por dia do Free Tier) e 12 no prazo de 25s com 503 ou 504. Os três modelos deram 503 dezenas de vezes. Nenhuma pergunta passou de 22,7s, e as 8 leituras que chegaram acertaram. Catálogo e não temos medem a disponibilidade do provedor nesta rodada, não a busca.",
+  "nota": "Rodada E (12/11), primeira com o código final dos três PRs: back-end#343 em 9ca4e06 (prazo da leitura 25s), back-end#231 em e4106fb, back-end#326 em c7defd9, aplicados como arquivos sobre a develop 01b1e4b no codespace. API reiniciada com esse código antes da rodada. Cota por pessoa e do projeto em 400 no .env da rodada. Acrescentado depois da rodada (12/11): o provedor estava fora do ar. 29 de 37 leituras caíram, 17 com 429 por último (o gemini-3.8-flash passou da cota de 20 pedidos por dia do Free Tier) e 12 no prazo de 25s com 503 ou 504. Os três modelos deram 503 dezenas de vezes. Nenhuma pergunta passou de 22,7s, e as 8 leituras que chegaram acertaram. Catálogo e não temos medem a disponibilidade do provedor nesta rodada, não a busca. Depois, com a regra nova (leitura que cai sai da taxa e a conversa só serve de base com 80% das leituras), os três conjuntos da conversa foram marcados como fora da base: 8 de 37 leituras chegaram.",
   "commit_do_script": "01b1e4b",
   "alteracoes_locais": true,
   "completa": false,
+  "leituras": {
+    "chegaram": 8,
+    "perguntas": 37
+  },
   "modelos": {
     "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",
     "vetor": "gemini-embedding-2"
@@ -12,7 +16,8 @@
   "conjuntos": {
     "catalogo": {
       "hash": "06226825ecb0",
-      "completo": true,
+      "completo": false,
+      "abaixo_do_corte_de_leituras": true,
       "resumo": {
         "acertos": 6,
         "validos": 25,
@@ -922,7 +927,8 @@
     },
     "nao_temos": {
       "hash": "cfc685eb13ad",
-      "completo": true,
+      "completo": false,
+      "abaixo_do_corte_de_leituras": true,
       "resumo": {
         "acertos": 2,
         "validos": 9,
@@ -1184,7 +1190,8 @@
     },
     "instrucao": {
       "hash": "46e8bebd163d",
-      "completo": true,
+      "completo": false,
+      "abaixo_do_corte_de_leituras": true,
       "resumo": {
         "acertos": 0,
         "validos": 3,

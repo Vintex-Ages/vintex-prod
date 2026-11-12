@@ -82,13 +82,17 @@ def test_caso_de_catalogo_acerta_com_a_pergunta_lida(monkeypatch):
     assert linha["fora_do_catalogo"] == []
 
 
-def test_caso_de_catalogo_sem_leitura_nao_e_acerto(monkeypatch):
-    """Sem o evento `interpreted`, a busca foi só por similaridade."""
+def test_caso_sem_leitura_sai_da_taxa_sem_deixar_incompleto(monkeypatch):
+    """Sem o evento `interpreted`, o provedor falhou e a busca foi só por
+    similaridade: não é acerto nem erro da busca."""
     _rota(monkeypatch, _produtos(1), {"type": "done"})
     linha = avaliar.rodar_caso("http://api", "catalogo", _CASO, _catalogo())
 
     assert linha["sem_leitura"] is True
-    assert linha["acerto"] is False
+    assert "acerto" not in linha
+    assert "sem leitura" in linha["invalido"]
+    assert "falha" not in linha
+    assert linha["esperadas_no_top5"] == 1  # diagnóstico continua gravado
 
 
 def test_corte_de_preco_precisa_do_filtro_lido(monkeypatch):
@@ -485,6 +489,44 @@ def test_cota_no_meio_pula_o_resto_da_conversa(monkeypatch, tmp_path):
     assert list(rodada["conjuntos"]) == ["instrucao"]
     assert len(rodada["conjuntos"]["instrucao"]["casos"]) == 1
     assert rodada["completa"] is False
+
+
+def test_leituras_abaixo_do_corte_tiram_a_conversa_da_base(monkeypatch, tmp_path):
+    _rota(monkeypatch, _produtos(1), {"type": "done"})  # nenhuma leitura
+    codigo, rodada = _rodar_main(monkeypatch, tmp_path, "--so", "instrucao")
+
+    assert codigo == 2
+    assert rodada["leituras"]["chegaram"] == 0
+    assert rodada["leituras"]["perguntas"] > 0
+    assert rodada["conjuntos"]["instrucao"]["completo"] is False
+    assert rodada["conjuntos"]["instrucao"]["abaixo_do_corte_de_leituras"] is True
+
+
+def test_corte_de_leituras_e_da_conversa_inteira():
+    def conjunto(feitas, chegaram):
+        return {
+            "completo": True,
+            "resumo": {"perguntas_feitas": feitas, "leituras": chegaram},
+        }
+
+    # 2 de 3 num conjunto pequeno, mas 33 de 37 na conversa: serve de base.
+    rodada = {
+        "conjuntos": {
+            "catalogo": conjunto(25, 24),
+            "nao_temos": conjunto(9, 7),
+            "instrucao": conjunto(3, 2),
+            "perfis": {"completo": True, "resumo": {}},
+        }
+    }
+    avaliar.aplicar_corte_de_leituras(rodada)
+    assert rodada["leituras"] == {"chegaram": 33, "perguntas": 37}
+    assert all(d["completo"] for d in rodada["conjuntos"].values())
+
+    rodada["conjuntos"]["catalogo"] = conjunto(25, 5)
+    avaliar.aplicar_corte_de_leituras(rodada)
+    assert not rodada["conjuntos"]["catalogo"]["completo"]
+    assert not rodada["conjuntos"]["instrucao"]["completo"]
+    assert rodada["conjuntos"]["perfis"]["completo"]  # perfis não leem pergunta
 
 
 def test_rodada_sem_falha_e_completa(monkeypatch, tmp_path):

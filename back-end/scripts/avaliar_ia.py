@@ -43,6 +43,13 @@ Falha que não é resposta da IA (rede, cota, erro do provedor, erro do próprio
 script) tira o caso da conta e deixa o conjunto incompleto. Conjunto incompleto
 não serve de base, e o script sai com código 2.
 
+**Leitura que cai não é erro da busca.** O chat só deixa de emitir a leitura da
+pergunta quando o provedor falha, e aí a busca segue sem filtro. O caso sai da
+taxa e entra em outro número, o das leituras que chegaram, que é a
+disponibilidade do provedor. Se menos de `LEITURAS_MINIMAS` das leituras da
+rodada chegaram, os conjuntos da conversa não servem de base: a amostra da
+busca ficou pequena e pode ter perdido justamente as perguntas mais lentas.
+
 Cada rodada fica em `scripts/avaliacao/rodadas/`, com a resposta recebida, o
 hash de cada conjunto e a nota de quem rodou. Ela é gravada a cada conjunto,
 para uma falha no meio não perder o que já rodou. A saída compara cada conjunto
@@ -97,6 +104,10 @@ PECAS_NO_CHAT = 5
 CHAMADAS_POR_PERGUNTA = 2  # interpretação da pergunta + vetor
 CHAMADAS_POR_PERFIL = 1  # vetor do perfil
 CHAMADAS_POR_FOTO = 1  # análise da foto
+# Fração mínima de leituras que chegaram para a conversa servir de base. Separa
+# uma manhã normal (31 de 37, rodada D) de uma queda do provedor (8 de 37,
+# rodada E) e limita a um quinto o que sai da taxa da busca.
+LEITURAS_MINIMAS = 0.8
 RAIZ_DO_REPO = PASTA.parents[2]
 CERTOS = ("acertou", "nulo certo")
 RESISTIU = "resistiu"
@@ -289,7 +300,7 @@ def rodar_caso(
             },
             # Sem leitura, a busca segue só por similaridade, e num catálogo
             # pequeno ela acha a peça quase sempre: 24 de 25 com as 37
-            # leituras caídas, na rodada 031343Z. Não é acerto da IA.
+            # leituras caídas, na rodada 031343Z. Nem acerto nem erro da IA.
             "sem_leitura": leitura is None,
             "match_type": (produtos or {}).get("match_type"),
             "aviso": "".join(
@@ -336,6 +347,12 @@ def rodar_caso(
 
     if linha["filtro_fora_do_vocabulario"]:
         linha["acerto"] = False
+    if leitura is None:
+        # O controller só deixa de emitir a leitura quando o provedor levanta
+        # erro: é disponibilidade, não a busca errando. Não é falha do
+        # transporte, então não deixa o conjunto incompleto sozinho.
+        del linha["acerto"]
+        linha["invalido"] = "sem leitura: o provedor falhou"
     return linha
 
 
@@ -497,14 +514,17 @@ def resumo(linhas: list[dict[str, Any]]) -> dict[str, Any]:
         "acertos": acertos,
         "validos": len(validas),
         "taxa": round(acertos / len(validas), 2) if validas else None,
-        "invalidos": len(linhas) - len(validas),
     }
-    sem_leitura = [caso for caso in validas if caso.get("sem_leitura")]
+    respondidas = [caso for caso in linhas if "sem_leitura" in caso]
+    sem_leitura = [caso for caso in respondidas if caso["sem_leitura"]]
+    saida["invalidos"] = len(linhas) - len(validas) - len(sem_leitura)
+    if respondidas:
+        saida["perguntas_feitas"] = len(respondidas)
+        saida["leituras"] = len(respondidas) - len(sem_leitura)
     if sem_leitura:
         saida["sem_leitura"] = len(sem_leitura)
         # A API não diz por que a leitura caiu (tempo esgotado, 429, resposta
-        # que não se lê). Sem leitura e com a peça no top 5 é erro de
-        # disponibilidade, não de busca.
+        # que não se lê). Diagnóstico: quantas trouxeram a peça mesmo assim.
         saida["sem_leitura_com_a_peca"] = sum(
             1 for caso in sem_leitura if caso.get("esperadas_no_top5")
         )
@@ -557,6 +577,22 @@ def hash_do_conjunto(casos: list[dict[str, Any]]) -> str:
     ou mexer em outro conjunto do mesmo arquivo não muda o que se mede."""
     texto = json.dumps(casos, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(texto.encode()).hexdigest()[:12]
+
+
+def aplicar_corte_de_leituras(rodada: dict[str, Any]) -> None:
+    """Grava quantas leituras da conversa chegaram e, abaixo do corte, tira os
+    conjuntos da conversa da base."""
+    chegaram = feitas = 0
+    for conjunto in CONJUNTOS_DA_CONVERSA:
+        r = rodada["conjuntos"].get(conjunto, {}).get("resumo", {})
+        chegaram += r.get("leituras", 0)
+        feitas += r.get("perguntas_feitas", 0)
+    rodada["leituras"] = {"chegaram": chegaram, "perguntas": feitas}
+    if feitas and chegaram / feitas < LEITURAS_MINIMAS:
+        for conjunto in CONJUNTOS_DA_CONVERSA:
+            if conjunto in rodada["conjuntos"]:
+                rodada["conjuntos"][conjunto]["completo"] = False
+                rodada["conjuntos"][conjunto]["abaixo_do_corte_de_leituras"] = True
 
 
 def completo(linhas: list[dict[str, Any]], casos: int) -> bool:
@@ -825,6 +861,7 @@ def main() -> int:
                 "casos": linhas,
             }
             gravar(rodada, destino)
+        aplicar_corte_de_leituras(rodada)
         rodada["completa"] = set(rodada["conjuntos"]) == set(escolhidos) and all(
             dados["completo"] for dados in rodada["conjuntos"].values()
         )
@@ -837,6 +874,18 @@ def main() -> int:
     print(f"\nRodada gravada em {destino}")
     if cota_acabou:
         print("A cota acabou no meio: a conversa parou ali.")
+    leituras = rodada.get("leituras", {})
+    if leituras.get("perguntas"):
+        fracao = leituras["chegaram"] / leituras["perguntas"]
+        print(
+            f"Leituras que chegaram (disponibilidade do provedor): "
+            f"{leituras['chegaram']} de {leituras['perguntas']} ({fracao:.0%})"
+        )
+        if fracao < LEITURAS_MINIMAS:
+            print(
+                f"Abaixo de {LEITURAS_MINIMAS:.0%}: a conversa desta rodada não "
+                "serve de base, e a taxa da busca sai de amostra pequena."
+            )
     incompletos = [
         c for c in escolhidos if not rodada["conjuntos"].get(c, {}).get("completo")
     ]
@@ -893,8 +942,8 @@ def main() -> int:
             partes.append(f"média dentro dos estilos {r['taxa_media']:.0%}")
         if r.get("sem_leitura"):
             partes.append(
-                f"{r['sem_leitura']} sem leitura, {r['sem_leitura_com_a_peca']} "
-                "delas com a peça no top 5"
+                f"{r['sem_leitura']} sem leitura, fora da taxa "
+                f"({r['sem_leitura_com_a_peca']} delas com a peça no top 5)"
             )
         for chave, texto in (
             ("erros", "com erro"),
