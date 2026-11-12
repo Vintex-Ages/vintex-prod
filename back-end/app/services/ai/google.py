@@ -54,14 +54,23 @@ _GOOGLE_TIMEOUT_MS = 30_000
 #
 # Cada tentativa tem teto de 10s, e a cadeia inteira, com as trocas de modelo,
 # as repetições do 503 e as esperas entre elas, para quando o que sobra do prazo
-# não cabe mais uma tentativa. Assim a leitura não passa de ~30s em nenhuma
-# combinação de 503 e tempo esgotado.
+# não cabe mais uma tentativa.
+#
+# O prazo é 25s, não 30s: o API Gateway corta a requisição inteira em 30s
+# (documento de infra de 02/09), e depois da leitura ainda vêm o vetor e a
+# busca. Com 25s cabem duas tentativas que esgotam o tempo, não três: um tempo
+# esgotado real passa um pouco dos 10s, e na rodada D (12/11), com prazo de 30s,
+# duas leituras anunciaram o terceiro modelo e acabaram antes de chamá-lo. O 503
+# responde na hora, então 503 seguido de tempo esgotado ainda chega ao terceiro.
 #
 # 10s é o mínimo que a API aceita: com 8s ela responde 400 "Minimum allowed
 # deadline is 10s" em toda chamada (rodada de 12/11), e a leitura nunca sai.
 _TETO_MINIMO_DA_API_MS = 10_000
 _LEITURA_TETO_POR_TENTATIVA_MS = _TETO_MINIMO_DA_API_MS
-_LEITURA_PRAZO_MS = 30_000
+_LEITURA_PRAZO_MS = 25_000
+# O `sleep` pode acordar um pouco depois do pedido; sem folga, a espera
+# terminava e a tentativa seguinte não cabia mais.
+_FOLGA_DA_ESPERA_MS = 500
 
 
 def _lista(valor: str) -> list[str]:
@@ -173,8 +182,10 @@ logger = logging.getLogger(__name__)
 # de dois minutos. A cadeia inteira falha em menos de um segundo, entao trocar
 # de modelo nao cobre esse caso -- so esperar cobre.
 #
-# 2s + 4s de espera, mais as chamadas, cabem folgado no limite de 30s que o API
-# Gateway impoe (documento de infra de 02/09).
+# 2s + 4s de espera, mais as chamadas que respondem 503 na hora, cabem no limite
+# de 30s que o API Gateway impoe (documento de infra de 02/09). Uma tentativa
+# lenta de foto, com o teto geral de 30s, nao cabe: por isso a foto nao troca de
+# modelo no tempo esgotado.
 _RODADAS = 3
 _ESPERA_ENTRE_RODADAS_S = (2.0, 4.0)
 
@@ -372,9 +383,10 @@ class GoogleAIProvider(AIProvider):
           tentativa leva o teto geral de 30s, e trocar de modelo levaria a
           chamada a minutos;
         - com prazo (a leitura da pergunta), cada tentativa tem teto de 10s e
-          tempo esgotado pula para o próximo modelo, como o 503. A cadeia para
-          quando o que sobra do prazo não cabe mais uma tentativa, inclusive
-          antes de esperar para repetir.
+          tempo esgotado pula para o próximo modelo, como o 503, mas o modelo
+          lento não volta nas rodadas de repetição. A cadeia para quando o que
+          sobra do prazo não cabe mais uma tentativa, inclusive antes de
+          esperar para repetir.
         """
         modelos = modelos_de_visao()
         if not modelos:
@@ -390,32 +402,41 @@ class GoogleAIProvider(AIProvider):
             else None
         )
         inicio = time.monotonic()
+        # Modelo que esgotou o tempo não volta nas rodadas de repetição: elas
+        # são para o 503, que passa em segundos, e repetir o lento gastaria o
+        # teto de novo sem chance melhor.
+        lentos: set[str] = set()
 
-        def cabe(espera_s: float = 0.0) -> bool:
+        def cabe(espera_s: float = 0.0, folga_ms: float = 0.0) -> bool:
             if prazo_ms is None:
                 return True
             gasto_ms = (time.monotonic() - inicio) * 1000
-            sobra_ms = prazo_ms - gasto_ms - espera_s * 1000
+            sobra_ms = prazo_ms - gasto_ms - espera_s * 1000 - folga_ms
             return sobra_ms >= _LEITURA_TETO_POR_TENTATIVA_MS
 
         for rodada in range(_RODADAS):
+            da_vez = [m for m in modelos if m not in lentos]
+            if not da_vez:
+                break
             if rodada:
                 espera = _ESPERA_ENTRE_RODADAS_S[rodada - 1]
-                if not cabe(espera):
-                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo)
+                # A folga cobre o atraso do próprio `sleep`: sem ela, a espera
+                # podia terminar um pouco depois e a tentativa não caber.
+                if not cabe(espera, _FOLGA_DA_ESPERA_MS):
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo) from ultimo
                 logger.warning(
-                    "Os %d modelos responderam 503; esperando %.0fs e repetindo "
-                    "a cadeia (rodada %d de %d)",
-                    len(modelos),
+                    "Nenhum modelo respondeu; esperando %.0fs e repetindo os %d "
+                    "que deram 503 (rodada %d de %d)",
                     espera,
+                    len(da_vez),
                     rodada + 1,
                     _RODADAS,
                 )
                 time.sleep(espera)
 
-            for indice, modelo in enumerate(modelos):
+            for indice, modelo in enumerate(da_vez):
                 if not cabe():
-                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo)
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo) from ultimo
                 try:
                     return self._client.models.generate_content(
                         model=modelo,
@@ -430,20 +451,21 @@ class GoogleAIProvider(AIProvider):
                     ultimo = exc
                     if _e_tempo_esgotado(exc) and prazo_ms is not None:
                         motivo = "tempo esgotado"
+                        lentos.add(modelo)
                     elif _e_indisponibilidade(exc):
                         motivo = "indisponível (503)"
                     else:
                         raise AIProviderError(f"Falha ao {tarefa}: {exc}") from exc
 
-                    if indice < len(modelos) - 1:
+                    if indice < len(da_vez) - 1:
                         logger.warning(
                             "Modelo %s %s; tentando %s",
                             modelo,
                             motivo,
-                            modelos[indice + 1],
+                            da_vez[indice + 1],
                         )
 
-        raise AIProviderError(f"Falha ao {tarefa}: {ultimo}")
+        raise AIProviderError(f"Falha ao {tarefa}: {ultimo}") from ultimo
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:

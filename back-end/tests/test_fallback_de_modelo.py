@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import httpx
 import pytest
 
 from app.config import settings
@@ -24,6 +25,19 @@ class _Erro(Exception):
     def __init__(self, code: int, mensagem: str) -> None:
         super().__init__(mensagem)
         self.code = code
+
+
+class _SemEspera:
+    """O `time` do módulo `google` sem a espera entre rodadas. Troca só o
+    módulo, não o `time` do processo."""
+
+    def __init__(self) -> None:
+        import time
+
+        self.monotonic = time.monotonic
+
+    def sleep(self, _segundos: float) -> None:
+        pass
 
 
 class _Modelos:
@@ -153,7 +167,7 @@ def test_todos_indisponiveis_levanta_erro_de_provedor(monkeypatch) -> None:
         "a,b,c",
         {n: _Erro(503, "UNAVAILABLE") for n in ("a", "b", "c")},
     )
-    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mod, "time", _SemEspera())
 
     with pytest.raises(AIProviderError, match="Falha ao analisar"):
         p._gerar_com_fallback([])
@@ -173,7 +187,7 @@ def test_todos_sem_cota_levanta_o_mesmo_erro_do_503(monkeypatch) -> None:
         "a,b",
         {"a": _Erro(429, "RESOURCE_EXHAUSTED"), "b": _Erro(503, "UNAVAILABLE")},
     )
-    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mod, "time", _SemEspera())
 
     with pytest.raises(AIProviderError, match="Falha ao analisar"):
         p._gerar_com_fallback([])
@@ -184,9 +198,9 @@ def test_todos_sem_cota_levanta_o_mesmo_erro_do_503(monkeypatch) -> None:
 # --- tempo esgotado (504 e teto do cliente) ---------------------------------
 
 
-class ReadTimeout(Exception):
-    """Mesmo nome da exceção do httpx, que o SDK deixa subir. O `ReadTimeout`
-    do httpx não herda de `TimeoutError`: é pelo nome que ele é reconhecido."""
+# O do httpx, que o SDK deixa subir. Ele não herda de `TimeoutError`: é pelo
+# nome que `_e_tempo_esgotado` o reconhece.
+ReadTimeout = httpx.ReadTimeout
 
 
 @pytest.mark.parametrize(
@@ -204,29 +218,28 @@ def test_reconhece_tempo_esgotado(exc: Exception, esperado: bool) -> None:
     assert mod._e_tempo_esgotado(exc) is esperado
 
 
-def test_httpx_read_timeout_de_verdade_e_reconhecido() -> None:
-    import httpx
-
-    assert mod._e_tempo_esgotado(httpx.ReadTimeout("timed out"))
-
-
 class _Relogio:
-    """Relógio falso: cada tentativa que estoura gasta o teto inteiro, e a
-    espera entre rodadas anda o tempo da espera."""
+    """Relógio falso, só no módulo `google`: a espera entre rodadas anda o
+    tempo da espera."""
 
     def __init__(self, monkeypatch) -> None:
         self.agora = 0.0
         self.esperas: list[float] = []
-        monkeypatch.setattr(mod.time, "monotonic", lambda: self.agora)
-        monkeypatch.setattr(mod.time, "sleep", self.esperar)
+        self.monotonic = lambda: self.agora
+        self.sleep = self.esperar
+        monkeypatch.setattr(mod, "time", self)
 
     def esperar(self, segundos: float) -> None:
         self.esperas.append(segundos)
         self.agora += segundos
 
 
+# Um tempo esgotado real passa um pouco do teto: conexão, envio e rede.
+_ESTOURO_S = mod._LEITURA_TETO_POR_TENTATIVA_MS / 1000 + 0.2
+
+
 class _ModelosComTempo(_Modelos):
-    """Tempo esgotado gasta 10s no relógio; 503 gasta quase nada."""
+    """Tempo esgotado gasta 10,2s no relógio; 503 gasta quase nada."""
 
     def __init__(self, respostas: dict[str, Any], relogio: _Relogio) -> None:
         super().__init__(respostas)
@@ -237,7 +250,7 @@ class _ModelosComTempo(_Modelos):
         self.configs.append(kwargs.get("config"))
         resposta = self.respostas[model]
         if isinstance(resposta, Exception) and mod._e_tempo_esgotado(resposta):
-            self.relogio.agora += mod._LEITURA_TETO_POR_TENTATIVA_MS / 1000
+            self.relogio.agora += _ESTOURO_S
         else:
             self.relogio.agora += 0.1
         return super().generate_content(model=model, **kwargs)
@@ -273,23 +286,36 @@ def test_504_no_segundo_tenta_o_terceiro(monkeypatch) -> None:
 
 
 def test_tempo_esgotado_em_todos_para_no_prazo(monkeypatch) -> None:
-    """Três modelos estourando: 30s, e nenhuma espera nem rodada a mais."""
+    """Dois tempos esgotados gastam 20,4s: o terceiro não cabe em 25s, e a
+    cadeia para sem esperar nem repetir."""
     p, duble, relogio = _provider_com_prazo(
         monkeypatch,
         "a,b,c",
         {m: ReadTimeout("timed out") for m in "abc"},
     )
 
-    with pytest.raises(AIProviderError, match="prazo de 30s esgotado"):
+    with pytest.raises(AIProviderError, match="prazo de 25s esgotado"):
         p._gerar_com_fallback([], prazo_ms=_PRAZO)
 
-    assert duble.chamados == ["a", "b", "c"]
+    assert duble.chamados == ["a", "b"]
     assert relogio.esperas == []
     assert relogio.agora <= _PRAZO / 1000
 
 
+def test_um_modelo_so_que_esgota_o_tempo_nao_repete(monkeypatch) -> None:
+    p, duble, relogio = _provider_com_prazo(
+        monkeypatch, "a", {"a": ReadTimeout("timed out")}
+    )
+
+    with pytest.raises(AIProviderError, match="timed out"):
+        p._gerar_com_fallback([], prazo_ms=_PRAZO)
+
+    assert duble.chamados == ["a"]
+    assert relogio.esperas == []
+
+
 def test_espera_entre_rodadas_conta_no_prazo(monkeypatch) -> None:
-    """503 e dois tempos esgotados gastam 20s: a espera de 2s mais uma
+    """503 e dois tempos esgotados gastam 20,5s: a espera de 2s mais uma
     tentativa de 10s passaria do prazo, então a cadeia para sem esperar."""
     p, duble, relogio = _provider_com_prazo(
         monkeypatch,
@@ -300,31 +326,65 @@ def test_espera_entre_rodadas_conta_no_prazo(monkeypatch) -> None:
     with pytest.raises(AIProviderError, match="prazo"):
         p._gerar_com_fallback([], prazo_ms=_PRAZO)
 
+    assert duble.chamados == ["a", "b", "c"]
+    assert relogio.esperas == []
     assert relogio.agora <= _PRAZO / 1000
-    assert duble.chamados[:3] == ["a", "b", "c"]
 
 
-def test_tempo_esgotado_seguido_de_503_ainda_repete_se_couber(monkeypatch) -> None:
-    """Tempo esgotado em um modelo não cancela a repetição dos 503: quem
-    decide é o prazo."""
+def test_503_e_tempo_esgotado_repete_so_o_do_503(monkeypatch) -> None:
+    """503 no primeiro e tempo esgotado no segundo: a repetição volta só ao
+    primeiro, que é o que pode ter voltado."""
     esperado = ImageAnalysisResult()
     respostas: dict[str, Any] = {
         "a": _Erro(503, "UNAVAILABLE"),
-        "b": _Erro(503, "UNAVAILABLE"),
+        "b": ReadTimeout("x"),
     }
     p, duble, relogio = _provider_com_prazo(monkeypatch, "a,b", respostas)
 
     def segunda_rodada_responde(segundos: float) -> None:
-        relogio.agora += segundos
         relogio.esperas.append(segundos)
+        relogio.agora += segundos
         respostas["a"] = _Resposta(esperado)
 
-    monkeypatch.setattr(mod.time, "sleep", segunda_rodada_responde)
-    respostas["b"] = ReadTimeout("x")
+    relogio.sleep = segunda_rodada_responde
 
     assert p._gerar_com_fallback([], prazo_ms=_PRAZO).parsed == esperado
     assert duble.chamados == ["a", "b", "a"]
     assert relogio.esperas == [mod._ESPERA_ENTRE_RODADAS_S[0]]
+
+
+def test_tempo_esgotado_seguido_de_503_repete_sem_o_lento(monkeypatch) -> None:
+    """Tempo esgotado no primeiro e 503 nos outros dois: a repetição não volta
+    ao lento, que gastaria o teto de novo."""
+    esperado = ImageAnalysisResult()
+    respostas: dict[str, Any] = {
+        "a": ReadTimeout("x"),
+        "b": _Erro(503, "UNAVAILABLE"),
+        "c": _Erro(503, "UNAVAILABLE"),
+    }
+    p, duble, relogio = _provider_com_prazo(monkeypatch, "a,b,c", respostas)
+
+    def segunda_rodada_responde(segundos: float) -> None:
+        relogio.esperas.append(segundos)
+        relogio.agora += segundos
+        respostas["b"] = _Resposta(esperado)
+
+    relogio.sleep = segunda_rodada_responde
+
+    assert p._gerar_com_fallback([], prazo_ms=_PRAZO).parsed == esperado
+    assert duble.chamados == ["a", "b", "c", "b"]
+    assert relogio.agora <= _PRAZO / 1000
+
+
+def test_erro_de_prazo_guarda_a_causa(monkeypatch) -> None:
+    p, _, _ = _provider_com_prazo(
+        monkeypatch, "a,b,c", {m: ReadTimeout("timed out") for m in "abc"}
+    )
+
+    with pytest.raises(AIProviderError) as erro:
+        p._gerar_com_fallback([], prazo_ms=_PRAZO)
+
+    assert isinstance(erro.value.__cause__, ReadTimeout)
 
 
 def test_sem_prazo_tempo_esgotado_levanta_na_hora(monkeypatch) -> None:
@@ -364,8 +424,17 @@ def test_leitura_da_pergunta_usa_o_prazo(monkeypatch) -> None:
     async def ler() -> list:
         return [e async for e in p.stream_interpret_search("tênis")]
 
+    prazos: list[int | None] = []
+    original = p._gerar_com_fallback
+
+    def espiar(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        prazos.append(kwargs.get("prazo_ms"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(p, "_gerar_com_fallback", espiar)
     asyncio.run(ler())
 
+    assert prazos == [mod._LEITURA_PRAZO_MS]
     assert duble.configs[0].http_options.timeout == mod._LEITURA_TETO_POR_TENTATIVA_MS
 
 
@@ -376,3 +445,9 @@ def test_nenhum_teto_fica_abaixo_do_minimo_da_api() -> None:
     for teto in (mod._LEITURA_TETO_POR_TENTATIVA_MS, mod._GOOGLE_TIMEOUT_MS):
         assert teto >= mod._TETO_MINIMO_DA_API_MS == 10_000
     assert mod._LEITURA_PRAZO_MS >= mod._LEITURA_TETO_POR_TENTATIVA_MS
+
+
+def test_prazo_da_leitura_deixa_lugar_para_a_busca() -> None:
+    # O API Gateway corta a requisição em 30s, e depois da leitura vêm o vetor
+    # e a busca.
+    assert mod._LEITURA_PRAZO_MS + mod._FOLGA_DA_ESPERA_MS < 30_000
