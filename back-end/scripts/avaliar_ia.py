@@ -22,6 +22,11 @@ texto e o vetor do perfil pelas mesmas funções da recomendação
 (`app/services/style_profile.py`) e chama `find_similar` como
 `RecommendationController.recommend`.
 
+**As fotos chamam `analyze_image_bytes` direto**, o mesmo prompt do cadastro e
+da busca por foto. Cada campo é conferido contra o que se vê na foto: acertou,
+nulo certo (RN-58), deixou nulo ou preencheu errado. As fotos são as do front
+(`front-end/public/images/products`) mais duas cópias com instrução por cima.
+
 O esperado de cada caso é escrito contra o seed pelo **tipo do modelo**, não pelo
 id: a cada rodada o script calcula no banco quais peças ativas atendem ao caso.
 Caso de catálogo sem nenhuma peça esperada, ou caso de "não temos" que passou a
@@ -56,6 +61,8 @@ from app.models.product import Product
 from app.models.user_preference import UserPreference
 from app.repositories.product_repository import ProductRepository
 from app.seeds.pecas import MODELOS
+from app.services.ai import AIProviderError, get_ai_provider
+from app.services.ai.base import ImagePhoto
 from app.services.style_profile import texto_do_perfil, vetor_do_perfil
 
 PASTA = Path(__file__).resolve().parent / "avaliacao"
@@ -64,6 +71,9 @@ CONJUNTOS_DA_CONVERSA = ("catalogo", "nao_temos", "instrucao")
 PECAS_NO_CHAT = 5
 CHAMADAS_POR_PERGUNTA = 2  # interpretação da pergunta + vetor
 CHAMADAS_POR_PERFIL = 1  # vetor do perfil
+CHAMADAS_POR_FOTO = 1  # análise da foto
+RAIZ_DO_REPO = PASTA.parents[2]
+CERTOS = ("acertou", "nulo certo")
 
 
 def sem_acento(texto: str) -> str:
@@ -282,6 +292,80 @@ def rodar_perfil(
     }
 
 
+def avaliar_campo(lido: str | None, esperado: Any) -> str:  # noqa: ANN401
+    """Esperado `None` quer dizer que o certo é não preencher (RN-58)."""
+    vazio = lido is None or lido.strip() == ""
+    if esperado is None:
+        return "nulo certo" if vazio else "preencheu errado"
+    if vazio:
+        return "deixou nulo"
+    aceitos = esperado if isinstance(esperado, list) else [esperado]
+    if any(sem_acento(lido) == sem_acento(str(a)) for a in aceitos):
+        return "acertou"
+    return "preencheu errado"
+
+
+def rodar_foto(provider, caso: dict[str, Any]) -> dict[str, Any]:  # noqa: ANN001
+    """A análise por bytes, a mesma da busca por foto (back-end#255). O
+    cadastro baixa a foto pela URL e monta as mesmas partes com o mesmo prompt."""
+    caminho = RAIZ_DO_REPO / caso["foto"]
+    tipo = "image/png" if caminho.suffix.lower() == ".png" else "image/jpeg"
+    inicio = time.monotonic()
+    try:
+        analise = provider.analyze_image_bytes([ImagePhoto(caminho.read_bytes(), tipo)])
+    except AIProviderError as exc:
+        return {
+            "foto": caso["foto"],
+            "erro": str(exc)[:300],
+            "campos": {},
+            "acerto": False,
+        }
+    lido = {
+        campo: (getattr(analise, campo).value if getattr(analise, campo) else None)
+        for campo in type(analise).model_fields
+    }
+    campos = {
+        campo: {
+            "lido": lido.get(campo),
+            "esperado": esperado,
+            "resultado": avaliar_campo(lido.get(campo), esperado),
+        }
+        for campo, esperado in caso["esperado"].items()
+    }
+    for campo, proibidos in caso.get("nao_pode", {}).items():
+        valor = lido.get(campo)
+        obedeceu = valor is not None and any(
+            sem_acento(valor) == sem_acento(p) for p in proibidos
+        )
+        campos[f"{campo} (não pode)"] = {
+            "lido": valor,
+            "proibido": proibidos,
+            "resultado": "preencheu errado" if obedeceu else "acertou",
+        }
+    return {
+        "foto": caso["foto"],
+        "segundos": round(time.monotonic() - inicio, 1),
+        "lido": lido,
+        "campos": campos,
+        "acerto": all(c["resultado"] in CERTOS for c in campos.values()),
+    }
+
+
+def resumo_dos_campos(linhas: list[dict[str, Any]]) -> dict[str, Any]:
+    contagem: dict[str, int] = {}
+    for linha in linhas:
+        for campo in linha["campos"].values():
+            contagem[campo["resultado"]] = contagem.get(campo["resultado"], 0) + 1
+    avaliados = sum(contagem.values())
+    certos = sum(contagem.get(r, 0) for r in CERTOS)
+    return {
+        "avaliados": avaliados,
+        "certos": certos,
+        "taxa": round(certos / avaliados, 2) if avaliados else None,
+        **contagem,
+    }
+
+
 def resumo(linhas: list[dict[str, Any]]) -> dict[str, Any]:
     validas = [caso for caso in linhas if "invalido" not in caso]
     acertos = sum(1 for caso in validas if caso.get("acerto"))
@@ -311,6 +395,10 @@ def rodada_anterior() -> dict[str, Any] | None:
     return json.loads(arquivos[-1].read_text(encoding="utf-8")) if arquivos else None
 
 
+def _chave(caso: dict[str, Any]) -> str:
+    return caso.get("pergunta") or caso.get("foto") or ",".join(caso.get("estilos", []))
+
+
 def mostrar_diferenca(anterior: dict[str, Any], atual: dict[str, Any]) -> None:
     print(
         f"\nO que mudou desde a rodada {anterior['quando']} ({anterior.get('commit')}):"
@@ -318,11 +406,11 @@ def mostrar_diferenca(anterior: dict[str, Any], atual: dict[str, Any]) -> None:
     mudou = False
     for conjunto, dados in atual["conjuntos"].items():
         antes = {
-            (caso.get("pergunta") or ",".join(caso.get("estilos", []))): caso
+            _chave(caso): caso
             for caso in anterior.get("conjuntos", {}).get(conjunto, {}).get("casos", [])
         }
         for linha in dados["casos"]:
-            chave = linha.get("pergunta") or ",".join(linha.get("estilos", []))
+            chave = _chave(linha)
             velha = antes.get(chave)
             if velha is None:
                 continue
@@ -345,21 +433,28 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--api", default="http://127.0.0.1:8000")
     parser.add_argument(
-        "--so", choices=[*CONJUNTOS_DA_CONVERSA, "perfis"], action="append"
+        "--so", choices=[*CONJUNTOS_DA_CONVERSA, "perfis", "fotos"], action="append"
     )
     parser.add_argument("--contar", action="store_true", help="só mostra as chamadas")
     args = parser.parse_args()
 
-    escolhidos = args.so or [*CONJUNTOS_DA_CONVERSA, "perfis"]
+    escolhidos = args.so or [*CONJUNTOS_DA_CONVERSA, "perfis", "fotos"]
     conversa = json.loads((PASTA / "conversa.json").read_text(encoding="utf-8"))
     perfis = json.loads((PASTA / "perfis.json").read_text(encoding="utf-8"))
+    fotos = json.loads((PASTA / "fotos.json").read_text(encoding="utf-8"))
 
     perguntas = sum(len(conversa[c]["casos"]) for c in escolhidos if c in conversa)
     n_perfis = len(perfis["casos"]) if "perfis" in escolhidos else 0
-    chamadas = perguntas * CHAMADAS_POR_PERGUNTA + n_perfis * CHAMADAS_POR_PERFIL
+    n_fotos = len(fotos["casos"]) if "fotos" in escolhidos else 0
+    chamadas = (
+        perguntas * CHAMADAS_POR_PERGUNTA
+        + n_perfis * CHAMADAS_POR_PERFIL
+        + n_fotos * CHAMADAS_POR_FOTO
+    )
     print(
         f"Vai gastar até {chamadas} chamadas ao provedor: {perguntas} perguntas x "
-        f"{CHAMADAS_POR_PERGUNTA} + {n_perfis} perfis x {CHAMADAS_POR_PERFIL}."
+        f"{CHAMADAS_POR_PERGUNTA} + {n_perfis} perfis x {CHAMADAS_POR_PERFIL} + "
+        f"{n_fotos} fotos x {CHAMADAS_POR_FOTO}."
     )
     if args.contar:
         return 0
@@ -383,7 +478,7 @@ def main() -> int:
             "quando": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "commit": commit_atual(),
             "modelos": {
-                "conversa": settings.GOOGLE_VISION_MODEL,
+                "conversa e foto": settings.GOOGLE_VISION_MODEL,
                 "vetor": settings.GOOGLE_EMBEDDING_MODEL,
             },
             "pecas_ativas": len(catalogo),
@@ -393,6 +488,20 @@ def main() -> int:
         for conjunto in escolhidos:
             if conjunto == "perfis":
                 linhas = [rodar_perfil(db, caso, catalogo) for caso in perfis["casos"]]
+            elif conjunto == "fotos":
+                provider = get_ai_provider()
+                linhas = []
+                for caso in fotos["casos"]:
+                    linha = rodar_foto(provider, caso)
+                    marca = "ok" if linha["acerto"] else "erro"
+                    print(f"  [fotos] {marca:8} {Path(caso['foto']).name}")
+                    linhas.append(linha)
+                rodada["conjuntos"]["fotos"] = {
+                    "resumo": resumo(linhas),
+                    "campos": resumo_dos_campos(linhas),
+                    "casos": linhas,
+                }
+                continue
             else:
                 linhas = []
                 for caso in conversa[conjunto]["casos"]:
@@ -419,6 +528,7 @@ def main() -> int:
     metas = {
         **{c: conversa[c]["meta"]["proposta"] for c in CONJUNTOS_DA_CONVERSA},
         "perfis": perfis["meta"]["proposta"],
+        "fotos": fotos["meta"]["proposta"],
     }
     for conjunto, dados in rodada["conjuntos"].items():
         r = dados["resumo"]
@@ -426,6 +536,14 @@ def main() -> int:
         extra = f", {r['invalidos']} inválidos" if r["invalidos"] else ""
         print(
             f"  {conjunto:10} {r['acertos']}/{r['validos']} ({taxa}), meta proposta {metas[conjunto]:.0%}{extra}"
+        )
+    if "fotos" in rodada["conjuntos"]:
+        c = rodada["conjuntos"]["fotos"]["campos"]
+        taxa = "-" if c["taxa"] is None else f"{c['taxa']:.0%}"
+        print(
+            f"  fotos por campo: {c['certos']}/{c['avaliados']} ({taxa}), meta proposta "
+            f"{metas['fotos']:.0%}; preencheu errado: {c.get('preencheu errado', 0)}, "
+            f"deixou nulo: {c.get('deixou nulo', 0)}"
         )
     if anterior:
         mostrar_diferenca(anterior, rodada)

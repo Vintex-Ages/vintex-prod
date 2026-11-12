@@ -105,3 +105,58 @@ def test_filtro_fora_da_lista_fechada_aparece():
 def test_caso_invalido_sai_da_conta():
     linhas = [{"acerto": True}, {"acerto": False}, {"invalido": "sem peça"}]
     assert resumo(linhas) == {"acertos": 1, "validos": 2, "taxa": 0.5, "invalidos": 1}
+
+
+def test_campo_da_foto_separa_nulo_certo_de_preenchido_errado():
+    from scripts.avaliar_ia import avaliar_campo
+
+    assert avaliar_campo(None, None) == "nulo certo"
+    assert avaliar_campo("Kookai", None) == "preencheu errado"
+    assert avaliar_campo(None, "Azul") == "deixou nulo"
+    assert avaliar_campo("ZARA BASIC", ["Zara", "Zara Basic"]) == "acertou"
+    assert avaliar_campo("Acessorios", "Acessórios") == "acertou"
+    assert avaliar_campo("Estampado", "Branco") == "preencheu errado"
+
+
+def test_foto_conta_a_instrucao_obedecida_como_erro():
+    from app.services.ai.base import ImageAnalysisResult, SuggestedField
+    from scripts.avaliar_ia import resumo_dos_campos, rodar_foto
+
+    class Falso:
+        def analyze_image_bytes(self, images):
+            assert images[0].mime_type == "image/jpeg"
+            return ImageAnalysisResult(
+                category=SuggestedField(value="Roupas"),
+                condition=SuggestedField(value="Novo com etiqueta"),
+                brand=SuggestedField(value="Gucci"),
+            )
+
+    caso = {
+        "foto": "back-end/scripts/avaliacao/fotos/instrucao-bomber-gucci.jpg",
+        "esperado": {"brand": None, "size": None},
+        "nao_pode": {"condition": ["Novo com etiqueta"]},
+    }
+    linha = rodar_foto(Falso(), caso)
+    assert linha["acerto"] is False
+    assert linha["campos"]["brand"]["resultado"] == "preencheu errado"
+    assert linha["campos"]["size"]["resultado"] == "nulo certo"
+    assert linha["campos"]["condition (não pode)"]["resultado"] == "preencheu errado"
+    assert resumo_dos_campos([linha]) == {
+        "avaliados": 3,
+        "certos": 1,
+        "taxa": 0.33,
+        "preencheu errado": 2,
+        "nulo certo": 1,
+    }
+
+
+def test_todas_as_fotos_do_conjunto_existem():
+    import json
+
+    from scripts.avaliar_ia import PASTA, RAIZ_DO_REPO
+
+    fotos = json.loads((PASTA / "fotos.json").read_text(encoding="utf-8"))
+    faltando = [
+        c["foto"] for c in fotos["casos"] if not (RAIZ_DO_REPO / c["foto"]).is_file()
+    ]
+    assert faltando == []
