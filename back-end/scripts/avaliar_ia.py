@@ -203,7 +203,12 @@ def rodar_caso(
         {
             "segundos": segundos,
             "leitura": leitura
-            and {"filters": filtros, "similarity": leitura.get("similarity")},
+            and {
+                "filters": filtros,
+                "similarity": leitura.get("similarity"),
+                "tipo": leitura.get("tipo"),
+                "in_scope": leitura.get("in_scope"),
+            },
             "match_type": (produtos or {}).get("match_type"),
             "aviso": "".join(
                 e.get("delta", "") for e in eventos if e.get("type") == "text"
