@@ -92,6 +92,9 @@ function Home() {
     navigate(paths.vintex, { state: { message } });
   }
 
+  const aiEyebrow =
+    preferenceLabels.length > 0 ? `IA calibrada • ${preferenceLabels.join(' + ')}` : 'IA calibrada';
+
   return (
     <main className={isAuthenticated ? 'bg-branco-quente' : undefined}>
       {!isAuthenticated ? (
@@ -133,94 +136,79 @@ function Home() {
           </div>
         </Container>
       ) : (
-        <>
-          {/* Saudação e curadoria personalizada */}
-          <Container className="pt-8 pb-0 tablet:pt-12 web:pt-16">
-            <section aria-labelledby="home-saudacao">
-              <p className="mb-3 font-ui text-[11px] font-bold uppercase tracking-[1.6px] text-vermelho-escuro">
-                Curadoria personalizada
-              </p>
+        <Container className="pt-8 pb-0 tablet:pt-12 web:pt-16">
+          <div className="flex flex-col gap-8 tablet:gap-10 web:grid web:grid-cols-2 web:items-start web:gap-8">
+            <div className="flex min-w-0 flex-col gap-8 tablet:gap-10">
+              <section aria-labelledby="home-saudacao">
+                <p className="mb-3 font-ui text-label font-bold uppercase tracking-wider text-vermelho-escuro">
+                  Curadoria personalizada
+                </p>
 
-              <h1
-                id="home-saudacao"
-                className="max-w-4xl font-display text-[38px] leading-[1.12] tracking-[-1px] text-tinta tablet:text-[52px] web:text-[64px]"
-              >
-                Olá{firstName ? `, ${firstName}` : ''}.
-                <span className="block">Novos achados do seu estilo.</span>
-              </h1>
+                <h1 id="home-saudacao" className="font-display text-h1 text-tinta">
+                  Olá{firstName ? `, ${firstName}` : ''}.
+                  <span className="block">Novos achados do seu estilo.</span>
+                </h1>
 
-              <div className="mt-4 max-w-2xl font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
-                {preferenceLabels.length > 0 ? (
-                  <p>
-                    Seu estilo está calibrado para{' '}
-                    <strong className="font-semibold text-tinta">
-                      {preferenceLabels.join(' e ')}
-                    </strong>
-                    . Explore as peças selecionadas para você.
-                  </p>
-                ) : (
-                  <p>
-                    Escolha seus estilos para receber uma curadoria personalizada.{' '}
-                    <Link
-                      to={paths.profilePreferences}
-                      className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
-                    >
-                      Defina suas preferências
-                    </Link>
-                    .
-                  </p>
-                )}
-              </div>
-            </section>
-          </Container>
-
-          {/* Convite exclusivo para quem ainda não possui brechó */}
-          {showSellInvite && (
-            <Container as="section" aria-labelledby="vender-titulo" className="pt-8 tablet:pt-10">
-              <div className="border border-linha bg-papel-profundo px-5 py-7 tablet:px-9 tablet:py-9">
-                <div className="flex flex-col items-start gap-4 tablet:flex-row tablet:items-center tablet:justify-between tablet:gap-8">
-                  <div className="max-w-2xl">
-                    <p className="mb-3 font-ui text-[10px] font-bold uppercase tracking-[1.5px] text-vermelho-escuro">
-                      Inscrição liberada
+                <div className="mt-4 font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
+                  {preferenceLabels.length > 0 ? (
+                    <p>
+                      Seu estilo está calibrado para{' '}
+                      <strong className="font-semibold text-tinta">
+                        {preferenceLabels.join(' e ')}
+                      </strong>
+                      . Explore as peças selecionadas para você.
                     </p>
+                  ) : (
+                    <p>
+                      Escolha seus estilos para receber uma curadoria personalizada.{' '}
+                      <Link
+                        to={paths.profilePreferences}
+                        className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                      >
+                        Defina suas preferências
+                      </Link>
+                      .
+                    </p>
+                  )}
+                </div>
+              </section>
 
-                    <h2
-                      id="vender-titulo"
-                      className="font-display text-[29px] leading-tight text-tinta tablet:text-[38px]"
-                    >
-                      Cadastre seu brechó para vender
+              {showSellInvite && (
+                <section aria-labelledby="vender-titulo">
+                  <div className="border border-linha bg-papel-profundo px-5 py-7 tablet:px-8 tablet:py-8">
+                    <h2 id="vender-titulo" className="font-display text-h3 text-tinta">
+                      Venda pelo seu brechó
                     </h2>
 
                     <p className="mt-3 font-ui text-body-sm leading-relaxed text-texto-auxiliar">
-                      Transforme suas peças em novos achados. Cadastre seu brechó e pague apenas 9%
-                      de comissão quando vender.
+                      Crie o perfil da loja, informe CPF ou CNPJ e a chave Pix. Depois, anuncie suas
+                      peças.
                     </p>
+
+                    <Link
+                      to={paths.sell}
+                      className="mt-6 inline-flex min-h-touch w-full items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-6 py-3 font-ui text-label font-semibold uppercase tracking-wider text-branco-quente transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro tablet:w-auto"
+                    >
+                      Criar meu brechó
+                    </Link>
                   </div>
+                </section>
+              )}
+            </div>
 
-                  <Link
-                    to={paths.sell}
-                    className="inline-flex min-h-touch w-full shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro px-6 py-3 font-ui text-label font-semibold uppercase tracking-[0.7px] text-branco-quente transition-colors hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro tablet:w-auto"
-                  >
-                    Criar meu brechó
-                  </Link>
-                </div>
-              </div>
-            </Container>
-          )}
-
-          {/* Assistente Vintex: mesmo componente no mobile e desktop */}
-          <Container as="section" aria-label="Assistente Vintex" className="pt-8 tablet:pt-10">
-            <VintexSearchSpotlight
-              headingAs="h2"
-              eyebrow="IA Curadora • Vintex"
-              heading="O que você procura hoje no RS?"
-              placeholder="Descreva a peça ou estilo..."
-              suggestions={VINTEX_SUGGESTIONS}
-              isOnline={false}
-              onSubmit={askVintex}
-            />
-          </Container>
-        </>
+            <section aria-label="Assistente Vintex" className="min-w-0">
+              <VintexSearchSpotlight
+                headingAs="h2"
+                eyebrow={aiEyebrow}
+                heading="O que você procura hoje no RS?"
+                placeholder="Descreva a peça ou estilo..."
+                suggestions={VINTEX_SUGGESTIONS}
+                isOnline
+                onSubmit={askVintex}
+              />
+            </section>
+          </div>
+        </Container>
       )}
 
       {/* Feed existente: preserva recomendações e paginação */}
