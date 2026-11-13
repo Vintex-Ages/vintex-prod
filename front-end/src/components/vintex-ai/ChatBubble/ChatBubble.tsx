@@ -46,9 +46,10 @@ type ChatBubbleProps = {
  *     `aria-live="polite"` no parágrafo, para leitores de tela anunciarem
  *     o texto chegando aos poucos.
  *   - `message.outfit` → compõe `OutfitSuggestionCard` (#139); `message.products`
- *     → compõe `ChatProductList` (peças reais, #209), sob "Alternativas
- *     próximas" quando `productsMatchType` é `fallback` (#333). Nenhum dos
- *     dois é reimplementado aqui.
+ *     → compõe `ChatProductList` (peças reais, #209): lista quando o resultado
+ *     é direto e, quando `productsMatchType` é `fallback` (#333), cartão
+ *     "Alternativas próximas" (variante `cards`, #438). Nenhum dos dois é
+ *     reimplementado aqui.
  *
  * Componente de apresentação puro: não busca dados, não decide quando
  * streamar ou re-tentar — isso é da página (`#208`). Tipos vêm de
@@ -71,12 +72,10 @@ export function ChatBubble({
 }: ChatBubbleProps) {
   if (message.role === 'user') {
     return (
-      <div className="rounded-none bg-vermelho-escuro p-4 shadow-[6px_6px_0_0_theme(colors.vermelho-suave)]">
-        <p className="text-label font-semibold uppercase text-branco-quente">Você</p>
-        <p className="mt-2 text-body text-branco-quente">{message.text}</p>
-        <p className="mt-2 text-label text-branco-quente/70">
-          {formatarHorario(message.createdAt)}
-        </p>
+      <div className="rounded-none bg-vermelho-escuro p-4 shadow-[3px_4px_0_0_theme(colors.vermelho-escuro/0.2)]">
+        <p className="text-label font-semibold uppercase text-vermelho-suave">Você</p>
+        <p className="mt-2 text-body-sm text-branco-quente">{message.text}</p>
+        <p className="mt-2 text-label text-vermelho-suave">{formatarHorario(message.createdAt)}</p>
       </div>
     );
   }
@@ -89,7 +88,7 @@ export function ChatBubble({
         role={cotaEsgotada ? 'status' : undefined}
       >
         <p className="text-label font-semibold uppercase text-vermelho-escuro">Vintex</p>
-        <p className="mt-2 text-body text-vermelho-escuro">{error}</p>
+        <p className="mt-2 text-body-sm text-vermelho-escuro">{error}</p>
         {onRetry && !cotaEsgotada ? (
           <button
             type="button"
@@ -104,9 +103,9 @@ export function ChatBubble({
   }
 
   return (
-    <div className="rounded-none border border-linha bg-branco-quente p-4">
+    <div className="rounded-none border border-linha bg-branco-quente p-4 shadow-[0_4px_6px_0_theme(colors.tinta/0.08)]">
       <p className="text-label font-semibold uppercase text-vermelho-escuro">Vintex</p>
-      <p className="mt-2 text-body text-tinta" aria-live={streaming ? 'polite' : undefined}>
+      <p className="mt-2 text-body-sm text-tinta" aria-live={streaming ? 'polite' : undefined}>
         {message.text}
         {streaming ? (
           <span
@@ -123,6 +122,7 @@ export function ChatBubble({
             products={message.products}
             onOpen={onOpenProduct}
             title={message.productsMatchType === 'fallback' ? 'Alternativas próximas' : undefined}
+            layout={message.productsMatchType === 'fallback' ? 'cards' : 'list'}
           />
         </div>
       ) : null}

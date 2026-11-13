@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import suggestedBag from '@/assets/product-detail/suggested-bag.png';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
@@ -10,17 +9,49 @@ import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Container from '@/components/layout/Container';
 import Gallery from '@/components/product/Gallery';
 import SoldBadge from '@/components/product/SoldBadge';
+import StatusBadge from '@/components/product/StatusBadge';
+import { LookSuggestions } from '@/components/vintex-ai';
 import { useAuth } from '@/context/useAuth';
 import { useCart } from '@/context/useCart';
 import { useFavorites } from '@/context/useFavorites';
 import { useToast } from '@/context/useToast';
-import { useProtectedAction } from '@/hooks/useProtectedAction';
+import {
+  PENDING_ACTION_STORAGE_KEY,
+  useProtectedAction,
+  type PendingProtectedAction,
+} from '@/hooks/useProtectedAction';
 import type { CheckoutState } from '@/pages/Checkout/Checkout';
 import { paths, storeProfile } from '@/routes/paths';
 import { CatalogError, getProduct } from '@/services/catalogService';
+import { getCombinations } from '@/services/combinationService';
+import type { LookSuggestion } from '@/types/look';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
 
 type Status = 'loading' | 'not_found' | 'error' | 'ready';
+
+const LOOK_PIECE_INTENT = 'add-look-piece';
+
+/**
+ * Peça do look que ficou pendente quando alguém deslogado clicou em
+ * "+ Adicionar" nesta peça de origem. Lê a intenção que o `useProtectedAction`
+ * guardou; sem ela, depois do login a página remontada não saberia qual peça
+ * foi clicada e a intenção nunca coincidiria.
+ */
+function pendingLookPiece(productId: string | undefined): string | null {
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY);
+    if (!raw || !productId) return null;
+    const { intent } = JSON.parse(raw) as PendingProtectedAction;
+    const pieceId = intent.payload?.pieceId;
+    return intent.type.startsWith(LOOK_PIECE_INTENT) &&
+      intent.payload?.productId === productId &&
+      typeof pieceId === 'string'
+      ? pieceId
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -73,8 +104,11 @@ function CartIcon() {
  * preço em destaque e descrição — mais o card da loja.
  *
  * Galeria de fotos (carrossel + miniaturas, ordenada por `position`) é o
- * componente `Gallery` (FE-US012-2, #85). A curadoria reproduz o card do frame
- * com estado local, pois a API atual não fornece um produto recomendado. Sem
+ * componente `Gallery` (FE-US012-2, #85). "Combine e monte o look" (FE-US030-1,
+ * #412) é a `LookSuggestions` com as peças de `getCombinations`, carregadas
+ * depois da peça principal; em erro ou sem peças, a seção não aparece.
+ * "+ Adicionar" de uma peça sugerida a põe na sacola com o mesmo toast do
+ * carrinho e a mesma barreira de login (com retomada da peça clicada). Sem
  * checkout real (pagamento real fora do escopo do projeto): o botão "Comprar
  * Agora" não dispara compra nenhuma, só a barreira de login (FE-US012-5, #88)
  * importa por enquanto. A adição ao carrinho usa o CartProvider compartilhado
@@ -107,7 +141,7 @@ function ProductDetail() {
 
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [status, setStatus] = useState<Status>('loading');
-  const [lookItemAdded, setLookItemAdded] = useState(false);
+  const [look, setLook] = useState<LookSuggestion | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const isAddingRef = useRef(false);
 
@@ -137,7 +171,33 @@ function ProductDetail() {
     };
   }, [id]);
 
+  /**
+   * "Combine e monte o look" (#412): só depois que a peça principal carregou,
+   * num efeito próprio. Falha ou demora não derruba o detalhe: a seção
+   * simplesmente não aparece. Resposta de outra peça (ou depois de desmontar)
+   * é descartada. Reservada ou vendida também carrega (o back responde 200).
+   */
+  const loadedProductId = status === 'ready' ? product?.id : undefined;
+  useEffect(() => {
+    setLook(null);
+    if (!loadedProductId) return undefined;
+
+    let active = true;
+    getCombinations(loadedProductId)
+      .then((suggestion) => {
+        if (active) setLook(suggestion);
+      })
+      .catch(() => {
+        // Silencioso de propósito: sem combinação, a página segue sem a seção.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadedProductId]);
+
   const productId = product?.id ?? '';
+  const purchaseUnavailable = product?.status === 'reservado' || product?.status === 'vendido';
   const isFavorite = productId !== '' && favoriteIds.has(productId);
 
   /**
@@ -178,42 +238,75 @@ function ProductDetail() {
    * #319). Deslogado, a barreira guarda a intenção e isto roda na volta do login.
    */
   const buyNow = useCallback(() => {
-    if (!product) return;
+    if (!product || purchaseUnavailable) return;
     const { id, name, price, coverImageUrl, store } = product;
     navigate(paths.checkout, {
       state: { products: [{ id, name, price, coverImageUrl, store }] } satisfies CheckoutState,
     });
-  }, [navigate, product]);
+  }, [navigate, product, purchaseUnavailable]);
 
-  const alreadyInCart = useMemo(
-    () =>
-      cart?.groups.some((group) => group.items.some((item) => item.product.id === productId)) ??
+  /** Mesma regra para a peça principal e para as peças do look (#412). */
+  const isInCart = useCallback(
+    (pieceId: string) =>
+      cart?.groups.some((group) => group.items.some((item) => item.product.id === pieceId)) ??
       false,
-    [cart, productId],
+    [cart],
+  );
+  const alreadyInCart = isInCart(productId);
+
+  /** Põe a peça na sacola com o toast de sucesso/erro do botão do carrinho. */
+  const addPieceWithToast = useCallback(
+    async (pieceId: string) => {
+      try {
+        await add(pieceId);
+        toast('Adicionada ao carrinho', {
+          kind: 'success',
+          action: {
+            label: 'Ver carrinho',
+            onSelect: () => navigate(paths.cart),
+          },
+        });
+      } catch {
+        toast('Não foi possível adicionar ao carrinho. Tente novamente.', { kind: 'error' });
+      }
+    },
+    [add, navigate, toast],
   );
 
   const addToCart = useCallback(async () => {
-    if (!productId || alreadyInCart || isAddingRef.current) return;
+    if (!productId || purchaseUnavailable || alreadyInCart || isAddingRef.current) return;
 
     isAddingRef.current = true;
     setIsAdding(true);
 
     try {
-      await add(productId);
-      toast('Adicionada ao carrinho', {
-        kind: 'success',
-        action: {
-          label: 'Ver carrinho',
-          onSelect: () => navigate(paths.cart),
-        },
-      });
-    } catch {
-      toast('Não foi possível adicionar ao carrinho. Tente novamente.', { kind: 'error' });
+      await addPieceWithToast(productId);
     } finally {
       isAddingRef.current = false;
       setIsAdding(false);
     }
-  }, [add, alreadyInCart, navigate, productId, toast]);
+  }, [addPieceWithToast, alreadyInCart, productId, purchaseUnavailable]);
+
+  /**
+   * "+ Adicionar" de uma peça do look (#412). A peça clicada entra na intenção
+   * (`pieceId`), não numa ref: deslogado, a página remonta depois do login e
+   * só a intenção guardada diz qual peça foi; `pendingLookPiece` a relê para a
+   * intenção coincidir e o `useProtectedAction` retomar. Já na sacola, não
+   * adiciona de novo; `lookAddingRef` impede a segunda execução enquanto a
+   * primeira não termina (a retomada pode rodar de novo a cada render).
+   */
+  const [lookPieceId, setLookPieceId] = useState<string | null>(() => pendingLookPiece(id));
+  const lookAddingRef = useRef(false);
+  const addLookPiece = useCallback(async () => {
+    if (!lookPieceId || isInCart(lookPieceId) || lookAddingRef.current) return;
+
+    lookAddingRef.current = true;
+    try {
+      await addPieceWithToast(lookPieceId);
+    } finally {
+      lookAddingRef.current = false;
+    }
+  }, [addPieceWithToast, isInCart, lookPieceId]);
 
   /**
    * Ao voltar do login, espera a primeira carga do carrinho antes de fazer a
@@ -229,9 +322,45 @@ function ProductDetail() {
     [cartReadyForResume, productId],
   );
 
+  // Mesma espera do carrinho: na volta do login, só coincide com o carrinho carregado.
+  const lookPieceIntent = useMemo(
+    () => ({
+      type: cartReadyForResume ? LOOK_PIECE_INTENT : `${LOOK_PIECE_INTENT}-awaiting-cart`,
+      payload: { productId, pieceId: lookPieceId },
+    }),
+    [cartReadyForResume, lookPieceId, productId],
+  );
+
   const protectedFavorite = useProtectedAction({ intent: favoriteIntent, action: toggleFavorite });
   const protectedAddToCart = useProtectedAction({ intent: cartIntent, action: addToCart });
   const protectedBuy = useProtectedAction({ intent: buyIntent, action: buyNow });
+  const protectedLookPiece = useProtectedAction({
+    intent: lookPieceIntent,
+    action: addLookPiece,
+  });
+
+  /**
+   * O clique só escolhe a peça; a ação protegida roda no render seguinte, quando
+   * a `intent` do hook já tem o `pieceId` (é ela que fica guardada para depois
+   * do login). Cada clique é um pedido, atendido uma vez só.
+   */
+  const [lookRequest, setLookRequest] = useState(0);
+  const handledLookRequest = useRef(0);
+  const { runProtectedAction: runLookPiece } = protectedLookPiece;
+  useEffect(() => {
+    if (lookRequest === handledLookRequest.current) return;
+    handledLookRequest.current = lookRequest;
+    void runLookPiece();
+  }, [lookRequest, runLookPiece]);
+
+  const handleAddLookPiece = useCallback(
+    (pieceId: string) => {
+      if (isInCart(pieceId)) return;
+      setLookPieceId(pieceId);
+      setLookRequest((current) => current + 1);
+    },
+    [isInCart],
+  );
 
   const activeIntercept = protectedFavorite.interceptorOpen
     ? protectedFavorite
@@ -239,7 +368,9 @@ function ProductDetail() {
       ? protectedAddToCart
       : protectedBuy.interceptorOpen
         ? protectedBuy
-        : null;
+        : protectedLookPiece.interceptorOpen
+          ? protectedLookPiece
+          : null;
 
   if (status === 'loading') {
     return (
@@ -276,8 +407,7 @@ function ProductDetail() {
     : alreadyInCart
       ? 'No carrinho'
       : 'Adicionar ao carrinho';
-  const cartActionDisabled =
-    product.status === 'vendido' || cartLoading || alreadyInCart || isAdding;
+  const cartActionDisabled = purchaseUnavailable || cartLoading || alreadyInCart || isAdding;
 
   return (
     <Container as="main" className="bg-branco-quente py-4 web:py-10">
@@ -315,6 +445,11 @@ function ProductDetail() {
             {product.status === 'vendido' ? (
               <div className="mb-2">
                 <SoldBadge />
+              </div>
+            ) : product.status === 'reservado' ? (
+              <div className="mb-2" role="status">
+                <StatusBadge status="reservado" />
+                <p className="mt-2 text-body-sm text-texto-auxiliar">Esta peça está reservada.</p>
               </div>
             ) : null}
             <p className="mb-2 font-ui text-label font-bold uppercase leading-relaxed tracking-wider text-vermelho-escuro">
@@ -375,44 +510,8 @@ function ProductDetail() {
             </dl>
           </section>
 
-          <section className="border border-linha bg-papel-profundo p-5">
-            <p className="font-ui text-label font-bold uppercase tracking-wider text-vermelho-escuro">
-              <span aria-hidden="true">✨ </span>Curadoria da IA Vintex
-            </p>
-            <h2 className="mt-1 font-display text-h4 text-tinta">
-              Combine esta peça e monte o look
-            </h2>
-            <p className="mt-1 text-body-sm text-texto-auxiliar">
-              Sugestão harmônica baseada em estilo e textura:
-            </p>
-            <div className="mt-3 border border-linha bg-branco-quente p-4">
-              <div className="flex items-center gap-3.5">
-                <img
-                  src={suggestedBag}
-                  alt="Bolsa Baú de Couro Caramelo"
-                  className="h-[93px] w-[143px] shrink-0 border border-linha object-cover"
-                />
-                <div className="flex min-w-0 flex-1 flex-col justify-between self-stretch">
-                  <div>
-                    <h3 className="font-ui text-body-sm font-semibold leading-tight text-tinta">
-                      Bolsa Baú de Couro Caramelo
-                    </h3>
-                    <p className="mt-1 text-label text-texto-auxiliar">Brechó da Redenção</p>
-                  </div>
-                  <p className="font-ui text-body-sm font-bold text-tinta">R$ 90</p>
-                </div>
-              </div>
-              {/* ponytail: this Figma sample has no catalog ID; replace local look state when AI returns sellable product IDs. */}
-              <button
-                type="button"
-                aria-pressed={lookItemAdded}
-                onClick={() => setLookItemAdded((value) => !value)}
-                className="mt-3 flex min-h-11 w-full items-center justify-center border border-tinta bg-tinta px-3 text-label font-semibold uppercase tracking-wide text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta"
-              >
-                {lookItemAdded ? '✓ Adicionada ao look' : '+ Adicionar'}
-              </button>
-            </div>
-          </section>
+          {/* Sem peças (ou enquanto carrega, ou em erro), nada aparece. */}
+          {look ? <LookSuggestions suggestion={look} onAdd={handleAddLookPiece} /> : null}
         </div>
       </div>
 
@@ -442,7 +541,7 @@ function ProductDetail() {
         <Button
           variant="primary"
           aria-label={`Comprar Agora • ${priceLabel}`}
-          disabled={product.status === 'vendido'}
+          disabled={purchaseUnavailable}
           className="h-12 min-w-0 flex-1 px-2 text-label uppercase tracking-wide web:px-6 web:text-body-sm"
           onClick={() => {
             void protectedBuy.runProtectedAction();

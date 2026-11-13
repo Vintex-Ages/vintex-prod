@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ChatBubble } from './ChatBubble';
@@ -278,5 +278,78 @@ describe('ChatBubble', () => {
       </MemoryRouter>,
     );
     expect(productsContainer.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+  });
+
+  // --- #438 (FE-FIG-4): alinhamento ao frame "Tela com IA - Ajustada" ---
+
+  describe('visual do frame', () => {
+    const peca: Product = {
+      id: 'p1',
+      name: 'Vestido floral',
+      price: 89.9,
+      coverImageUrl: null,
+      store: { id: 's1', name: 'Brechó Ana' },
+    };
+
+    it('bolha da pessoa: texto body-sm, rótulo e hora em vermelho-suave, sombra deslocada', () => {
+      const { container } = render(<ChatBubble message={userMessage} />);
+
+      expect(screen.getByText(userMessage.text)).toHaveClass('text-body-sm');
+      expect(screen.getByText(userMessage.text)).not.toHaveClass('text-body');
+      expect(screen.getByText('Você')).toHaveClass('text-vermelho-suave');
+      expect(screen.getByText('14:32')).toHaveClass('text-vermelho-suave');
+      expect(screen.getByText('14:32').className).not.toContain('/70');
+      expect(container.firstElementChild).toHaveClass(
+        'shadow-[3px_4px_0_0_theme(colors.vermelho-escuro/0.2)]',
+      );
+    });
+
+    it('bolha da Vintex: texto body-sm, rótulo label e sombra suave', () => {
+      const { container } = render(<ChatBubble message={vintexMessage} />);
+
+      expect(screen.getByText(vintexMessage.text)).toHaveClass('text-body-sm');
+      expect(screen.getByText(vintexMessage.text)).not.toHaveClass('text-body');
+      expect(screen.getByText('Vintex')).toHaveClass('text-label');
+      expect(container.firstElementChild).toHaveClass(
+        'shadow-[0_4px_6px_0_theme(colors.tinta/0.08)]',
+      );
+    });
+
+    it('bolha de erro: só muda o tamanho do texto, sem sombra', () => {
+      const { container } = render(<ChatBubble message={vintexMessage} error="Falha." />);
+
+      expect(screen.getByText('Falha.')).toHaveClass('text-body-sm');
+      expect(screen.getByText('Falha.')).not.toHaveClass('text-body');
+      expect(container.firstElementChild?.className).not.toContain('shadow');
+    });
+
+    it('fallback usa a variante cards, com cartão e selo', () => {
+      render(
+        <MemoryRouter>
+          <ChatBubble
+            message={{ ...vintexMessage, products: [peca], productsMatchType: 'fallback' }}
+          />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByTestId('chat-product-cards')).toBeInTheDocument();
+      expect(within(screen.getByTestId('chat-product-seal')).getByText('1')).toBeInTheDocument();
+    });
+
+    it.each([['exact' as const], [undefined]])(
+      'matchType %s usa a lista atual, sem cartão nem selo',
+      (productsMatchType) => {
+        render(
+          <MemoryRouter>
+            <ChatBubble message={{ ...vintexMessage, products: [peca], productsMatchType }} />
+          </MemoryRouter>,
+        );
+
+        expect(screen.getByRole('list')).toHaveClass('flex', 'flex-col');
+        expect(screen.queryByTestId('chat-product-cards')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('chat-product-seal')).not.toBeInTheDocument();
+        expect(screen.queryByText('achados')).not.toBeInTheDocument();
+      },
+    );
   });
 });

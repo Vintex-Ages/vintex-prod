@@ -11,6 +11,7 @@ import { ToastProvider } from '@/context/ToastContext';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { listReceipts } from '@/services/adminReceiptService';
+import { listReports } from '@/services/reportService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -34,6 +35,11 @@ vi.mock('@/services/adminReceiptService', async (importOriginal) => ({
   listReceipts: vi.fn(),
 }));
 
+vi.mock('@/services/reportService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/reportService')>()),
+  listReports: vi.fn(),
+}));
+
 const STORE: StoreProfile = {
   id: 'store-1',
   name: 'Brechó da Ana',
@@ -49,6 +55,9 @@ beforeEach(() => {
   // Padrão: quem entra na área do vendedor tem loja (RequireStore, #213).
   vi.mocked(getMyStore).mockReset().mockResolvedValue(STORE);
   vi.mocked(listReceipts)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+  vi.mocked(listReports)
     .mockReset()
     .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
 });
@@ -116,6 +125,15 @@ const BUYER: AuthUser = {
 const SELLER: AuthUser = { ...BUYER, id: 'u_2', is_seller: true };
 const ADMIN: AuthUser = { ...BUYER, id: 'u_3', is_admin: true };
 
+const NEW_ADMIN_ROUTES = [
+  { key: 'adminDashboard', path: '/admin/dashboard', label: 'Painel geral' },
+  { key: 'adminModeration', path: '/admin/moderation', label: 'Anúncios suspensos' },
+  { key: 'adminReports', path: '/admin/reports', label: 'Reclamações' },
+] as const;
+
+/** As que ainda são placeholder: Reclamações já tem tela (FE-US025-2, #427). */
+const PLACEHOLDER_ADMIN_ROUTES = NEW_ADMIN_ROUTES.filter(({ key }) => key !== 'adminReports');
+
 function LocationProbe() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
@@ -162,6 +180,186 @@ function renderAtWithAuth(path: string, authValue: AuthContextValue) {
 }
 
 describe('<AppRoutes />', () => {
+  describe('#419 — RED: rotas administrativas da Sprint 4', () => {
+    it.each(NEW_ADMIN_ROUTES)('paths.$key identifica $path', ({ key, path }) => {
+      // Uma chave ainda ausente deve falhar por asserção, sem impedir a coleta da suíte.
+      expect((paths as Readonly<Record<string, string>>)[key]).toBe(path);
+    });
+
+    it.each(PLACEHOLDER_ADMIN_ROUTES)(
+      'admin acessa $path com placeholder, navegação e apenas um Header',
+      async ({ path, label }) => {
+        renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+        expect(await screen.findByRole('heading', { level: 1, name: label })).toBeInTheDocument();
+        expect(
+          screen.getByText(/ainda não (?:foi|está) implementad[ao]|será implementad[ao]/i),
+        ).toBeInTheDocument();
+        expect(screen.getByTestId('route-path')).toHaveTextContent(path);
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
+        expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+        expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+
+        const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+        expect(nav.getAllByRole('link')).toHaveLength(4);
+        expect(nav.getByRole('link', { name: 'Comprovantes' })).toHaveAttribute(
+          'href',
+          paths.adminReceipts,
+        );
+        for (const route of NEW_ADMIN_ROUTES) {
+          expect(nav.getByRole('link', { name: route.label })).toHaveAttribute('href', route.path);
+        }
+        expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
+      },
+    );
+
+    // #427: Reclamações deixou de ser placeholder.
+    it('admin em /admin/reports vê a lista de Reclamações, com cabeçalho próprio e sem rodapé', async () => {
+      renderAtWithAuth(paths.adminReports, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Reclamações' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/ainda não foi implementada/i)).not.toBeInTheDocument();
+      expect(await screen.findByText('Nenhuma reclamação recebida')).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(paths.adminReports);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('navigation', { name: 'Área administrativa' })).getByRole('link', {
+          name: 'Reclamações',
+        }),
+      ).toHaveAttribute('aria-current', 'page');
+      expect(listReports).toHaveBeenCalledWith({ page: 1 });
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
+
+    it.each(
+      NEW_ADMIN_ROUTES.flatMap((route) => [
+        { ...route, role: 'buyer', user: BUYER },
+        { ...route, role: 'seller', user: SELLER },
+      ]),
+    )('$role em $path volta para home sem montar a área administrativa', async ({ path, user }) => {
+      renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user }));
+
+      await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe(paths.home));
+      expect(
+        screen.queryByRole('navigation', { name: 'Área administrativa' }),
+      ).not.toBeInTheDocument();
+      expect(listReceipts).not.toHaveBeenCalled();
+      // RN-78: quem não é admin nem dispara a consulta das Reclamações.
+      expect(listReports).not.toHaveBeenCalled();
+    });
+
+    it.each(NEW_ADMIN_ROUTES)(
+      'anônimo em $path vai ao login e preserva pathname e query',
+      async ({ path }) => {
+        const destination = `${path}?source=admin-navigation`;
+        renderAtWithAuth(destination, makeAuthValue({}));
+
+        await waitFor(() => expect(screen.getByTestId('route-path').textContent).toBe(paths.login));
+        expect(screen.getByTestId('route-from').textContent).toBe(destination);
+        expect(screen.getByRole('heading', { name: 'Entre na Vintex' })).toBeInTheDocument();
+        expect(
+          screen.queryByRole('navigation', { name: 'Área administrativa' }),
+        ).not.toBeInTheDocument();
+        expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(NEW_ADMIN_ROUTES)(
+      'loading em $path não monta Header ou conteúdo antes da verificação',
+      ({ path, label }) => {
+        renderAtWithAuth(
+          path,
+          makeAuthValue({ isAuthenticated: true, user: ADMIN, loading: true }),
+        );
+
+        expect(screen.getByTestId('route-path').textContent).toBe(path);
+        expect(screen.queryByRole('heading', { name: label })).not.toBeInTheDocument();
+        expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('navigation', { name: 'Área administrativa' }),
+        ).not.toBeInTheDocument();
+        expect(listReceipts).not.toHaveBeenCalled();
+        expect(listReports).not.toHaveBeenCalled();
+      },
+    );
+
+    it('navega da fila pelas outras três telas e volta sem duplicar Header ou consultar a fila nelas', async () => {
+      const user = userEvent.setup();
+      renderAtWithAuth(paths.adminReceipts, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+      await screen.findByRole('heading', { name: 'Repasses de pagamentos Pix' });
+      await waitFor(() => expect(listReceipts).toHaveBeenCalled());
+      const receiptCalls = vi.mocked(listReceipts).mock.calls.length;
+
+      for (const { path, label } of NEW_ADMIN_ROUTES) {
+        const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+        await user.click(nav.getByRole('link', { name: label }));
+
+        expect(await screen.findByRole('heading', { level: 1, name: label })).toBeInTheDocument();
+        expect(screen.getByTestId('route-path').textContent).toBe(path);
+        expect(screen.getAllByRole('banner')).toHaveLength(1);
+        expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+        const currentNav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+        expect(currentNav.getAllByRole('link', { current: 'page' })).toHaveLength(1);
+        expect(currentNav.getByRole('link', { name: label })).toHaveAttribute(
+          'aria-current',
+          'page',
+        );
+        expect(listReceipts).toHaveBeenCalledTimes(receiptCalls);
+      }
+
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Área administrativa' })).getByRole('link', {
+          name: 'Comprovantes',
+        }),
+      );
+      expect(
+        await screen.findByRole('heading', { name: 'Repasses de pagamentos Pix' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(paths.adminReceipts);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+    });
+  });
+
+  describe('#419 — regressões da área administrativa existente', () => {
+    it('preserva o path de Comprovantes', () => {
+      expect(paths.adminReceipts).toBe('/admin/receipts');
+    });
+
+    it('loading em Comprovantes não monta a fila nem seu Header, mesmo com usuário admin disponível', () => {
+      renderAtWithAuth(
+        paths.adminReceipts,
+        makeAuthValue({ isAuthenticated: true, user: ADMIN, loading: true }),
+      );
+
+      expect(screen.getByTestId('route-path').textContent).toBe(paths.adminReceipts);
+      expect(
+        screen.queryByRole('heading', { name: 'Repasses de pagamentos Pix' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('navigation', { name: 'Área administrativa' }),
+      ).not.toBeInTheDocument();
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
+
+    it('mantém o 404 com layout global para uma URL administrativa desconhecida', () => {
+      renderAtWithAuth('/admin/nao-existe', makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+
+      expect(screen.getByRole('heading', { name: 'Essa página não existe' })).toBeInTheDocument();
+      expect(screen.getByRole('banner')).toBeInTheDocument();
+      expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('navigation', { name: 'Área administrativa' }),
+      ).not.toBeInTheDocument();
+      expect(listReceipts).not.toHaveBeenCalled();
+    });
+  });
+
   describe('FE-FND-6: rotas da Sprint 3', () => {
     it.each([
       // `/profile/orders` (#321), `/checkout` (#319) e `/profile/favorites` (#329)
@@ -409,10 +607,10 @@ describe('<AppRoutes />', () => {
   // --- FE-FND-4 (#205): rotas da Sprint 2 e guardas ---
 
   it.each([
-    [paths.seller, 'Painel do vendedor', SELLER],
+    [paths.seller, 'Painel de Vendas & Gestão de Peças', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
-    [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
+    [sellerProductReviewPath('1'), 'Revise sua peça antes de publicar', SELLER],
     [paths.cart, 'Seu carrinho', BUYER],
     [storeProfile('1'), 'Brechó Mercado Público', null],
   ])('renderiza o placeholder de %s dentro do Layout', async (path, heading, user) => {
@@ -473,7 +671,9 @@ describe('<AppRoutes />', () => {
 
       expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
       expect(screen.getByText('Para anunciar, crie sua loja')).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -493,7 +693,9 @@ describe('<AppRoutes />', () => {
   it('P-06: /sell com loja vai ao painel do vendedor', async () => {
     renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: SELLER }));
 
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Abrir minha loja' })).not.toBeInTheDocument();
   });
 
@@ -755,12 +957,16 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
     renderPanel();
 
     expect(await screen.findByText('Verificando sua loja…')).toHaveAttribute('role', 'status');
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).not.toBeInTheDocument();
     expect(publicReads()).toEqual([]);
     expect(validationPosts()).toEqual([]);
 
     await act(async () => privateGate?.resolve());
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     await sealCard();
   });
 
@@ -770,10 +976,14 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
     renderPanel();
 
     expect(await screen.findByText('Não foi possível verificar sua loja.')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     await sealCard();
   });
 

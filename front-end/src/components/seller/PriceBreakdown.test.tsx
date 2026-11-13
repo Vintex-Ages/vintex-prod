@@ -52,14 +52,25 @@ describe('<PriceBreakdown />', () => {
     expect(root.className).not.toContain('bg-papel-profundo');
   });
 
-  it('variant="card" são três linhas sobre papel-profundo', () => {
+  it('variant="card" mostra a comissão com sinal de desconto e o líquido no Pix (frame T14)', () => {
     const { container } = render(<PriceBreakdown price={100} variant="card" />);
     const root = container.firstElementChild as HTMLElement;
 
-    expect(root.className).toContain('bg-papel-profundo');
-    expect(root.children).toHaveLength(3);
-    expect(screen.getByText('Preço')).toBeTruthy();
-    expect(screen.getByText(/comissão da plataforma/i)).toBeTruthy();
-    expect(screen.getByText('Você recebe')).toBeTruthy();
+    expect(root.className).toContain('bg-branco-quente');
+    expect(root.className).toContain('border-linha');
+    // O preço já aparece acima, no campo da revisão: o cartão só traz comissão e líquido.
+    expect(root.children).toHaveLength(2);
+    expect(screen.queryByText('Preço')).toBeNull();
+    expect(screen.getByText('Comissão Vintex (9%):')).toBeTruthy();
+    expect(screen.getByText('- R$ 9,00')).toBeTruthy();
+    expect(screen.getByText('Você recebe líquido no Pix:')).toBeTruthy();
+    expect(screen.getByText('R$ 91,00').className).toContain('text-verde-rs');
+  });
+
+  it('variant="card" sem preço mostra placeholder, sem NaN', () => {
+    const { container } = render(<PriceBreakdown price={null} variant="card" />);
+
+    expect(screen.getAllByText('—')).toHaveLength(2);
+    expect(container.textContent).not.toContain('NaN');
   });
 });

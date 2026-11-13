@@ -80,7 +80,7 @@ async function irParaRevisao() {
 
   fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
 
-  await screen.findByRole('heading', { name: 'Revisar anúncio' });
+  await screen.findByRole('heading', { name: 'Revise sua peça antes de publicar' });
 }
 
 function marcasDeSugerido() {
@@ -129,12 +129,12 @@ describe('Review', () => {
     fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '259,90' } });
     fireEvent.change(screen.getByLabelText('Cor'), { target: { value: 'Verde' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
-    await screen.findByRole('heading', { name: 'Revisar anúncio' });
+    await screen.findByRole('heading', { name: 'Revise sua peça antes de publicar' });
 
     // Chegar à revisão não publica nada.
     expect(vi.mocked(sellerProductService.publish)).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar peça →' }));
 
     expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
     expect(vi.mocked(sellerProductService.update)).toHaveBeenCalledWith(
@@ -154,17 +154,19 @@ describe('Review', () => {
   it('editar um campo pela revisão tira a marca de sugerido e vira correção no publicar', async () => {
     await irParaRevisao();
     expect(marcasDeSugerido()).toHaveLength(5);
-    expect(within(linha('Cor')).getByRole('img', { name: 'Sugerido pela IA' })).toBeInTheDocument();
+    expect(
+      within(linha('Cor principal')).getByRole('img', { name: 'Sugerido pela IA' }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Editar dados da peça' }));
     await waitFor(() => expect(screen.getByLabelText('Título')).toHaveFocus());
     fireEvent.change(screen.getByLabelText('Cor'), { target: { value: 'Verde' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
-    await screen.findByRole('heading', { name: 'Revisar anúncio' });
+    await screen.findByRole('heading', { name: 'Revise sua peça antes de publicar' });
 
     // Mesmo rascunho, atualizado: a revisão mostra o valor novo, sem a marca.
-    expect(within(linha('Cor')).getByText('Verde')).toBeInTheDocument();
-    expect(within(linha('Cor')).queryByRole('img')).not.toBeInTheDocument();
+    expect(within(linha('Cor principal')).getByText('Verde')).toBeInTheDocument();
+    expect(within(linha('Cor principal')).queryByRole('img')).not.toBeInTheDocument();
     expect(marcasDeSugerido()).toHaveLength(4);
     expect(vi.mocked(sellerProductService.createDraft)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sellerProductService.update)).toHaveBeenLastCalledWith(
@@ -173,7 +175,7 @@ describe('Review', () => {
       [],
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Publicar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar peça →' }));
 
     await screen.findByRole('heading', { name: 'Painel do vendedor' });
     expect(vi.mocked(sellerProductService.update)).toHaveBeenLastCalledWith(
@@ -191,7 +193,7 @@ describe('Review', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Adicione ao menos uma foto antes de publicar.',
     );
-    expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmar e publicar peça →' })).toBeDisabled();
     expect(screen.getByText('Nenhuma foto adicionada.')).toBeInTheDocument();
     expect(vi.mocked(sellerProductService.publish)).not.toHaveBeenCalled();
   });
@@ -201,25 +203,29 @@ describe('Review', () => {
       new SellerProductError('NO_IMAGE', 'Adicione ao menos uma foto antes de publicar.'),
     );
     renderFluxo('/seller/products/7/review');
-    fireEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar e publicar peça →' }));
 
     const aviso = await screen.findByText('Adicione ao menos uma foto antes de publicar.');
     expect(aviso.closest('[role="alert"]')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled();
-    expect(screen.getByRole('heading', { name: 'Revisar anúncio' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirmar e publicar peça →' })).toBeDisabled();
+    expect(
+      screen.getByRole('heading', { name: 'Revise sua peça antes de publicar' }),
+    ).toBeInTheDocument();
   });
 
   it('outro erro ao publicar mostra Toast de erro e mantém a revisão com os dados', async () => {
     vi.mocked(sellerProductService.publish).mockRejectedValue(new Error('rede fora'));
     renderFluxo('/seller/products/7/review');
-    fireEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar e publicar peça →' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Não foi possível publicar a peça. Tente de novo.',
     );
-    expect(screen.getByRole('heading', { name: 'Revisar anúncio' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Revise sua peça antes de publicar' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Jaqueta de couro')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publicar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Confirmar e publicar peça →' })).toBeEnabled();
   });
 
   it('erro do back com mensagem própria vai para o Toast como veio', async () => {
@@ -227,7 +233,7 @@ describe('Review', () => {
       new SellerProductError('PRODUCT_SOLD', 'Peça vendida não pode ser alterada.'),
     );
     renderFluxo('/seller/products/7/review');
-    fireEvent.click(await screen.findByRole('button', { name: 'Publicar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar e publicar peça →' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Peça vendida não pode ser alterada.',
@@ -241,9 +247,9 @@ describe('Review', () => {
 
     expect(within(linha('Categoria')).getByText('Roupas')).toBeInTheDocument();
     expect(within(linha('Tamanho')).getByText('M')).toBeInTheDocument();
-    expect(within(linha('Cor')).getByText('Preto')).toBeInTheDocument();
-    expect(within(linha('Conservação')).getByText('Seminovo')).toBeInTheDocument();
-    expect(within(linha('Marca')).getByText('Zara')).toBeInTheDocument();
+    expect(within(linha('Cor principal')).getByText('Preto')).toBeInTheDocument();
+    expect(within(linha('Estado de conservação')).getByText('Seminovo')).toBeInTheDocument();
+    expect(within(linha('Marca / Origem')).getByText('Zara')).toBeInTheDocument();
     expect(within(linha('Quantidade')).getByText('1 (peça única)')).toBeInTheDocument();
     expect(screen.getByText('Jaqueta de couro sintético.')).toBeInTheDocument();
 
@@ -251,10 +257,107 @@ describe('Review', () => {
     expect(fotos.map((foto) => foto.getAttribute('src'))).toEqual(PECA.images);
     expect(fotos[0]).toHaveAccessibleName('Foto 1 de 2 (capa)');
 
-    const preco = screen.getByRole('region', { name: 'Preço' });
-    expect(within(preco).getByText('Você recebe')).toBeInTheDocument();
+    const preco = screen.getByRole('region', { name: 'Preço de venda (R$)' });
+    expect(within(preco).getByText('Você recebe líquido no Pix:')).toBeInTheDocument();
     // Entrando direto pela URL, nada veio da IA nesta sessão: sem marca.
     expect(marcasDeSugerido()).toHaveLength(0);
+  });
+
+  // FE-FIG-2 (#436): textos e estrutura do frame ajustado do T14.
+  describe('alinhado ao frame ajustado (T14)', () => {
+    it('mostra o selo da etapa, o título e o subtítulo do frame', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      expect(screen.getByText('Etapa 2 de 2 • Revisão obrigatória')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Revise sua peça antes de publicar', level: 1 }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Confira os campos sugeridos pela IA. Você pode corrigir tudo antes da confirmação final.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('mostra o rótulo das fotos, a capa e o quadro "+ Foto", que leva às fotos', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      expect(screen.getByText('1. Fotos e etiqueta analisadas pela IA')).toBeInTheDocument();
+      expect(screen.getByText('CAPA')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: '+ Foto' }));
+
+      await waitFor(() => expect(document.activeElement?.closest('#secao-fotos')).not.toBeNull());
+    });
+
+    it('etiqueta lida pela IA mostra o quadro e o aviso "Etiqueta processada"', async () => {
+      vi.mocked(vintexAiService.suggestListing).mockResolvedValue({
+        ok: true,
+        suggestion: {
+          fields: {
+            category: 'Roupas',
+            color: 'Preto',
+            size: 'M',
+            condition: 'Seminovo',
+            composition: '100% algodão',
+          },
+          suggested: ['category', 'color', 'size', 'condition', 'composition'],
+        },
+      });
+
+      await irParaRevisao();
+
+      expect(screen.getByText('Etiqueta processada')).toBeInTheDocument();
+      expect(screen.getByText(/a IA encontrou marca, tamanho e composição/)).toBeInTheDocument();
+      expect(
+        within(linha('Cor principal')).getByText('Sugerido pela IA a partir da foto.'),
+      ).toBeInTheDocument();
+      expect(
+        within(linha('Composição da etiqueta')).getByText(
+          'Extraído somente porque a etiqueta está legível.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('sem etiqueta lida, não mostra o quadro nem o aviso "Etiqueta processada"', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      expect(screen.queryByText(/Etiqueta processada/)).toBeNull();
+      expect(screen.queryByText(/Sugerido pela IA a partir da foto/)).toBeNull();
+    });
+
+    it('não mostra o resumo "3 de 3 · Revisão" (o selo do frame já diz a etapa) e mantém o "Voltar para Dados"', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      expect(screen.queryByText('3 de 3 · Revisão')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Voltar para Dados' })).toBeInTheDocument();
+    });
+
+    it('o bloco de preço mostra comissão e "Você recebe líquido no Pix"', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      const preco = screen.getByRole('region', { name: 'Preço de venda (R$)' });
+      expect(within(preco).getByText('R$ 259,90')).toBeInTheDocument();
+      expect(within(preco).getByText('Comissão Vintex (9%):')).toBeInTheDocument();
+      expect(within(preco).getByText('- R$ 23,39')).toBeInTheDocument();
+      expect(within(preco).getByText('Você recebe líquido no Pix:')).toBeInTheDocument();
+      expect(within(preco).getByText('R$ 236,51')).toBeInTheDocument();
+    });
+
+    // O frame mostra estes itens, mas não existem na revisão: ficam como pendência (#436).
+    it('não cria a caixa "Revisei…" nem o "Sugerir preço" na revisão', async () => {
+      renderFluxo('/seller/products/7/review');
+      await screen.findByText('Jaqueta de couro');
+
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(screen.queryByText(/Revisei fotos/)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Sugerir preço/ })).toBeNull();
+    });
   });
 
   // #331: a composição lida da etiqueta aparece ao lado de Marca/Tamanho.
@@ -266,7 +369,7 @@ describe('Review', () => {
     renderFluxo('/seller/products/7/review');
     await screen.findByText('Jaqueta de couro');
 
-    expect(within(linha('Composição')).getByText('100% algodão')).toBeInTheDocument();
+    expect(within(linha('Composição da etiqueta')).getByText('100% algodão')).toBeInTheDocument();
     expect(marcasDeSugerido()).toHaveLength(0);
   });
 
@@ -287,7 +390,7 @@ describe('Review', () => {
 
     await irParaRevisao();
 
-    const composicao = linha('Composição');
+    const composicao = linha('Composição da etiqueta');
     expect(within(composicao).getByText('100% algodão')).toBeInTheDocument();
     expect(within(composicao).getByRole('img', { name: 'Sugerido pela IA' })).toBeInTheDocument();
   });
@@ -296,7 +399,7 @@ describe('Review', () => {
     renderFluxo('/seller/products/7/review');
     await screen.findByText('Jaqueta de couro');
 
-    expect(within(linha('Composição')).getByText('Não informado')).toBeInTheDocument();
+    expect(within(linha('Composição da etiqueta')).getByText('Não informado')).toBeInTheDocument();
   });
 
   it('campo opcional vazio aparece como "Não informado"', async () => {
@@ -308,8 +411,8 @@ describe('Review', () => {
     renderFluxo('/seller/products/7/review');
     await screen.findByText('Jaqueta de couro');
 
-    expect(within(linha('Marca')).getByText('Não informado')).toBeInTheDocument();
-    const descricao = screen.getByRole('region', { name: 'Descrição' });
+    expect(within(linha('Marca / Origem')).getByText('Não informado')).toBeInTheDocument();
+    const descricao = screen.getByRole('region', { name: 'História e descrição da peça' });
     expect(within(descricao).getByText('Não informado')).toBeInTheDocument();
   });
 
@@ -362,7 +465,9 @@ describe('Review', () => {
     renderFluxo('/seller/products/7/review');
 
     expect(screen.getByRole('status')).toHaveTextContent('Carregando a peça...');
-    expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirmar e publicar peça →' }),
+    ).not.toBeInTheDocument();
   });
 
   it('falha ao carregar o rascunho mostra o erro, sem botão de publicar', async () => {
@@ -370,7 +475,9 @@ describe('Review', () => {
     renderFluxo('/seller/products/7/review');
 
     expect(await screen.findByText('Não foi possível carregar esta peça.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirmar e publicar peça →' }),
+    ).not.toBeInTheDocument();
   });
 
   it('não usa nenhuma cor em hex cru', async () => {
@@ -397,12 +504,12 @@ describe('Review', () => {
     await screen.findByText('R$ 100,00 – R$ 200,00');
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
-    await screen.findByRole('heading', { name: 'Revisar anúncio' });
+    await screen.findByRole('heading', { name: 'Revise sua peça antes de publicar' });
 
     expect(
       screen.getByText('Seu preço está acima da faixa sugerida. Você pode mantê-lo se preferir.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Publicar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Confirmar e publicar peça →' })).toBeEnabled();
   });
 
   it('sem sugestão pedida, a revisão não mostra alerta de preço', async () => {
@@ -427,7 +534,7 @@ describe('Review', () => {
         renderFluxo('/seller/products/7/review');
 
         const salvar = await screen.findByRole('button', { name: 'Salvar alterações' });
-        expect(screen.queryByRole('button', { name: 'Publicar' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Confirmar e publicar peça →' })).toBeNull();
 
         fireEvent.click(salvar);
 

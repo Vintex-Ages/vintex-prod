@@ -116,4 +116,22 @@ describe('<Stepper />', () => {
     expect(screen.queryByRole('button', { name: /Voltar para/ })).toBeNull();
     expect(screen.getByText('1 de 3 · Fotos')).toBeInTheDocument();
   });
+
+  it('hideProgressLabel esconde o resumo "3 de 3 · Revisão" e mantém o "Voltar para Dados"', async () => {
+    const onStepSelect = vi.fn();
+    const user = userEvent.setup();
+    render(<Stepper steps={steps} current={2} onStepSelect={onStepSelect} hideProgressLabel />);
+
+    expect(screen.queryByText('3 de 3 · Revisão')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Voltar para Dados' }));
+    expect(onStepSelect).toHaveBeenCalledWith(1);
+    // A lista horizontal (a partir de tablet) não muda.
+    expect(getSteps()).toHaveLength(3);
+  });
+
+  it('sem hideProgressLabel o resumo continua aparecendo (padrão)', () => {
+    render(<Stepper steps={steps} current={2} onStepSelect={vi.fn()} />);
+
+    expect(screen.getByText('3 de 3 · Revisão')).toBeInTheDocument();
+  });
 });

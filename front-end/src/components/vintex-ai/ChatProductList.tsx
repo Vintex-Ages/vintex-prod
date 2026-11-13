@@ -9,6 +9,8 @@ export type ChatProductListProps = {
   products: Product[];
   onOpen?: (id: string) => void;
   title?: string;
+  /** `cards` = cartão de alternativas (só resultado `fallback`, #438). */
+  layout?: 'list' | 'cards';
 };
 
 const priceFormatter = new Intl.NumberFormat('pt-BR', {
@@ -20,12 +22,17 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
  * Apresenta os produtos recebidos, em coluna até três peças e em faixa horizontal
  * acima disso. O Link cuida da navegação; onOpen apenas notifica ativações normais.
  *
+ * `layout="cards"` reúne as peças num cartão com selo: até três em grade de colunas
+ * iguais, acima disso em faixa horizontal de colunas com largura fixa.
+ *
  * Uso: <ChatProductList products={products} title="Peças sugeridas" />
+ *      <ChatProductList products={products} title="Alternativas próximas" layout="cards" />
  */
 export function ChatProductList({
   products,
   onOpen,
   title,
+  layout = 'list',
 }: ChatProductListProps): JSX.Element | null {
   if (products.length === 0) return null;
 
@@ -44,6 +51,83 @@ export function ChatProductList({
     }
 
     onOpen?.(id);
+  }
+
+  if (layout === 'cards') {
+    return (
+      <div
+        data-testid="chat-product-cards"
+        className="relative min-w-0 w-full -rotate-[0.45deg] border border-linha bg-branco-quente p-3 shadow-[4px_4px_0_0_theme(colors.papel-profundo),0_4px_6px_0_theme(colors.tinta/0.08)]"
+      >
+        <span
+          aria-hidden="true"
+          data-testid="chat-product-frame"
+          className="pointer-events-none absolute inset-[5.6px] border border-dourado/55"
+        />
+
+        <div className="mb-3 flex items-start justify-between gap-2">
+          {title ? (
+            <h3 className="min-w-0 font-display text-h4 tracking-tight text-tinta">{title}</h3>
+          ) : null}
+          <p
+            data-testid="chat-product-seal"
+            className="ml-auto flex size-[72px] shrink-0 rotate-[7deg] flex-col items-center justify-center rounded-full border border-verde-rs text-center text-label uppercase text-verde-rs"
+          >
+            <span>{products.length}</span>
+            <span>{products.length === 1 ? 'achado' : 'achados'}</span>
+            <span>{products.length === 1 ? 'real' : 'reais'}</span>
+          </p>
+        </div>
+
+        <ul
+          className={clsx(
+            'items-stretch gap-[7px]',
+            isHorizontal ? 'flex flex-nowrap overflow-x-auto pb-2' : 'grid grid-cols-3',
+          )}
+        >
+          {products.map((product) => (
+            <li
+              key={product.id}
+              className={clsx(
+                'flex min-w-0 flex-col border border-linha bg-papel-profundo p-1.5',
+                isHorizontal && 'w-32 shrink-0',
+              )}
+            >
+              <div className="aspect-[4/5] w-full overflow-hidden bg-linha">
+                {product.coverImageUrl ? (
+                  <img
+                    src={product.coverImageUrl}
+                    alt={product.name}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <ProductImagePlaceholder productName={product.name} />
+                )}
+              </div>
+
+              <p className="mt-1.5 line-clamp-2 text-label font-semibold text-tinta">
+                {product.name}
+              </p>
+              <p className="text-label font-bold text-tinta">
+                {priceFormatter.format(product.price)}
+              </p>
+              <p className="truncate text-label text-texto-auxiliar" title={product.store.name}>
+                {product.store.name}
+              </p>
+              <Link
+                to={productDetail(product.id)}
+                onClick={(event) => handleOpen(event, product.id)}
+                aria-label={`Ver peça: ${product.name}`}
+                className="mt-auto text-label font-medium text-vermelho-escuro hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+              >
+                Ver peça
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
   }
 
   return (
