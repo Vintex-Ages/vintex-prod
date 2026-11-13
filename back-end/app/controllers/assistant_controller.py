@@ -352,7 +352,9 @@ def _aviso_de_alternativas(filtros: ProductFilters, tipo: str | None = None) -> 
     if tipo and pedido:
         falta = f"{tipo.lower()} com {pedido}"
     elif tipo:
-        falta = f"{tipo.lower()} no catálogo"
+        # Só as cinco peças da tela foram conferidas: "no catálogo" afirmaria
+        # mais do que isso.
+        falta = tipo.lower()
     elif pedido:
         falta = f"peças com {pedido}"
     else:

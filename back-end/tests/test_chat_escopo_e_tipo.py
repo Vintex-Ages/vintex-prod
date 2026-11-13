@@ -177,7 +177,7 @@ def test_aviso_com_tipo_troca_a_categoria_pelo_tipo() -> None:
 def test_aviso_so_com_tipo() -> None:
     aviso = _aviso_de_alternativas(ProductFilters(category="Roupas"), tipo="Vestido")
 
-    assert aviso.startswith("Não encontrei vestido no catálogo.")
+    assert aviso.startswith("Não encontrei vestido.")
 
 
 def test_aviso_sem_filtro_nem_tipo_nao_quebra() -> None:
@@ -246,7 +246,7 @@ def test_tipo_ausente_marca_alternativa_com_as_mesmas_pecas(
     eventos = _perguntar(pg_client, "vestido")
 
     assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
-    assert eventos[1]["delta"].startswith("Não encontrei vestido no catálogo.")
+    assert eventos[1]["delta"].startswith("Não encontrei vestido.")
     assert eventos[2]["match_type"] == "fallback"
     assert _ids(eventos) == [calca.id]
 
@@ -371,6 +371,6 @@ def test_peca_de_nome_sem_tipo_nao_salva_o_rotulo(
 
     eventos = _perguntar(pg_client, "vestido")
 
-    assert eventos[1]["delta"].startswith("Não encontrei vestido no catálogo.")
+    assert eventos[1]["delta"].startswith("Não encontrei vestido.")
     assert eventos[2]["match_type"] == "fallback"
     assert _ids(eventos) == [cropped.id, calca.id]
