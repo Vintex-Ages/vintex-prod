@@ -95,6 +95,9 @@ def test_lista_separada_por_virgula_vira_lista(monkeypatch) -> None:
         # Cota do provedor esgotada (back-end#258).
         (_Erro(429, "RESOURCE_EXHAUSTED"), True),
         (Exception("429 RESOURCE_EXHAUSTED. Quota exceeded"), True),
+        # Erro do lado do Google (rodada D, 12/11).
+        (_Erro(500, "INTERNAL"), True),
+        (Exception("500 INTERNAL. An internal error has occurred."), True),
         (_Erro(404, "NOT_FOUND"), False),
         (_Erro(400, "INVALID_ARGUMENT"), False),
         (Exception("qualquer outra coisa"), False),
@@ -128,6 +131,21 @@ def test_429_no_primeiro_usa_o_segundo(monkeypatch) -> None:
         "primeiro,segundo",
         {
             "primeiro": _Erro(429, "RESOURCE_EXHAUSTED. Quota exceeded"),
+            "segundo": _Resposta(esperado),
+        },
+    )
+
+    assert p._gerar_com_fallback([]).parsed == esperado
+    assert duble.chamados == ["primeiro", "segundo"]
+
+
+def test_500_no_primeiro_usa_o_segundo(monkeypatch) -> None:
+    esperado = ImageAnalysisResult()
+    p, duble = _provider(
+        monkeypatch,
+        "primeiro,segundo",
+        {
+            "primeiro": _Erro(500, "INTERNAL. An internal error has occurred."),
             "segundo": _Resposta(esperado),
         },
     )
@@ -467,7 +485,6 @@ def test_nenhum_teto_fica_abaixo_do_minimo_da_api() -> None:
     assert mod._LEITURA_PRAZO_MS >= mod._LEITURA_TETO_POR_TENTATIVA_MS
 
 
-def test_prazo_da_leitura_deixa_lugar_para_a_busca() -> None:
-    # O API Gateway corta a requisição em 30s, e depois da leitura vêm o vetor
-    # e a busca.
+def test_prazo_da_leitura_com_a_folga_fica_abaixo_dos_30s() -> None:
+    # Só a leitura. O vetor e a busca vêm depois e não entram nesta conta.
     assert mod._LEITURA_PRAZO_MS + mod._FOLGA_DA_ESPERA_MS < 30_000

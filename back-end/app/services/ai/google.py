@@ -56,9 +56,11 @@ _GOOGLE_TIMEOUT_MS = 30_000
 # as repetições do 503 e as esperas entre elas, para quando o que sobra do prazo
 # não cabe mais uma tentativa.
 #
-# O prazo é 25s, não 30s: o API Gateway corta a requisição inteira em 30s
-# (documento de infra de 02/09), e depois da leitura ainda vêm o vetor e a
-# busca. Com 25s cabem duas tentativas que esgotam o tempo, não três: um tempo
+# O prazo é 25s, não 30s: na staging, o nginx e o CloudFront cortam a resposta
+# que passa 30s sem mandar nada (`proxy_read_timeout` e `origin_read_timeout`,
+# em `infra/`). A leitura que cai não manda evento, e depois dela ainda vêm o
+# vetor (0,3s de mediana em 15 chamadas, 13/11) e a busca. Com 25s cabem duas
+# tentativas que esgotam o tempo, não três: um tempo
 # esgotado real passa um pouco dos 10s, e na rodada D (12/11), com prazo de 30s,
 # duas leituras anunciaram o terceiro modelo e acabaram antes de chamá-lo. O 503
 # responde na hora, então 503 seguido de tempo esgotado ainda chega ao terceiro.
@@ -127,19 +129,25 @@ def modelo_de_embedding() -> str:
 
 
 def _e_indisponibilidade(exc: Exception) -> bool:
-    """503 ou 429 do provedor, pelo código do SDK ou pela mensagem.
+    """503, 500 ou 429 do provedor, pelo código do SDK ou pela mensagem.
 
     O 429 (`RESOURCE_EXHAUSTED`) é a cota do provedor esgotada, o que a camada
     gratuita responde quando acabam as requisições (back-end#258). Para quem
     pede, é o mesmo que um 503: aquele modelo não responde agora, e outro pode
     responder. Antes o 429 caía direto no erro, sem tentar o próximo.
+
+    O 500 (`INTERNAL`) é erro do lado do Google, e a documentação dele manda
+    tentar de novo. Na rodada D (12/11) foi 1 das 6 leituras que caíram, e
+    parou a cadeia no primeiro modelo.
     """
     codigo = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    if codigo in (503, 429):
+    if codigo in (503, 500, 429):
         return True
     texto = str(exc).upper()
-    return ("503" in texto and "UNAVAILABLE" in texto) or (
-        "429" in texto and "RESOURCE_EXHAUSTED" in texto
+    return (
+        ("503" in texto and "UNAVAILABLE" in texto)
+        or ("500" in texto and "INTERNAL" in texto)
+        or ("429" in texto and "RESOURCE_EXHAUSTED" in texto)
     )
 
 
@@ -454,7 +462,7 @@ class GoogleAIProvider(AIProvider):
                         motivo = "tempo esgotado"
                         lentos.add(modelo)
                     elif _e_indisponibilidade(exc):
-                        motivo = "indisponível (503)"
+                        motivo = "indisponível"
                     else:
                         raise AIProviderError(f"Falha ao {tarefa}: {exc}") from exc
 
