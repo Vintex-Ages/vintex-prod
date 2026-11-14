@@ -79,6 +79,20 @@ O "Garimpados para Você" da home ([#253](https://github.com/Vintex-Ages/back-en
 - **Nunca é erro, nunca vem vazia** enquanto houver catálogo (RN-38, RN-61). Vem o feed genérico, com `personalized: false`, em três casos: a pessoa não tem estilo no perfil; a IA falhou ao gerar o vetor do perfil; ou nenhuma peça tem vetor ainda (ambiente sem IA, como a staging).
 - **Peça publicada agora aparece** na recomendação sem rodar script, porque a publicação gera o vetor dela ([#245](https://github.com/Vintex-Ages/back-end/issues/245)).
 
+## Os dados de demonstração
+
+O seed de peças (`app/seeds/pecas.py`) existe para a busca e a recomendação terem o que acertar ([#321](https://github.com/Vintex-Ages/back-end/issues/321)). Antes, cada atributo era sorteado sozinho, inclusive o estilo, e saía "Lacoste Scarpin Preto" por R$ 48 com estilo `gotico-dark` e sempre a mesma descrição genérica. A recomendação compara o texto da peça com o texto do estilo do onboarding, e com esses dados não havia o que acertar.
+
+- **`MODELOS`: 36 modelos plausíveis de brechó, 6 por estilo.** Cada um amarra tipo, marcas, cores, faixa de preço, composição e uma descrição no vocabulário do estilo (a descrição é o que mais pesa no vetor da peça).
+- **`ESTILOS_DA_LOJA`: cada brechó tem 2 ou 3 estilos**, em rodízio, então a página da loja mostra um acervo coerente. Loja fora da lista recebe todos os estilos.
+- **O preço sai da faixa do modelo**, multiplicada pela conservação (`FATOR_CONSERVACAO`, de +25% em "Novo com etiqueta" a −40% em "Marcas de uso") e terminada em `,90`. A conservação tem pesos de brechó (`PESO_CONSERVACAO`): mais seminova e usada do que nova.
+- `STYLES` vem de `app/constants/styles.py` e os tipos saem dos modelos, sem copiar vocabulário. A composição vem preenchida ([Etiqueta e composição](./etiqueta-e-composicao)).
+- **O resultado é determinístico** (semente 42): 60 peças, 8 vendidas com data e 4 despublicadas, distribuídas entre as lojas por `índice % lojas`.
+
+**Reaplicar num banco que já tem o seed.** O seed só roda com menos de 60 peças, então um banco semeado não muda sozinho. Apague as peças das 7 lojas do seed (com `product_images` e `product_ai_corrections`), rode `python -m app.seeds.pecas` e depois `python -m scripts.backfill_embeddings`, que só gera vetor para peça sem vetor.
+
+Fora do seed: as fotos continuam `picsum`, o catálogo não tem "tamanho único" para acessório, e o estilo na peça cadastrada pelo app (formulário e análise de foto) é outra issue.
+
 ## Testar localmente
 
 `cosine_distance` só existe no Postgres com pgvector: os testes (`tests/test_find_similar.py`, `tests/test_assistant_chat.py`) rodam com `TEST_POSTGRES_URL`. Com a IA configurada no `.env`, o chat no Swagger (`POST /api/ai/chat`) usa a consulta de verdade sobre o catálogo do seed depois do backfill.

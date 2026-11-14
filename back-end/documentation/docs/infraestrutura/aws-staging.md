@@ -27,7 +27,8 @@ O responsável executa bootstrap, apply e deploy com o perfil AWS autorizado na 
 | Horário | Brasília, seg–sex liga 10h/desliga 22h; varredura diária desliga 02h |
 
 Tags: `Project=Vintex`, `Environment=staging`, `ManagedBy=Terraform`.
-Não há Elastic IP, SSH, CloudFront, RDS, backup, pipeline ou recurso de produção.
+Não há SSH, RDS, backup, pipeline ou recurso de produção. Elastic IP e CloudFront existem
+só no preview aberto, que é opcional (`public_preview`, [#301](https://github.com/Vintex-Ages/back-end/issues/301)); ver a seção do preview mais abaixo.
 O banco continua sendo **db:5432 do Compose**, com pgvector/Postgres 16 e migrations
 existentes; Terraform não cria outro banco.
 
