@@ -14,8 +14,8 @@ Fonte de verdade: `AssistantController.chat` (`app/controllers/assistant_control
 
 | `type` | Quando | Campos |
 |---|---|---|
-| `interpreted` | a pergunta foi interpretada | `filters` (nomes do catálogo: `category`, `price_max`...), `similarity` |
-| `text` | nada casou com os filtros e as peças são alternativas | `delta`: o aviso, com o que faltou |
+| `interpreted` | a pergunta foi interpretada | `filters` (nomes do catálogo: `category`, `price_max`...), `similarity`, `tipo`, `in_scope`. Fora do escopo, `filters` vem vazio e `similarity` nulo |
+| `text` | as peças são alternativas: nada casou com os filtros, nenhuma é do tipo pedido, ou a pergunta é fora do escopo | `delta`: o aviso, com o que faltou |
 | `products` | a busca respondeu, mesmo sem nada parecido | `products`: as peças, no formato do feed; `match_type`: `exact` ou `fallback` |
 | `error` | sem pergunta, ou falha do provedor de IA | `message` |
 | `error` com `code: quota_exceeded` | a cota do dia acabou | `message`, `retry_at` (ISO 8601, UTC) |
@@ -35,9 +35,19 @@ Antes da [#260](https://github.com/Vintex-Ages/back-end/issues/260), tudo era si
 
 A conversa anterior vai junto para a IA (os 6 últimos turnos): "e em vermelho?", depois de "tênis de corrida", vira `Sapatos` e `Vermelho`.
 
-**Nada casou com o filtro** (RN-61): a resposta nunca vem vazia enquanto houver catálogo. Primeiro, só a categoria: quem pediu "bota bege" e não tem nenhuma vê botas de outra cor. Se nem a categoria tiver peça, o catálogo todo. Nos dois casos, `products` vem com `match_type: "fallback"`, e um evento `text` antes diz o que faltou: "Não encontrei peças com Sapatos e Bege. Estas são alternativas, as mais parecidas com o que você pediu."
+**Nada casou com o filtro** (RN-61): a resposta nunca vem vazia enquanto houver catálogo. Primeiro, só a categoria: quem pediu "bota bege" e não tem nenhuma vê botas de outra cor. Se nem a categoria tiver peça, o catálogo todo. Nos dois casos, `products` vem com `match_type: "fallback"`, e um evento `text` antes diz o que faltou: "Não encontrei peças com Sapatos e Bege. Estas são alternativas, as mais parecidas com o que você pediu." Com o tipo lido (abaixo), ele fica no lugar da categoria: "Não encontrei bota com Bege."
+
+## Tipo de peça e fora do escopo
+
+A categoria tem três valores, e "vestido" e "calça" são os dois `Roupas` ([#231](https://github.com/Vintex-Ages/back-end/issues/231)). A leitura da pergunta diz também o **tipo** pedido (`tipo`, um valor de `TIPOS_DE_PECA`) e se a pergunta é sobre o que a Vintex vende (`in_scope`). Nenhum dos dois vira filtro: os dois só mudam o rótulo e o aviso.
+
+- **Tipo**: a peça não guarda o tipo, ele é lido do nome, palavra a palavra, sem acento e pela raiz ("Botas", "Botinha" e "Botina" são Bota; "Vestidão" é Vestido). Palavras que a raiz confundiria ("botão", "bolso", "calcinha", "cinta" e as derivadas com "zinho") ficam de fora; a lista é `_NAO_SAO_TIPO`, em `app/constants/catalog.py`. Se nenhuma das cinco peças é do tipo pedido, as mesmas peças vêm como `fallback`, com "Não encontrei vestido." antes. O aviso não diz "no catálogo", porque só as cinco peças da tela foram conferidas. **Limite:** o aviso sai sempre que nenhuma das cinco nomeia o tipo pedido. Peça cujo nome só diz o modelo ("Nike Air Force 1"), ou usa palavra que a lista não conhece ("Moletinho", "Relogião"), não é de tipo nenhum: entre cinco peças assim, para quem pediu tênis, o tênis aparece na tela com "Não encontrei tênis".
+- **Fora do escopo** (`in_scope: false`, "geladeira brastemp"): a busca ignora os filtros lidos e devolve as mais parecidas como `fallback`, com o aviso de que a Vintex vende roupas, sapatos e acessórios de brechó. O evento `interpreted` vai com `filters` vazio e sem `similarity`, porque a busca não usou nenhum dos dois.
+- Sem `tipo` e sem `in_scope` (o modelo não preencheu), o comportamento é o de antes.
 
 **A interpretação falhou** (modelo fora do ar, cota do provedor): a busca segue só por similaridade, sem o evento `interpreted`, como era antes. A IA ajuda, mas não trava a conversa (RN-57).
+
+Medido na [#260](https://github.com/Vintex-Ages/back-end/issues/260), antes da #231 e com o seed daquela época; o seed de hoje não tem vestido ativo.
 
 | Pergunta (seed, Gemini real) | Filtros lidos | Primeira peça |
 |---|---|---|
