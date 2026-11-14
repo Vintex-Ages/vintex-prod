@@ -12,8 +12,8 @@ from app.services.ai.base import ImageAnalysisResult, ImagePhoto, SuggestedField
 from app.services.ai.etiqueta import RespostaDaFoto, analise_da_resposta
 
 
-def campo(valor: str) -> SuggestedField:
-    return SuggestedField(value=valor, confidence=0.9)
+def campo(valor: str, confianca: float | None = 1.0) -> SuggestedField:
+    return SuggestedField(value=valor, confidence=confianca)
 
 
 def resposta(label_text=None, **campos) -> RespostaDaFoto:
@@ -85,6 +85,31 @@ def test_composicao_depende_de_haver_texto_lido():
 
     assert sem.composition is None
     assert com.composition.value == "95% poliéster, 5% elastano"
+
+
+def test_marca_inventada_com_texto_lido_inventado_cai_pela_confianca():
+    """O que o Gemini respondeu para a blusa bordada em 14/11."""
+    r = RespostaDaFoto(
+        label_text="Keds M",
+        category=campo("Roupas"),
+        brand=campo("Keds", 0.9),
+        size=campo("M", 0.9),
+    )
+
+    analise = analise_da_resposta(r)
+
+    assert analise.brand is None
+    assert analise.size is None
+    assert analise.category is not None
+
+
+@pytest.mark.parametrize(
+    ("confianca", "fica"), [(1.0, True), (0.95, True), (0.94, False), (None, True)]
+)
+def test_corte_de_confianca_da_marca(confianca, fica):
+    r = RespostaDaFoto(label_text="ZARA BASIC", brand=campo("ZARA BASIC", confianca))
+
+    assert (analise_da_resposta(r).brand is not None) is fica
 
 
 def test_a_analise_sai_sem_o_texto_lido():

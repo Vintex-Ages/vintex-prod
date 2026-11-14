@@ -16,9 +16,18 @@ import logging
 import re
 import unicodedata
 
-from app.services.ai.base import ImageAnalysisResult
+from app.services.ai.base import ImageAnalysisResult, SuggestedField
 
 logger = logging.getLogger(__name__)
+
+# Marca e tamanho só com quase certeza. Medido em 14/11 contra o Gemini, 11
+# chamadas: as marcas que estão na foto (Levi's, Zara Basic, KIIKII) vieram
+# sempre com 1,0; a marca inventada da blusa bordada veio com 0,8 e 0,9, e com
+# um nome diferente a cada chamada (Keds, Kook), junto de um texto lido também
+# inventado ("Keds M"). No tamanho não separa tão limpo: o "M" da camiseta,
+# que está na etiqueta, veio uma vez com 0,9. O corte vale para os dois porque
+# o vendedor preenche o campo vazio e não percebe o valor errado.
+CONFIANCA_MINIMA = 0.95
 
 
 class RespostaDaFoto(ImageAnalysisResult):
@@ -36,6 +45,10 @@ def analise_da_resposta(resposta: ImageAnalysisResult) -> ImageAnalysisResult:
       pontuação: "Levi's" casa com "LEVI'S" e com "Levi Strauss" (RN-58).
     - **Tamanho só fica se for uma palavra do texto lido**: "M" casa com
       "KORA M", e não com "MADE IN".
+    - **Marca e tamanho precisam de confiança de pelo menos
+      `CONFIANCA_MINIMA`.** O modelo também inventa o texto lido, e aí a
+      conferência acima não pega; a confiança baixa pega. Sem confiança
+      informada, vale só a conferência do texto.
     - **Composição só depende de haver texto lido**: ela é copiada da etiqueta
       com quebra de linha e pontuação próprias, e comparar o texto descartaria
       a composição certa.
@@ -51,10 +64,14 @@ def analise_da_resposta(resposta: ImageAnalysisResult) -> ImageAnalysisResult:
         nome: getattr(resposta, nome) for nome in ImageAnalysisResult.model_fields
     }
     marca = campos["brand"]
-    if marca is not None and not _contem(corrido, "".join(_palavras(marca.value))):
+    if marca is not None and (
+        _pouca_confianca(marca) or not _contem(corrido, "".join(_palavras(marca.value)))
+    ):
         _descartar(campos, "brand", texto)
     tamanho = campos["size"]
-    if tamanho is not None and "".join(_palavras(tamanho.value)) not in palavras:
+    if tamanho is not None and (
+        _pouca_confianca(tamanho) or "".join(_palavras(tamanho.value)) not in palavras
+    ):
         _descartar(campos, "size", texto)
     if campos["composition"] is not None and not palavras:
         _descartar(campos, "composition", texto)
@@ -66,15 +83,20 @@ def _palavras(texto: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", sem_acento.lower())
 
 
+def _pouca_confianca(campo: SuggestedField) -> bool:
+    return campo.confidence is not None and campo.confidence < CONFIANCA_MINIMA
+
+
 def _contem(corrido: str, valor: str) -> bool:
     return bool(valor) and valor in corrido
 
 
 def _descartar(campos: dict, nome: str, texto: str) -> None:
     logger.info(
-        "Análise da foto: %s %r descartado, não está no texto lido (%r).",
+        "Análise da foto: %s %r (confiança %s) descartado; texto lido: %r.",
         nome,
         campos[nome].value,
+        campos[nome].confidence,
         texto,
     )
     campos[nome] = None
