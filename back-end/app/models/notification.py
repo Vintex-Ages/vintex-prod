@@ -14,11 +14,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base_model import BaseModel
 
-# Os dois eventos da RN-85: a venda, ao vendedor, e o favorito, ao anunciante.
-# Os nomes são os do modelo do front (`front-end/src/types/notification.ts`).
-# A despublicação pela administradora (RN-80, VS-034) é um terceiro tipo, que
-# entra aqui e no CHECK quando chegar: a coluna já é texto, não booleano.
-NotificationType = Literal["sale", "favorite"]
+# Os eventos de aviso in-app: a venda, ao vendedor (RN-85), o favorito, ao
+# anunciante, e a suspensão do anúncio pela administradora, ao vendedor
+# (RN-80, back-end#327). Os nomes são os do modelo do front
+# (`front-end/src/types/notification.ts`).
+NotificationType = Literal["sale", "favorite", "moderation"]
 NOTIFICATION_TYPES: tuple[str, ...] = get_args(NotificationType)
 NOTIFICATION_TYPE_CHECK = "type IN ({})".format(
     ", ".join(f"'{tipo}'" for tipo in NOTIFICATION_TYPES)
@@ -38,6 +38,9 @@ class Notification(BaseModel):
     pedido na venda. `order_id` só existe na venda. `actor_id` é quem
     favoritou: não sai na resposta, existe para o índice único impedir que
     favoritar, desfavoritar e favoritar de novo avise duas vezes.
+    `moderation_reason` só existe na suspensão: é o motivo que a administradora
+    gravou na peça, porque o aviso sem ele não diz ao vendedor por que o
+    anúncio saiu do ar (RN-80).
     """
 
     __tablename__ = "notifications"
@@ -47,6 +50,14 @@ class Notification(BaseModel):
             "(type = 'sale' AND order_id IS NOT NULL)"
             " OR (type <> 'sale' AND order_id IS NULL)",
             name="ck_notifications_order",
+        ),
+        # A suspensão carrega o motivo: o sino precisa dizer por que a peça saiu
+        # do ar, e a peça pode voltar (o motivo dela é apagado) sem apagar o
+        # histórico do aviso.
+        CheckConstraint(
+            "(type = 'moderation' AND moderation_reason IS NOT NULL)"
+            " OR (type <> 'moderation' AND moderation_reason IS NULL)",
+            name="ck_notifications_moderation",
         ),
         # A lista do usuário, mais recente primeiro.
         Index("ix_notifications_user_id_created_at", "user_id", "created_at"),
@@ -69,4 +80,5 @@ class Notification(BaseModel):
     )
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
     actor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
+    moderation_reason: Mapped[str | None] = mapped_column(String(500))
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
