@@ -21,9 +21,10 @@ não é o 127.0.0.1. Se a cota acabar no meio, o caso sai da conta e a conversa
 para.
 
 **Os perfis de estilo não passam pela rota**, que exige login: o script monta o
-texto e o vetor do perfil pelas mesmas funções da recomendação
-(`app/services/style_profile.py`) e chama `find_similar` como
-`RecommendationController.recommend`.
+`RecommendationController.recommend_for` com as preferências do perfil, o
+mesmo código da home sem criar usuário. O vetor do perfil sai antes, pela
+mesma função e com o mesmo cache: uma falha do provedor aparece como falha, e
+não como a recomendação genérica que a home mostra nesse caso.
 
 **As fotos chamam `analyze_image_bytes` direto**, o mesmo prompt do cadastro e
 da busca por foto. O número da história é por foto: categoria e cor certas. Cada
@@ -79,13 +80,13 @@ from sqlalchemy import func, select
 
 from app.config import settings
 from app.constants.catalog import CATEGORIES, COLORS, CONDITIONS, SIZES
+from app.controllers.recommendation_controller import RecommendationController
 from app.core.pagination import DEFAULT_PAGE_SIZE, PageParams
 from app.database import SessionLocal, engine
 from app.models.ai_chat_usage import AIChatUsage
 from app.models.product import Product
 from app.models.user_preference import UserPreference
 from app.repositories.ai_chat_usage_repository import AIChatUsageRepository
-from app.repositories.product_repository import ProductRepository
 from app.seeds.pecas import MODELOS
 from app.services.ai import AIProviderError, get_ai_provider
 from app.services.ai.base import ImagePhoto
@@ -360,18 +361,30 @@ def rodar_perfil(
     db, caso: dict[str, Any], catalogo: dict[int, dict[str, Any]]
 ) -> dict[str, Any]:
     estilos = caso["estilos"]
-    texto = texto_do_perfil([UserPreference(type="estilo", value=v) for v in estilos])
+    preferencias = [UserPreference(type="estilo", value=v) for v in estilos]
+    texto = texto_do_perfil(preferencias)
     try:
-        vetor, modelo = vetor_do_perfil(texto)
+        # Fica em cache: o controller reusa o vetor e não chama a IA de novo.
+        vetor_do_perfil(texto)
     except AIProviderError as exc:
         return {
             "estilos": estilos,
             "invalido": f"falha do provedor: {exc}"[:300],
             "falha": True,
         }
-    rows, _ = ProductRepository(db).find_similar(
-        vetor, modelo, PageParams(page=1, page_size=DEFAULT_PAGE_SIZE)
+    resposta = RecommendationController(db).recommend_for(
+        preferencias, PageParams(page=1, page_size=DEFAULT_PAGE_SIZE)
     )
+    if not resposta.personalized:
+        return {
+            "estilos": estilos,
+            "invalido": "recomendação genérica: nenhuma peça com vetor do modelo",
+            "falha": True,
+        }
+    rows = [
+        {"id": r.id, "name": r.name, "price": r.price, "store_name": r.store.name}
+        for r in resposta.items
+    ]
     disponiveis = sum(1 for p in catalogo.values() if p["style"] in estilos)
     k = min(DEFAULT_PAGE_SIZE, disponiveis)
     primeiras = [r["id"] for r in rows[:k]]
