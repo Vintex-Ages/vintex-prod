@@ -286,6 +286,7 @@ class ProductRepository:
         *,
         exclude_category: str | None = None,
         exclude_product_id: int | None = None,
+        prefer_styles: Sequence[str] = (),
     ) -> tuple[list[ProductSimilarRow], int]:
         """Peças ativas mais próximas do vetor da busca, paginadas, e o total
         (BE-US027-3, back-end#149; paginação, filtros e distância na #246).
@@ -302,6 +303,10 @@ class ProductRepository:
         - **`exclude_category` e `exclude_product_id`** servem à combinação de
           peças (back-end#328): a mesma semelhança, com a categoria da peça de
           origem e ela mesma fora (`_exclusoes`).
+        - **`prefer_styles`** serve à recomendação (back-end#346): as peças
+          cujo `style` está na lista vêm antes das outras, e cada grupo segue
+          pela semelhança. Ninguém sai da lista: com menos peças do estilo que
+          a página, as outras completam.
 
         Nunca inventa peça: só o que já existe no catálogo real (RN-65).
         """
@@ -319,9 +324,14 @@ class ProductRepository:
             )
         )
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        estilo_primeiro = (
+            [case((Product.style.in_(list(prefer_styles)), 0), else_=1)]
+            if prefer_styles
+            else []
+        )
         rows = (
             self.db.execute(
-                stmt.order_by(distancia, Product.id)
+                stmt.order_by(*estilo_primeiro, distancia, Product.id)
                 .offset(params.offset)
                 .limit(params.limit)
             )
