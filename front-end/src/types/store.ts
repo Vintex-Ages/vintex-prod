@@ -10,9 +10,18 @@ export interface StoreMetrics {
   activeProducts: number;
   soldProducts: number;
   monthsOnPlatform: number;
-  /** RN-74 — só existem quando o back tiver dado suficiente; opcionais de propósito. */
+  /** RN-74 — a loja pode não ter avaliações. */
   shippingWithoutComplaintRate?: number;
-  rating?: number;
+  rating?: number | null;
+  ratingCount?: number;
+}
+
+export interface StoreRating {
+  id: string;
+  storeId: string;
+  orderId: string;
+  score: number;
+  createdAt: string;
 }
 
 export interface StoreProfile {

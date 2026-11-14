@@ -8,6 +8,7 @@ import type {
   StoreInput,
   StoreMetrics,
   StoreProfile,
+  StoreRating,
   StoreSummary,
   StoreVerification,
 } from '@/types/store';
@@ -154,6 +155,8 @@ const EMPTY_STORE_METRICS: StoreMetrics = {
   activeProducts: 0,
   soldProducts: 0,
   monthsOnPlatform: 0,
+  rating: null,
+  ratingCount: 0,
 };
 
 function wait(ms: number): Promise<void> {
@@ -310,9 +313,24 @@ async function mockRequestVerification(): Promise<StoreProfile> {
  * lista de lojas separada.
  */
 function mockGetStore(id: string): StoreProfile {
+  const withRatings = (store: StoreProfile): StoreProfile => {
+    const ratings = [...mockRatingsByOrder.values()].filter((rating) => rating.storeId === id);
+    if (ratings.length === 0) return store;
+    const baseCount = store.metrics?.ratingCount ?? 0;
+    const baseRating = store.metrics?.rating ?? null;
+    const total = baseCount + ratings.length;
+    const sum =
+      (baseRating ?? 0) * baseCount + ratings.reduce((acc, rating) => acc + rating.score, 0);
+    return {
+      ...store,
+      metrics: store.metrics
+        ? { ...store.metrics, rating: Math.round((sum / total) * 10) / 10, ratingCount: total }
+        : undefined,
+    };
+  };
   const created = readStores()[id];
   if (created) {
-    return created;
+    return withRatings(created);
   }
 
   const product = mockProducts.find((item) => item.store.id === id);
@@ -326,7 +344,8 @@ function mockGetStore(id: string): StoreProfile {
   const activeProducts = mockProducts.filter(
     (item) => item.store.id === id && item.status === 'ativo',
   ).length;
-  return {
+
+  return withRatings({
     id: store.id,
     name: store.name,
     description: 'Brechó com curadoria de peças únicas.',
@@ -341,8 +360,9 @@ function mockGetStore(id: string): StoreProfile {
       monthsOnPlatform: 18,
       shippingWithoutComplaintRate: 0.96,
       rating: 4.8,
+      ratingCount: 25,
     },
-  };
+  });
 }
 
 /** RN-42 / back-end#256: `q` casa só o nome da loja, sem diferenciar maiúscula. */
@@ -433,6 +453,8 @@ interface ApiStoreMetrics {
   products_sold: number;
   /** back-end#256: contagem só de peças `ativo`, se o perfil passar a mandá-la à parte. */
   active_count?: number;
+  rating: number | null;
+  rating_count: number;
 }
 
 interface ApiStoreProfile {
@@ -511,6 +533,8 @@ function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
     activeProducts: metrics.active_count ?? metrics.products_listed,
     soldProducts: metrics.products_sold,
     monthsOnPlatform: mesesNaPlataforma(metrics.created_at),
+    rating: metrics.rating ?? null,
+    ratingCount: metrics.rating_count,
   };
 }
 
@@ -573,6 +597,7 @@ function toStoreError(error: unknown): StoreError {
   if (data?.error?.code) {
     return new StoreError(data.error.code, data.error.message ?? 'Erro ao consultar loja.');
   }
+  if (error instanceof StoreError) return error;
   return new StoreError('INTERNAL_ERROR', 'Erro ao consultar loja.');
 }
 
@@ -665,6 +690,7 @@ async function apiCreateStore(input: StoreInput): Promise<StoreProfile> {
 /**
  * `GET /api/users/me/store` (back-end#141) devolve a loja **do ponto de vista
  * do dono** — `StoreResponse`, com documento e termos — e não o retrato
+
  * público de `GET /api/stores/{id}`. São dois formatos diferentes para a mesma
  * entidade, e por isso dois mapeadores.
  *
@@ -696,9 +722,6 @@ function mapMyStore(store: ApiMyStore): StoreProfile {
     name: store.name,
     description: store.description ?? '',
     logoUrl: store.logo_url,
-    // Desde o `back-end#216` esta rota devolve endereço. Loja criada antes
-    // dele, ou sem endereço informado, continua vindo sem — a tela esconde a
-    // linha em vez de quebrar.
     city: store.address?.city ?? '',
     state: store.address?.state ?? '',
     verification: store.verified === true ? 'confiavel' : 'pendente',
@@ -712,9 +735,7 @@ async function apiReadMyStore(): Promise<ApiMyStore | null> {
     return data;
   } catch (error) {
     const status = (error as { response?: { status?: number } }).response?.status;
-    if (status === 404) {
-      return null;
-    }
+    if (status === 404) return null;
     throw toStoreError(error);
   }
 }
@@ -724,7 +745,6 @@ async function apiGetMyStore(): Promise<StoreProfile | null> {
   return store === null ? null : mapMyStore(store);
 }
 
-/** A mesma resposta privada, com o que só o dono vê (FE-US006-4, #335). */
 function mapMyStoreDetails(store: ApiMyStore): MyStoreDetails {
   return {
     id: String(store.id),
@@ -755,12 +775,6 @@ async function apiGetMyStoreDetails(): Promise<MyStoreDetails | null> {
   return store === null ? null : mapMyStoreDetails(store);
 }
 
-/**
- * `PATCH /api/users/me/store` (back-end#221): só vão as chaves presentes em
- * `update`, porque campo ausente não é apagado. Logo nova sobe antes pela rota
- * de mídia, como na criação; `logo: null` tira a logo. O documento não vai:
- * não é alterável por aqui. Sem loja, o back responde 404.
- */
 async function apiUpdateMyStore(update: StoreUpdate): Promise<MyStoreDetails> {
   try {
     const body: Record<string, unknown> = {};
@@ -781,24 +795,14 @@ async function apiUpdateMyStore(update: StoreUpdate): Promise<MyStoreDetails> {
   }
 }
 
-/**
- * Ação explícita: o POST devolve `{ verified: boolean }`, sem perfil.
- * Mantém a leitura privada após a ação para obter o restante da loja;
- * o selo segue o boolean autoritativo da operação, inclusive quando false.
- * Essa leitura não faz parte do carregamento inicial do painel (#359).
- */
 async function apiRequestVerification(): Promise<StoreProfile> {
   try {
     const { data } = await httpClient.post<{ verified: boolean }>('/users/me/store/verification');
     const loja = await apiGetMyStore();
-    if (loja === null) {
-      throw storeNotCreated();
-    }
+    if (loja === null) throw storeNotCreated();
     return { ...loja, verification: data.verified === true ? 'confiavel' : 'pendente' };
   } catch (error) {
-    if (error instanceof StoreError) {
-      throw error;
-    }
+    if (error instanceof StoreError) throw error;
     throw toStoreError(error);
   }
 }
@@ -833,11 +837,6 @@ async function apiGetStoreProducts(
   { page = 1, pageSize = DEFAULT_PAGE_SIZE }: StoreProductsParams,
 ): Promise<Paginated<Product>> {
   try {
-    // A rota devolve só a peça, sem repetir a loja em cada item, o que está
-    // certo — mas o `ProductCard` mostra o nome da loja, e sem ele cada card
-    // fica com uma linha em branco. Buscar o perfil junto custa uma requisição
-    // a mais numa tela que já carrega esse mesmo perfil; se virar problema, o
-    // caminho é a página passar a loja que ela já tem.
     const [resposta, loja] = await Promise.all([
       httpClient.get<ApiPage<ApiStoreProductItem>>(`/stores/${id}/products`, {
         params: { page, page_size: pageSize },
@@ -862,12 +861,8 @@ async function apiGetStoreProducts(
 // ---- API pública do service ----
 
 export async function createStore(input: StoreInput): Promise<StoreProfile> {
-  if (!useMocks) {
-    return apiCreateStore(input);
-  }
+  if (!useMocks) return apiCreateStore(input);
   const store = await mockCreateStore(input);
-  // Na API real o back marca `is_seller` ao criar a loja; no mock, quem faz
-  // isso é o authService — senão `refreshUser()` nunca vê a conta como vendedora.
   await markCurrentAccountAsSeller();
   return store;
 }
@@ -876,43 +871,18 @@ export async function getMyStore(): Promise<StoreProfile | null> {
   return useMocks ? mockGetMyStore() : apiGetMyStore();
 }
 
-/**
- * Situação do selo Confiável da loja do vendedor logado (FE-US007-1, #224),
- * ou `null` sem loja. Mantida para consumidores sem a loja carregada.
- * Com back-end#259, lê o selo na resposta privada. Somente o contrato
- * legado sem `verified` ainda consulta o perfil público. O painel recebe
- * a loja da guarda e não usa esta consulta no carregamento inicial (#359).
- */
 export async function getMyVerification(): Promise<StoreVerification | null> {
-  if (useMocks) {
-    return (await mockGetMyStore())?.verification ?? null;
-  }
+  if (useMocks) return (await mockGetMyStore())?.verification ?? null;
   const loja = await apiReadMyStore();
   if (loja === null) return null;
   if (typeof loja.verified === 'boolean') return mapMyStore(loja).verification;
   return (await apiGetStore(String(loja.id))).verification;
 }
 
-/**
- * A própria loja com documento, endereço e chave Pix, para a tela de edição
- * (FE-US006-4, #335). `null` quando o usuário ainda não tem loja.
- *
- * Usage:
- *   const loja = await getMyStoreDetails();
- */
 export async function getMyStoreDetails(): Promise<MyStoreDetails | null> {
   return useMocks ? mockGetMyStoreDetails() : apiGetMyStoreDetails();
 }
 
-/**
- * Edita a própria loja (back-end#221). Envio parcial: só muda o que vier em
- * `update`; mandar só a logo não apaga descrição, endereço nem chave Pix. Sem
- * loja, rejeita com `STORE_NOT_FOUND`.
- *
- * Usage:
- *   await updateMyStore({ logo: arquivo });
- *   await updateMyStore({ address, pixKey: 'nova@pix' });
- */
 export async function updateMyStore(update: StoreUpdate): Promise<MyStoreDetails> {
   return useMocks ? mockUpdateMyStore(update) : apiUpdateMyStore(update);
 }
@@ -925,13 +895,6 @@ export async function getStore(id: string): Promise<StoreProfile> {
   return useMocks ? mockGetStore(id) : apiGetStore(id);
 }
 
-/**
- * Brechós pelo nome (RN-42), para a página "Brechós do RS" (#330). `q` vazio
- * lista todas; casa só o nome da loja, nunca a cidade (back-end#256). Pública.
- *
- * Usage:
- *   const { items, total } = await searchStores('reden');
- */
 export async function searchStores(q = '', page = 1): Promise<Paginated<StoreSummary>> {
   return useMocks ? mockSearchStores(q, page) : apiSearchStores(q, page);
 }
@@ -941,4 +904,77 @@ export async function getStoreProducts(
   params: StoreProductsParams = {},
 ): Promise<Paginated<Product>> {
   return useMocks ? mockGetStoreProducts(id, params) : apiGetStoreProducts(id, params);
+}
+
+/** Avaliação criada pelo backend (back-end#332). */
+interface ApiStoreRating {
+  id: number | string;
+  store_id: number | string;
+  order_id: number | string;
+  score: number;
+  created_at: string;
+}
+
+function mapStoreRating(rating: ApiStoreRating): StoreRating {
+  return {
+    id: String(rating.id),
+    storeId: String(rating.store_id),
+    orderId: String(rating.order_id),
+    score: rating.score,
+    createdAt: rating.created_at,
+  };
+}
+
+/** Uma avaliação por pedido; estado compartilhado entre chamadas no modo mock. */
+const mockRatingsByOrder = new Map<string, StoreRating>();
+let mockRatingSequence = 0;
+
+async function mockRateStore(
+  storeId: string,
+  orderId: string,
+  score: number,
+): Promise<StoreRating> {
+  await me();
+
+  if (!Number.isInteger(score) || score < 1 || score > 5) {
+    throw new StoreError('VALIDATION_ERROR', 'A nota deve ser um inteiro de 1 a 5.');
+  }
+
+  mockGetStore(storeId);
+
+  if (mockRatingsByOrder.has(orderId)) {
+    throw new StoreError('ALREADY_RATED', 'Este pedido já foi avaliado.');
+  }
+
+  const rating: StoreRating = {
+    id: String(++mockRatingSequence),
+    storeId,
+    orderId,
+    score,
+    createdAt: new Date().toISOString(),
+  };
+
+  mockRatingsByOrder.set(orderId, rating);
+  return { ...rating };
+}
+
+async function apiRateStore(storeId: string, orderId: string, score: number): Promise<StoreRating> {
+  try {
+    const { data } = await httpClient.post<ApiStoreRating>(`/stores/${storeId}/ratings`, {
+      order_id: Number(orderId),
+      score,
+    });
+    return mapStoreRating(data);
+  } catch (error) {
+    throw toStoreError(error);
+  }
+}
+
+/** RN-75/RN-76: apenas nota, sem comentário; autorização validada pelo backend. */
+export async function rateStore(
+  storeId: string,
+  orderId: string,
+  score: number,
+): Promise<StoreRating> {
+  return useMocks ? mockRateStore(storeId, orderId, score) : apiRateStore(storeId, orderId, score);
 }
