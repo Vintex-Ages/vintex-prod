@@ -1,0 +1,15 @@
+{
+  "sobre": "Perfis de estilo de referência (back-end#326). Cada perfil é a lista de estilos que o onboarding grava; o script monta o texto e o vetor como a recomendação faz (app/services/style_profile.py) e pede as peças parecidas como RecommendationController.recommend.",
+  "definicao": "k = o menor entre 20 (a página da home) e as peças ativas dos estilos declarados. acerto = 80% ou mais das k primeiras são dos estilos declarados",
+  "meta": {"proposta": 0.8, "calibrada_em": "2026-11-12T134643Z", "nota": "Rodada 2026-11-12T134643Z: 1 de 8. Em média, 54% das primeiras peças são dos estilos declarados; streetwear, 29%. Abaixo da meta da VS-029, que fica: back-end#346."},
+  "casos": [
+    {"estilos": ["vintage-80-90"]},
+    {"estilos": ["streetwear"]},
+    {"estilos": ["alfaiataria"]},
+    {"estilos": ["gotico-dark"]},
+    {"estilos": ["boho-romantico"]},
+    {"estilos": ["y2k"]},
+    {"estilos": ["streetwear", "y2k"]},
+    {"estilos": ["alfaiataria", "boho-romantico"]}
+  ]
+}
