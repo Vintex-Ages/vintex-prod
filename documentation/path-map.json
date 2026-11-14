@@ -1,0 +1,22 @@
+{
+  "$schema": "Mapa caminho → página. Padrões relativos à raiz; * e ** aceitam subdiretórios. A primeira correspondência vence.",
+  "map": [
+    { "pattern": "README.md", "page": "intro" },
+    { "pattern": "CONTRIBUTING.md", "page": "governanca/pull-requests" },
+    { "pattern": "components/front-end/**", "page": "operacao/promocoes" },
+    { "pattern": "components/back-end/**", "page": "operacao/promocoes" },
+    { "pattern": "components/**", "page": "arquitetura/gitops" },
+    { "pattern": ".github/scripts/**", "page": "governanca/pull-requests" },
+    { "pattern": ".github/workflows/**", "page": "governanca/pull-requests" },
+    { "pattern": ".github/pull_request_template.md", "page": "governanca/pull-requests" },
+    { "pattern": "config/governance/**", "page": "governanca/pull-requests" },
+    { "pattern": "docs/aws-roadmap.md", "page": "operacao/aws" },
+    { "pattern": "scripts/docs/**", "page": "governanca/pull-requests" },
+    { "pattern": "documentation/docs/intro.md", "page": "intro" },
+    { "pattern": "documentation/docs/arquitetura/**", "page": "arquitetura/gitops" },
+    { "pattern": "documentation/docs/governanca/**", "page": "governanca/pull-requests" },
+    { "pattern": "documentation/docs/operacao/aws.md", "page": "operacao/aws" },
+    { "pattern": "documentation/docs/operacao/promocoes.md", "page": "operacao/promocoes" },
+    { "pattern": "documentation/**", "page": "intro" }
+  ]
+}
