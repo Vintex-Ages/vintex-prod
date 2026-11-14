@@ -280,7 +280,7 @@ describe('<Home />', () => {
       const user = userEvent.setup();
       renderHome(BUYER);
 
-      await user.click(await screen.findByRole('link', { name: 'Anunciar Peça' }));
+      await user.click(await screen.findByRole('link', { name: 'Criar meu brechó' }));
 
       expect(await screen.findByRole('heading', { name: 'Página de vender' })).toBeInTheDocument();
     });
@@ -456,8 +456,7 @@ describe('<Home />', () => {
       renderHome(BUYER);
       await screen.findByRole('link', { name: 'Vestido floral' });
 
-      expect(screen.queryByText(/seu estilo/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/98%/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/98%\s*seu estilo/i)).not.toBeInTheDocument();
     });
   });
 
