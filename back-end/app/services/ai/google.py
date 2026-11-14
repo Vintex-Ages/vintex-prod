@@ -31,6 +31,7 @@ from app.services.ai.base import (
     SearchDone,
     SearchStreamEvent,
 )
+from app.services.ai.etiqueta import RespostaDaFoto, analise_da_resposta
 from app.services.ai.media_urls import image_download_url
 from app.services.ai.search_interpretation import (
     INTERPRET_SEARCH_PROMPT,
@@ -274,10 +275,12 @@ class GoogleAIProvider(AIProvider):
 
         parsed = result.parsed
         if isinstance(parsed, ImageAnalysisResult):
-            return parsed
+            return analise_da_resposta(parsed)
         if result.text:
             try:
-                return ImageAnalysisResult.model_validate_json(result.text)
+                return analise_da_resposta(
+                    RespostaDaFoto.model_validate_json(result.text)
+                )
             except ValueError as exc:
                 raise AIProviderError(
                     f"Resposta do provedor não bate com o formato esperado: {exc}"
@@ -369,7 +372,7 @@ class GoogleAIProvider(AIProvider):
         self,
         parts: list[types.Part],
         *,
-        schema: type[BaseModel] = ImageAnalysisResult,
+        schema: type[BaseModel] = RespostaDaFoto,
         tarefa: str = "analisar as fotos",
         prazo_ms: int | None = None,
     ) -> types.GenerateContentResponse:
