@@ -2,6 +2,7 @@
   "name": "vintex-backend-docs",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.28.4",
   "description": "Portal Docusaurus do back-end Vintex (VE-25).",
   "scripts": {
     "start": "docusaurus start",
@@ -20,6 +21,6 @@
     "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": ">=22.13"
   }
 }

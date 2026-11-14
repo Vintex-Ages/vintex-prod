@@ -1,12 +1,13 @@
 # Documentação viva (VE-25)
 
-Portal Docusaurus do back-end.
+Portal Docusaurus do back-end. Usa pnpm, como o resto do repositório: a versão vem
+do campo `packageManager` do `package.json`, a mesma do `front-end/`.
 
 ```bash
 cd documentation
-npm ci
-npm start    # dev server em http://localhost:3000
-npm run build
+pnpm install --frozen-lockfile
+pnpm start    # dev server em http://localhost:3000
+pnpm build
 ```
 
 ## Estrutura
