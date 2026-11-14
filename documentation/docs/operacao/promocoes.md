@@ -10,23 +10,18 @@ Cada componente possui um manifesto: `components/front-end/release.yml` ou
 
 ## O que os manifestos registram hoje
 
-Os dois repositórios de origem foram importados para este monorepo, então os
-manifestos viraram o registro do **último snapshot promovido**, e não mais a
-referência de código a implantar:
+Os dois repositórios de origem foram importados para este monorepo, e os
+manifestos e o fluxo `promote/*` **continuam em uso**: o `GitOps Validation`
+segue validando as promoções, e cada manifesto registra o último snapshot
+promovido do componente:
 
 | Componente | Último snapshot | Promovido em |
 | --- | --- | --- |
 | front-end | `5adf7a0` | 28/10/2026 |
 | back-end | `86ea0a4` | 04/11/2026 (PR de promoção #47, depois a importação do código no #49) |
 
-O código seguinte entra por PR de trabalho em `front-end/` e `back-end/`, sem novo
-`promote/*`. <span className="verificar" title="Os manifestos continuam sendo validados, mas nenhuma regra diz se haverá novas promoções depois da importação.">*</span>
-
-> <span className="verificar">*</span> **Confirmar com quem mantém a governança.**
-> Os manifestos continuam existindo e o `GitOps Validation` continua aceitando
-> `promote/*`. Falta decidir se eles seguem como fonte para a futura implantação
-> ou se serão substituídos pelo próprio commit de `main`. Até lá, esta página só
-> descreve o que existe.
+O código novo entra por PR de trabalho em `front-end/` e `back-end/`, descrito em
+[Arquitetura GitOps](../arquitetura/gitops.md).
 
 ## Campos do manifesto
 
