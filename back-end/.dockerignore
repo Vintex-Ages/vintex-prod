@@ -1,0 +1,53 @@
+# Controle de versão / metadados
+.git
+.gitignore
+.gitattributes
+.github
+
+# Ambientes e segredos (nunca entram na imagem)
+.env
+.env.*
+!.env.example
+.venv
+venv
+
+# Caches e artefatos de build
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+**/.terraform/
+infra/aws/staging/*.json
+infra/aws/staging/*.env
+
+# Bancos locais
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentação e contexto de agentes (não são necessários em runtime)
+*.md
+.ai/
+.agents/
+.claude/
+docker-compose.yml
+
+# Configuração privada, planos e states nunca entram na imagem.
+# Perfis públicos config/*.tfvars também são excluídos: o runtime não os usa.
+infra/terraform/**/*.tfvars
+infra/terraform/**/*.tfbackend
+infra/terraform/**/*.tfplan
+infra/terraform/**/*.tfstate*
+
+# Conta e backend AWS: configuração local, nunca imagem/Git.
+infra/terraform/account.tfvars.json
+
+# State e identificação do bootstrap persistem fora do cache.
+infra/terraform/state/

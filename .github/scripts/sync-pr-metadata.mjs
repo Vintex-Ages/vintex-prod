@@ -1,4 +1,11 @@
 import fs from "node:fs";
+import {
+  allowedRepositories,
+  formatRef,
+  isAllowed,
+  isLocal,
+  parseClosingRefs,
+} from "./lib/issue-refs.mjs";
 
 const event = JSON.parse(
   fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
@@ -8,6 +15,9 @@ const config = JSON.parse(
 );
 const token = process.env.GH_TOKEN;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+const current = { owner, repo };
+const allowedRepos = allowedRepositories(config, current);
+const allowedNames = [owner + "/" + repo, ...(config.issueRepositories || [])];
 
 if (!token) throw new Error("GH_TOKEN não configurado.");
 
@@ -49,13 +59,7 @@ const graphql = async (query, variables) => {
   return payload.data;
 };
 
-const closingIssues = (body) => [
-  ...new Set(
-    [...(body || "").matchAll(/\b(?:Closes|Fixes|Resolves)\s+#(\d+)/gi)].map(
-      (match) => Number(match[1]),
-    ),
-  ),
-];
+const closingIssues = (body) => parseClosingRefs(body, current);
 
 const issueIsRequired = (pr) =>
   config.issueRequiredOn.includes(pr.base.ref) &&
@@ -381,6 +385,23 @@ const changeLabel = (body) => {
 const equalSets = (left, right) =>
   left.size === right.size && [...left].every((value) => right.has(value));
 
+// O número de uma milestone muda entre repositórios (S4 é #5 no front-end e
+// #1 no vintex-prod); o título é o que as une.
+let localMilestones;
+async function localMilestoneNumber(title) {
+  if (!title) return null;
+  localMilestones ??= await listPages(
+    "/repos/" + owner + "/" + repo + "/milestones?state=all",
+  );
+  const found = localMilestones.find((milestone) => milestone.title === title);
+  if (!found) {
+    throw new Error(
+      "A milestone " + title + " não existe em " + owner + "/" + repo + ".",
+    );
+  }
+  return found.number;
+}
+
 async function syncRepositoryMetadata(pr, issues) {
   if (!issues.length) return;
 
@@ -408,7 +429,7 @@ async function syncRepositoryMetadata(pr, issues) {
   const currentAssignees = new Set(
     (pr.assignees || []).map((assignee) => assignee.login),
   );
-  const desiredMilestone = issues[0].milestone?.number ?? null;
+  const desiredMilestone = await localMilestoneNumber(issues[0].milestone?.title);
   const currentMilestone = pr.milestone?.number ?? null;
 
   if (
@@ -448,7 +469,7 @@ async function syncPullRequest(inputPr) {
   );
   if (
     required &&
-    (!branchIssue || Number(branchIssue[1]) !== issueNumbers[0])
+    (!branchIssue || Number(branchIssue[1]) !== issueNumbers[0]?.number)
   ) {
     throw new Error(
       "A issue primária do PR #" +
@@ -458,12 +479,21 @@ async function syncPullRequest(inputPr) {
   }
 
   const issues = [];
-  for (const number of issueNumbers) {
+  for (const ref of issueNumbers) {
+    const label = formatRef(ref, current);
+    if (!isAllowed(ref, allowedRepos)) {
+      throw new Error(
+        label +
+          ": só são aceitas issues de " +
+          allowedNames.join(", ") +
+          ".",
+      );
+    }
     const issue = await rest(
-      "/repos/" + owner + "/" + repo + "/issues/" + number,
+      "/repos/" + ref.owner + "/" + ref.repo + "/issues/" + ref.number,
     );
     if (issue.pull_request) {
-      throw new Error("#" + number + " não é uma issue.");
+      throw new Error(label + " não é uma issue.");
     }
     issues.push(issue);
   }
@@ -494,7 +524,8 @@ async function syncPullRequest(inputPr) {
       pr.number +
       " sincronizado" +
       (issueNumbers.length
-        ? " com as issues " + issueNumbers.map((number) => "#" + number).join(", ")
+        ? " com as issues " +
+          issueNumbers.map((ref) => formatRef(ref, current)).join(", ")
         : " como promoção sem issue") +
       ".",
   );
@@ -508,7 +539,9 @@ async function selectedPullRequests() {
   );
   if (event.issue && !event.issue.pull_request) {
     return open.filter((pr) =>
-      closingIssues(pr.body).includes(event.issue.number),
+      closingIssues(pr.body).some(
+        (ref) => isLocal(ref, current) && ref.number === event.issue.number,
+      ),
     );
   }
   return open;

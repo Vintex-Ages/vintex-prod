@@ -1,0 +1,263 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FilterChip } from '@/components/catalog/FilterChip';
+import Button from '@/components/common/Button';
+import { EmptyState } from '@/components/common/EmptyState';
+import ErrorState from '@/components/common/ErrorState';
+import Container from '@/components/layout/Container';
+import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
+import { useToast } from '@/context/useToast';
+import {
+  useSellerProducts,
+  type SellerProductsCounts,
+  type StatusFilter,
+} from '@/hooks/useSellerProducts';
+import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
+import { paths, sellerProductPath } from '@/routes/paths';
+import { SellerProductError } from '@/services/sellerProductService';
+import type { SellerProduct } from '@/types/product';
+import FinancialSummary from './FinancialSummary';
+import SellerDrafts from './SellerDrafts';
+import TrustSealCard from './TrustSealCard';
+
+/** Rótulos da tela; os valores são os do back (ver `ProductStatus`). */
+const CHIPS: { value: StatusFilter; label: string }[] = [
+  { value: 'todas', label: 'Todas' },
+  { value: 'ativo', label: 'Anunciadas' },
+  { value: 'vendido', label: 'Vendidas' },
+  { value: 'despublicado', label: 'Pausadas' },
+];
+
+/** Quantas peças cada filtro mostra: as contagens já vêm do `useSellerProducts`. */
+function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
+  return filter === 'todas' ? counts.total : counts[filter];
+}
+
+/**
+ * `/seller` — painel do vendedor (FE-US019-1, #220): peças por status e
+ * totais. Visão de saldo, não de estoque (RN-51): cada peça é única, então o
+ * que importa é em que situação ela está, não quantas unidades existem.
+ *
+ * Alinhado ao frame ajustado do Figma (T15, FE-FIG-3, #437): título "Painel de
+ * Vendas & Gestão de Peças", cartões financeiros no topo (ver
+ * `FinancialSummary`), a aba "Minhas Peças Cadastradas (N)" e os filtros por
+ * status com a contagem de cada um. A aba "Pedidos para Envio" não existe: não
+ * há rota no back para o vendedor ver Pedidos.
+ *
+ * Ações por linha (FE-US019-2, #221), decididas pelo valor do status:
+ * - `ativo` → Editar anúncio · Pausar (sai da vitrine, fica no histórico — RN-52)
+ * - `despublicado` → Editar anúncio · Republicar (`publish`)
+ * - `vendido` → Editar anúncio desabilitado com o motivo (RN-53), sem pausar
+ *
+ * Pausar confirma com um Toast que oferece "Desfazer" (republica). A linha muda
+ * sem recarregar a lista; erro do back vira Toast de erro.
+ *
+ * Aba "Rascunhos" (FE-US019-6, #345) ao lado dos filtros de status: lista os
+ * cadastros pela metade, fora das contagens e do total (RN-51) — ver
+ * `SellerDrafts` e `docs/adr/0004`. No topo, o card do selo Confiável
+ * (FE-US007-1, #224) — ver `TrustSealCard`.
+ */
+const SOLD_REASON = 'Peça vendida não pode ser editada';
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof SellerProductError && error.code === 'PRODUCT_SOLD') {
+    return 'Esta peça já foi vendida e não pode mais ser alterada.';
+  }
+  return fallback;
+}
+
+function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource }) {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { state, filter, setFilter, visible, retry, unpublishProduct, republishProduct } =
+    useSellerProducts();
+  // A aba de rascunhos não é um status do saldo: troca a lista inteira, não filtra.
+  const [showDrafts, setShowDrafts] = useState(false);
+
+  const anunciar = () => navigate(paths.sellerProductNew);
+  const editarLoja = () => navigate(paths.sellerStore);
+
+  async function republicar(product: SellerProduct) {
+    try {
+      await republishProduct(product.id);
+      toast('Anúncio publicado de novo', { kind: 'success' });
+    } catch (error) {
+      toast(errorMessage(error, 'Não foi possível republicar a peça agora.'), { kind: 'error' });
+    }
+  }
+
+  async function despublicar(product: SellerProduct) {
+    try {
+      await unpublishProduct(product.id);
+      toast('Anúncio pausado', {
+        kind: 'success',
+        action: { label: 'Desfazer', onSelect: () => void republicar(product) },
+      });
+    } catch (error) {
+      toast(errorMessage(error, 'Não foi possível pausar o anúncio agora.'), { kind: 'error' });
+    }
+  }
+
+  function acoes(product: SellerProduct): RowAction[] {
+    const editar: RowAction = {
+      label: 'Editar anúncio',
+      variant: 'secondary',
+      onSelect: () => navigate(sellerProductPath(product.id)),
+    };
+
+    switch (product.status) {
+      case 'ativo':
+        // "Pausar" reserva a largura de "Republicar": ao pausar, o botão não encolhe nem move o "Editar anúncio".
+        return [
+          editar,
+          {
+            label: 'Pausar',
+            widthLabel: 'Republicar',
+            onSelect: () => void despublicar(product),
+          },
+        ];
+      case 'despublicado':
+        return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
+      case 'vendido':
+        return [{ ...editar, disabled: true, disabledReason: SOLD_REASON }];
+      default:
+        return [];
+    }
+  }
+
+  return (
+    <Container as="main" className="flex flex-col gap-6 py-10">
+      <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
+        <div className="flex flex-col gap-1">
+          {/* Token `h3` (24px): o frame (T15) usa 35,2px, que não existe na escala de tipografia. */}
+          <h1 className="font-display text-h3 leading-[1.1] tracking-[-0.02em] text-tinta">
+            Painel de Vendas &amp; Gestão de Peças
+          </h1>
+          <p className="font-ui text-body-sm text-texto-auxiliar">
+            Acompanhe seus anúncios ativos, valores a receber via Pix e pedidos prontos para envio.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="secondary" onClick={editarLoja}>
+            Editar loja
+          </Button>
+          <Button onClick={anunciar}>Anunciar peça</Button>
+        </div>
+      </div>
+
+      <FinancialSummary />
+
+      <TrustSealCard storeSource={storeSource} />
+
+      {/* Única aba do frame (a de "Pedidos para Envio" não existe): é só o título da lista. */}
+      {/* No celular a aba ocupa metade da largura, em duas linhas, como no frame (T15). */}
+      <div className="border-b-2 border-tinta">
+        <h2 className="flex min-h-touch w-1/2 items-center web:min-h-0 justify-center bg-tinta px-2 py-3 text-center font-ui text-body-sm font-semibold leading-[normal] text-branco-quente tablet:inline-flex tablet:w-auto tablet:px-6">
+          <span>
+            <span className="block tablet:inline">Minhas Peças</span>{' '}
+            <span className="block tablet:inline">
+              {state.status === 'ready' ? `Cadastradas (${state.counts.total})` : 'Cadastradas'}
+            </span>
+          </span>
+        </h2>
+      </div>
+
+      {state.status === 'loading' && (
+        <>
+          <p role="status" className="sr-only">
+            Carregando suas peças…
+          </p>
+          {/* Skeleton de linha (#220): mesmo contorno do SellerProductRow. */}
+          <ul className="flex flex-col gap-3" aria-hidden="true" data-testid="seller-skeleton">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <li
+                key={index}
+                className="flex animate-pulse items-center gap-4 border border-linha bg-branco-quente p-4 motion-reduce:animate-none"
+              >
+                <span className="h-20 w-20 shrink-0 bg-papel-profundo" />
+                <span className="flex flex-1 flex-col gap-2">
+                  <span className="h-4 w-48 max-w-full bg-papel-profundo" />
+                  <span className="h-4 w-24 bg-papel-profundo" />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {state.status === 'error' && (
+        <ErrorState message="Não foi possível carregar suas peças agora." onRetry={retry} />
+      )}
+
+      {state.status === 'ready' && (
+        <>
+          {/* Sem os cartões Anunciadas/Vendidas/Pausadas: o frame (T15) só tem as contagens nos filtros. */}
+          <p className="font-ui text-body-sm text-texto-auxiliar">
+            {state.counts.total === 1 ? '1 peça no total' : `${state.counts.total} peças no total`}
+          </p>
+
+          {/* Uma linha só, com rolagem na horizontal, como no frame (T15): os filtros não quebram. */}
+          <div className="flex gap-2 overflow-x-auto pb-4">
+            {CHIPS.map((chip) => (
+              <FilterChip
+                key={chip.value}
+                tone="tinta"
+                label={`${chip.label} (${countOf(state.counts, chip.value)})`}
+                active={!showDrafts && filter === chip.value}
+                onToggle={() => {
+                  setShowDrafts(false);
+                  setFilter(chip.value);
+                }}
+              />
+            ))}
+            <FilterChip
+              tone="tinta"
+              label="Rascunhos"
+              active={showDrafts}
+              onToggle={() => setShowDrafts(true)}
+            />
+          </div>
+
+          {showDrafts ? (
+            <SellerDrafts />
+          ) : state.counts.total === 0 ? (
+            <EmptyState
+              title="Nenhuma peça por aqui"
+              message="Anuncie sua primeira peça e ela aparece neste painel."
+              action={<Button onClick={anunciar}>Anunciar peça</Button>}
+            />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              title="Nada com esse filtro"
+              message="Escolha outro filtro para ver suas peças."
+              action={
+                <Button variant="secondary" onClick={() => setFilter('todas')}>
+                  Ver todas
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {visible.map((product) => (
+                <li key={product.id}>
+                  <SellerProductRow
+                    product={product}
+                    actions={acoes(product)}
+                    // Vendida ou reservada não abre o formulário: o nome fica só como texto.
+                    onOpen={
+                      product.status === 'vendido' || product.status === 'reservado'
+                        ? undefined
+                        : (id) => navigate(sellerProductPath(id))
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </Container>
+  );
+}
+
+export default SellerAdmin;

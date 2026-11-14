@@ -3,6 +3,7 @@
   "sourceProjectNumber": null,
   "aggregateProjectNumber": 2,
   "issueRequiredOn": ["develop"],
+  "issueRepositories": ["Vintex-Ages/front-end", "Vintex-Ages/back-end"],
   "issueExemptHeadPatterns": [
     "^promote\/(front-end|back-end)-[0-9a-f]{7}$"
   ],
