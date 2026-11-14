@@ -71,12 +71,19 @@ function Probe() {
 
 /**
  * Expõe pathname + query string para verificar os redirecionamentos
- * realizados pelo AuthProvider.
+ * realizados pelo AuthProvider, e o `state.from` do history — o destino
+ * pós-login não aparece na URL.
  */
 function PathProbe() {
   const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
 
-  return <span data-testid="path">{location.pathname + location.search}</span>;
+  return (
+    <>
+      <span data-testid="path">{location.pathname + location.search}</span>
+      <span data-testid="from">{from ?? ''}</span>
+    </>
+  );
 }
 
 /**
@@ -379,6 +386,31 @@ describe('AuthContext', () => {
     expect(window.sessionStorage.getItem(AUTH_USER_STORAGE_KEY)).toBeNull();
 
     expect(window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
+  /**
+   * Um 401 em paralelo chega quando a tela já é o login. A origem `/login`
+   * não é destino de retorno: guardá-la mandaria o usuário de volta ao login
+   * logo depois de autenticar (o cenário que o E2E da sessão vencida cobre).
+   */
+  it('401 com origem no login não vira destino de retorno', async () => {
+    renderApp(['/protegido']);
+
+    await settled();
+
+    const authRequiredCalls = vi.mocked(setOnAuthRequired).mock.calls;
+
+    const handler = authRequiredCalls[authRequiredCalls.length - 1]?.[0];
+
+    expect(handler).toBeInstanceOf(Function);
+
+    act(() => {
+      handler?.('/login');
+    });
+
+    await waitFor(() => expect(screen.getByTestId('path')).toHaveTextContent('/login'));
+
+    expect(screen.getByTestId('from').textContent).toBe('/');
   });
 
   /**

@@ -1,6 +1,5 @@
 import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from 'react';
 import clsx from 'clsx';
-import Button from '@/components/common/Button';
 
 export type MediaItem = {
   id: string;
@@ -317,22 +316,12 @@ function MediaUploader({
           </p>
 
           {!reachedLimit && (
-            <p className="mt-1 text-body-sm text-texto-auxiliar">ou selecione pelo botão abaixo</p>
+            // O dropzone já é o controle (`role="button"`, Enter/Espaço
+            // abrem a seleção). Um botão aqui dentro seria interativo dentro
+            // de interativo — o `nested-interactive` que o axe acusa.
+            <p className="mt-1 text-body-sm text-texto-auxiliar">ou toque para selecionar</p>
           )}
         </div>
-
-        {!reachedLimit && (
-          <Button
-            variant="secondary"
-            disabled={disabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              openFilePicker();
-            }}
-          >
-            Selecionar mídia
-          </Button>
-        )}
       </div>
 
       {helperText && !error && !shownSizeError && (
