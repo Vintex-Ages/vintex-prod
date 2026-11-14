@@ -37,6 +37,14 @@ A CLI também aceita `--path-map <arquivo>` e `--output <arquivo>`.
 do workflow; para visualizar o site, sirva os arquivos sob `/vintex-prod/`.
 O preview não é publicado em GitHub Pages e suas falhas são informativas.
 
+Os dois workflows só rodam quando o PR altera caminhos que o `path-map.json`
+mapeia (lista em `paths:`), e não em todo PR: código de `front-end/` e de
+`back-end/` fica de fora. O comentário usa o marcador
+`<!-- documentation-draft-bot:root -->`, distinto do `Back-end Documentation Draft`
+(`<!-- documentation-draft-bot -->`), para os dois portais comentarem no mesmo PR
+sem se sobrescrever. Ao acrescentar um padrão ao mapa, inclua o caminho nos
+`paths:`; o teste do gerador confere.
+
 O workflow usa `pull_request`, sem acesso aos segredos de forks. PRs de forks
 podem gerar artifacts, mas pulam o comentário por não terem permissão de escrita.
 Como o workflow é novo, sua primeira execução em um PR pode depender da aprovação

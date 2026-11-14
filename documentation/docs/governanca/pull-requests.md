@@ -65,10 +65,20 @@ Há dois mecanismos, um por portal:
 - **Este portal** (`documentation/`): `Documentation CI` testa o gerador e a
   existência das páginas mapeadas. `Documentation Draft` agrupa os caminhos
   alterados por página, atualiza um único comentário e fornece o preview estático
-  como artifact por 14 dias.
+  como artifact por 14 dias. Os dois só rodam quando o PR altera algo que o
+  `path-map.json` mapeia (`documentation/**`, `scripts/docs/**`, `.github/**`,
+  `config/governance/**`, `components/**`, `README.md`, `CONTRIBUTING.md`,
+  `docs/aws-roadmap.md`, `back-end/documentation/**`, `back-end/scripts/docs/**`
+  e `front-end/docs/**`). Um PR só de código de `front-end/` ou `back-end/` não
+  os dispara. O comentário usa o marcador `<!-- documentation-draft-bot:root -->`.
 - **Portal do back-end** (`back-end/documentation/`): `Back-end Documentation
   Draft` roda quando o PR altera `back-end/**`, com o próprio `path-map.json` e o
-  gerador `back-end/scripts/docs/generate_draft.py`.
+  gerador `back-end/scripts/docs/generate_draft.py`. O comentário usa o marcador
+  `<!-- documentation-draft-bot -->`, então os dois portais comentam no mesmo PR
+  sem se sobrescrever.
+
+Ao acrescentar um padrão ao `path-map.json`, inclua o caminho nos `paths:` dos
+dois workflows da raiz: `scripts/docs/generate-draft.test.mjs` falha se faltar.
 
 Caminhos sem mapa e falhas do preview são informativos. PRs de forks pulam o
 comentário por restrições de permissão, mas podem produzir o artifact. Código do

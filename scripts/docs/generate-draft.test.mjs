@@ -152,3 +152,114 @@ test('CLI retorna falha útil para entrada ausente ou ilegível', () => {
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /ENOENT/);
 });
+
+// --- Filtro de caminhos dos workflows de documentação ---------------------
+// O GitHub avalia `paths:` antes de iniciar o workflow (o `act` não faz isso),
+// então a regra é conferida aqui, com a semântica de glob do GitHub.
+
+const workflows = {
+  ci: join(root, '.github/workflows/documentation-ci.yml'),
+  draft: join(root, '.github/workflows/documentation-draft.yml'),
+};
+
+/** Lê cada bloco `paths:` do workflow (pull_request e, no CI, push). */
+function pathsBlocks(file) {
+  const blocks = [];
+  let current = null;
+
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    if (/^\s*paths:\s*$/.test(line)) {
+      current = [];
+      blocks.push(current);
+      continue;
+    }
+    const item = current && line.match(/^\s*-\s*["']?([^"']+)["']?\s*$/);
+    if (item) current.push(item[1]);
+    else if (current && line.trim() !== '' && !line.trim().startsWith('#')) current = null;
+  }
+
+  return blocks;
+}
+
+/** Glob do GitHub Actions: `*` não cruza `/`, `**` cruza. */
+function githubGlob(pattern) {
+  const source = pattern
+    .split('**')
+    .map((part) =>
+      part
+        .split('*')
+        .map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[^/]*'),
+    )
+    .join('.*');
+
+  return new RegExp(`^${source}$`);
+}
+
+/** O workflow dispara se ao menos um arquivo do PR casa com algum padrão. */
+function triggers(patterns, changedFiles) {
+  return changedFiles.some((file) => patterns.some((pattern) => githubGlob(pattern).test(file)));
+}
+
+const applicationCode = ['front-end/**', 'back-end/**'];
+
+test('os workflows de documentação declaram os mesmos paths no PR e no push', () => {
+  const ci = pathsBlocks(workflows.ci);
+  const draft = pathsBlocks(workflows.draft);
+
+  assert.equal(ci.length, 2, 'CI: pull_request e push');
+  assert.equal(draft.length, 1, 'Draft: pull_request');
+  assert.deepEqual(ci[1], ci[0]);
+  assert.deepEqual(draft[0], ci[0]);
+});
+
+test('código das aplicações sozinho não dispara os workflows de documentação', () => {
+  const [patterns] = pathsBlocks(workflows.draft);
+
+  for (const files of [
+    ['front-end/src/App.tsx'],
+    ['back-end/app/main.py'],
+    ['front-end/package.json', 'back-end/tests/test_users.py'],
+    ['back-end/alembic/versions/e4a2c7b9d1f3_terms.py'],
+  ]) {
+    assert.equal(triggers(patterns, files), false, files.join(', '));
+  }
+});
+
+test('o que o path-map mapeia dispara os workflows de documentação', () => {
+  const [patterns] = pathsBlocks(workflows.draft);
+
+  for (const files of [
+    ['documentation/path-map.json'],
+    ['scripts/docs/generate-draft.mjs'],
+    ['.github/workflows/gitops-validation.yml'],
+    ['config/governance/pr-automation.json'],
+    ['components/back-end/release.yml'],
+    ['README.md'],
+    ['CONTRIBUTING.md'],
+    ['docs/aws-roadmap.md'],
+    ['back-end/documentation/docs/dominio/brechos.md'],
+    ['back-end/scripts/docs/generate_draft.py'],
+    ['front-end/docs/adr/0001-rascunho-fora-do-painel-do-vendedor.md'],
+    ['front-end/src/App.tsx', 'documentation/docs/intro.md'],
+  ]) {
+    assert.equal(triggers(patterns, files), true, files.join(', '));
+  }
+});
+
+test('todo padrão do path-map fora do código das aplicações está coberto pelos paths', () => {
+  const [patterns] = pathsBlocks(workflows.draft);
+  const sample = (pattern) => pattern.replace(/\*\*/g, 'a/b').replace(/\*/g, 'a');
+
+  for (const entry of loadPathMap(pathMap)) {
+    if (applicationCode.includes(entry.pattern)) continue;
+    assert.equal(triggers(patterns, [sample(entry.pattern)]), true, entry.pattern);
+  }
+});
+
+test('o comentário da raiz usa marcador próprio, diferente do portal do back-end', () => {
+  const draft = readFileSync(workflows.draft, 'utf8');
+
+  assert.match(draft, /const marker = '<!-- documentation-draft-bot:root -->';/);
+  assert.doesNotMatch(draft, /const marker = '<!-- documentation-draft-bot -->';/);
+});

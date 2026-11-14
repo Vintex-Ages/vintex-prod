@@ -4,6 +4,21 @@ on:
   pull_request:
     branches: [develop, main, deploy]
     types: [opened, synchronize, reopened, ready_for_review]
+    # Só roda quando o PR altera algo que o documentation/path-map.json mapeia.
+    # Código de front-end/ e back-end/ fica de fora de propósito. Mantenha esta lista
+    # alinhada ao mapa: scripts/docs/generate-draft.test.mjs confere.
+    paths:
+      - "documentation/**"
+      - "scripts/docs/**"
+      - ".github/**"
+      - "config/governance/**"
+      - "components/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "docs/aws-roadmap.md"
+      - "back-end/documentation/**"
+      - "back-end/scripts/docs/**"
+      - "front-end/docs/**"
 
 permissions:
   contents: read
@@ -79,7 +94,9 @@ jobs:
             const buildLine = process.env.BUILD_OUTCOME === 'success'
               ? `Preview Docusaurus gerado — [artifact e logs desta execução](${runUrl}) (retenção: 14 dias).`
               : `Preview Docusaurus indisponível — [logs desta execução](${runUrl}). Falha informativa; não bloqueia merge.`;
-            const marker = '<!-- documentation-draft-bot -->';
+            // Marcador próprio do portal da raiz: o back-end-documentation-draft.yml usa
+            // '<!-- documentation-draft-bot -->' e os dois comentários não podem se sobrescrever.
+            const marker = '<!-- documentation-draft-bot:root -->';
             const body = `${marker}\n## Documentation Draft\n\n${buildLine}\n\n${draft}`;
             const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo,
