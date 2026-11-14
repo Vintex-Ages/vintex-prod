@@ -11,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.constants.catalog import nome_e_do_tipo
 from app.core.errors import ErrorCode, ServiceUnavailable
 from app.core.pagination import PageParams
 from app.repositories.product_repository import ProductRepository, ProductSimilarRow
@@ -45,6 +46,11 @@ _FILTROS_DO_CHAT = frozenset(
 _SEM_PERGUNTA = "Não encontrei uma pergunta pra buscar. Descreva o que você procura."
 _FALHA_PROVIDER = (
     "Não conseguimos interpretar sua busca agora. Tente de novo em instantes."
+)
+# back-end#231. Tom da RN-66: informal, sem gíria forçada.
+_FORA_DO_ESCOPO = (
+    "A Vintex vende roupas, sapatos e acessórios de brechó. Estas são peças do "
+    "catálogo que podem te interessar."
 )
 
 
@@ -120,7 +126,15 @@ class AssistantController:
 
         interpretada = await _interpretar(provider, query, _historico(messages))
         if interpretada is not None:
-            yield interpretada
+            # Fora do escopo a busca não filtra (`_buscar`), e a tela não pode
+            # mostrar chip de filtro nem "parecido com" que não foram usados
+            # (back-end#231).
+            if interpretada.in_scope is False:
+                yield interpretada.model_copy(
+                    update={"filters": {}, "similarity": None}
+                )
+            else:
+                yield interpretada
 
         for event in await run_in_threadpool(
             self._buscar, provider, modelo, query, interpretada
@@ -174,12 +188,39 @@ class AssistantController:
             logger.error("Provider não devolveu vetor para a pergunta do chat")
             return [ChatErrorEvent(message=_FALHA_PROVIDER), SearchDone()]
 
-        filtros = _filtros_da_pergunta(interpretada)
         # As mesmas cinco mais próximas de antes da paginação (back-end#246).
         pagina = PageParams(page=1, page_size=_PECAS_NO_CHAT)
+
+        # Pergunta que não é sobre o que a Vintex vende (back-end#231): as
+        # peças mais parecidas, sem filtro, marcadas como alternativa. Vem antes
+        # do filtro, porque "geladeira brastemp" lê a marca e cairia no aviso de
+        # marca, que não diz o que aconteceu.
+        if interpretada is not None and interpretada.in_scope is False:
+            rows, _ = self.repository.find_similar(vectors[0], modelo, pagina)
+            if rows:
+                return [
+                    SearchTextDelta(delta=_FORA_DO_ESCOPO),
+                    _pecas(rows, "fallback"),
+                    SearchDone(),
+                ]
+            return [_pecas([], "exact"), SearchDone()]
+
+        filtros = _filtros_da_pergunta(interpretada)
+        tipo = interpretada.tipo if interpretada is not None else None
         rows, _ = self.repository.find_similar(vectors[0], modelo, pagina, filtros)
-        if rows or not filtros.applied():
+        if rows and _tem_o_tipo(rows, tipo):
             return [_pecas(rows, "exact"), SearchDone()]
+        if rows:
+            # O filtro achou peças, mas nenhuma do tipo pedido: "vestido" num
+            # catálogo sem vestido devolvia calça como resposta certa. As
+            # peças continuam as mesmas; muda o rótulo e o aviso.
+            return [
+                SearchTextDelta(delta=_aviso_de_alternativas(filtros, tipo)),
+                _pecas(rows, "fallback"),
+                SearchDone(),
+            ]
+        if not filtros.applied():
+            return [_pecas([], "exact"), SearchDone()]
 
         # Filtro sem peça nenhuma não devolve vazio (RN-61): cai nas mais
         # parecidas, e a resposta diz que são alternativas.
@@ -187,7 +228,7 @@ class AssistantController:
             rows, _ = self.repository.find_similar(vectors[0], modelo, pagina, relaxado)
             if rows:
                 return [
-                    SearchTextDelta(delta=_aviso_de_alternativas(filtros)),
+                    SearchTextDelta(delta=_aviso_de_alternativas(filtros, tipo)),
                     _pecas(rows, "fallback"),
                     SearchDone(),
                 ]
@@ -268,11 +309,27 @@ def _pecas(
     )
 
 
-def _aviso_de_alternativas(filtros: ProductFilters) -> str:
+def _tem_o_tipo(rows: Sequence[ProductSimilarRow], tipo: str | None) -> bool:
+    """Sem tipo pedido, qualquer peça serve. Com tipo, basta uma das devolvidas
+    ser dele pelo nome (`nome_e_do_tipo`).
+
+    Só olha as que vão para a tela: uma peça do tipo na sexta posição não
+    salva o rótulo. Limite: peça cujo nome só diz o modelo ("Nike Air Force
+    1") não é de tipo nenhum, e sozinha não salva o rótulo de quem pediu tênis.
+    Tratar esse nome como do tipo pedido deixava "vestido" sair como resultado
+    direto bastando um "Cropped" entre as cinco.
+    """
+    return tipo is None or any(nome_e_do_tipo(row["name"], tipo) for row in rows)
+
+
+def _aviso_de_alternativas(filtros: ProductFilters, tipo: str | None = None) -> str:
     """O que faltou, na ordem em que se lê um pedido: "Não encontrei peças
-    com Sapatos, Verde e até R$ 400,00. Estas são alternativas..." """
+    com Sapatos, Verde e até R$ 400,00. Estas são alternativas..."
+
+    Com tipo pedido, o tipo diz mais que a categoria e fica no lugar dela:
+    "Não encontrei vestido com Preto." """
     partes = [
-        filtros.category,
+        None if tipo else filtros.category,
         filtros.color,
         filtros.size and f"tamanho {filtros.size}",
         filtros.condition,
@@ -287,10 +344,25 @@ def _aviso_de_alternativas(filtros: ProductFilters) -> str:
     pedidos = [p for p in partes if p]
     if len(pedidos) > 1:
         pedido = ", ".join(pedidos[:-1]) + " e " + pedidos[-1]
-    else:
+    elif pedidos:
         pedido = pedidos[0]
+    else:
+        pedido = ""
+
+    if tipo and pedido:
+        falta = f"{tipo.lower()} com {pedido}"
+    elif tipo:
+        # Só as cinco peças da tela foram conferidas: "no catálogo" afirmaria
+        # mais do que isso.
+        falta = tipo.lower()
+    elif pedido:
+        falta = f"peças com {pedido}"
+    else:
+        # `_buscar` sempre avisa com tipo ou filtro; o critério da #231 pede
+        # que a função não quebre sem os dois.
+        falta = "o que você pediu"
     return (
-        f"Não encontrei peças com {pedido}. Estas são alternativas, as mais "
+        f"Não encontrei {falta}. Estas são alternativas, as mais "
         "parecidas com o que você pediu."
     )
 

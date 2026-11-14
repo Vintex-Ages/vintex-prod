@@ -414,7 +414,13 @@ def test_tenis_verde_ate_400_nao_traz_outra_cor_nem_outro_preco(
 
     eventos = _perguntar(pg_client, "tênis verde até 400")
 
-    assert eventos[0] == {"type": "interpreted", "filters": pedido, "similarity": None}
+    assert eventos[0] == {
+        "type": "interpreted",
+        "filters": pedido,
+        "similarity": None,
+        "tipo": None,
+        "in_scope": None,
+    }
     assert _ids(eventos) == [certo.id]
     assert {branco.id, caro.id, roupa.id}.isdisjoint(_ids(eventos))
     assert eventos[1]["match_type"] == "exact"
@@ -489,6 +495,8 @@ def test_pergunta_sem_atributo_objetivo_ordena_so_por_similaridade(
         "type": "interpreted",
         "filters": {},
         "similarity": "confortável",
+        "tipo": None,
+        "in_scope": None,
     }
     assert _ids(eventos) == [primeira.id, segunda.id]
     assert eventos[1]["match_type"] == "exact"
