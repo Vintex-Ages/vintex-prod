@@ -1,0 +1,34 @@
+name: Promote to vintex-prod
+
+on:
+  push:
+    branches: [deploy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-front-end
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: vars.GPA_APP_CLIENT_ID != '' && github.ref == 'refs/heads/deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.GPA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GPA_APP_PRIVATE_KEY }}
+          owner: Vintex-Ages
+          repositories: vintex-prod
+      - run: node .github/scripts/promote-prod.mjs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          COMPONENT: front-end
+          PROD_REPOSITORY: Vintex-Ages/vintex-prod

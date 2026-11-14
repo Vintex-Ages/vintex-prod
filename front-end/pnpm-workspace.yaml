@@ -1,0 +1,9 @@
+packages:
+  - .
+
+overrides:
+  braces: file:./vendor/braces
+  follow-redirects: ">=1.16.2"
+
+allowBuilds:
+  esbuild: true
