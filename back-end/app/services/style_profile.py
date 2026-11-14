@@ -20,6 +20,14 @@ TIPO_ESTILO = "estilo"
 _ESTILOS = {estilo["value"]: estilo for estilo in STYLES}
 
 
+def estilos_do_perfil(preferencias: Sequence[UserPreference]) -> list[str]:
+    """Os identificadores de estilo escolhidos no onboarding, na ordem gravada.
+
+    É o mesmo identificador que a peça guarda em `style` (back-end#346).
+    """
+    return [p.value for p in preferencias if p.type == TIPO_ESTILO]
+
+
 def texto_do_perfil(preferencias: Sequence[UserPreference]) -> str | None:
     """O texto dos estilos escolhidos, ou `None` sem estilo nenhum.
 
