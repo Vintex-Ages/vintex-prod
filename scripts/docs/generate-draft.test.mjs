@@ -98,8 +98,18 @@ test('o mapa real cobre manifestos, governança, roadmap e o próprio portal', (
     'docs/aws-roadmap.md': 'operacao/aws',
     'documentation/docs/operacao/aws.md': 'operacao/aws',
     'documentation/package.json': 'intro',
+    'back-end/documentation/docs/dominio/brechos.md': 'governanca/pull-requests',
+    'back-end/scripts/docs/generate_draft.py': 'governanca/pull-requests',
+    'front-end/docs/adr/0001-rascunho-fora-do-painel-do-vendedor.md': 'arquitetura/gitops',
   };
   for (const [path, page] of Object.entries(cases)) assert.equal(matchPage(path, loaded), page);
+});
+
+test('código das aplicações não tem página neste portal e aparece como sem mapa', () => {
+  const loaded = loadPathMap(pathMap);
+  for (const path of ['back-end/app/main.py', 'front-end/src/App.tsx']) {
+    assert.equal(matchPage(path, loaded), null, path);
+  }
 });
 
 test('CLI aceita as opções existentes e rejeita argumentos ausentes ou inválidos', () => {

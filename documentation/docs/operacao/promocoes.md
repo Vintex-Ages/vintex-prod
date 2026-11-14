@@ -6,7 +6,27 @@ sidebar_position: 1
 
 Cada componente possui um manifesto: `components/front-end/release.yml` ou
 `components/back-end/release.yml`. Ele referencia um commit imutável da branch
-`deploy` do repositório de origem.
+`deploy` do repositório de origem, no momento em que o componente foi promovido.
+
+## O que os manifestos registram hoje
+
+Os dois repositórios de origem foram importados para este monorepo, então os
+manifestos viraram o registro do **último snapshot promovido**, e não mais a
+referência de código a implantar:
+
+| Componente | Último snapshot | Promovido em |
+| --- | --- | --- |
+| front-end | `5adf7a0` | 28/10/2026 |
+| back-end | `86ea0a4` | 04/11/2026 (PR de promoção #47, depois a importação do código no #49) |
+
+O código seguinte entra por PR de trabalho em `front-end/` e `back-end/`, sem novo
+`promote/*`. <span className="verificar" title="Os manifestos continuam sendo validados, mas nenhuma regra diz se haverá novas promoções depois da importação.">*</span>
+
+> <span className="verificar">*</span> **Confirmar com quem mantém a governança.**
+> Os manifestos continuam existindo e o `GitOps Validation` continua aceitando
+> `promote/*`. Falta decidir se eles seguem como fonte para a futura implantação
+> ou se serão substituídos pelo próprio commit de `main`. Até lá, esta página só
+> descreve o que existe.
 
 ## Campos do manifesto
 
@@ -34,7 +54,7 @@ essas evidências também devem ser conferidas na revisão.
 
 ## Composição aprovada
 
-As promoções de front-end e back-end são independentes em `develop`. O PR de
-`develop` para `main` aprova a composição operacional. O merge exige CI e revisão
-conforme a [governança](../governanca/pull-requests.md); não há merge automático.
-A implantação AWS continua descrita no [roadmap](aws.md).
+O PR de `develop` para `qa` e depois de `qa` para `main` aprova a composição
+operacional (enquanto `qa` não existir, `main` recebe de `develop`). O merge
+exige CI e revisão conforme a [governança](../governanca/pull-requests.md); não
+há merge automático. A implantação AWS continua descrita no [roadmap](aws.md).

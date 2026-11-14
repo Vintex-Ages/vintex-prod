@@ -18,3 +18,14 @@
   --ifm-color-primary-lighter: #fff9f8;
   --ifm-color-primary-lightest: #ffffff;
 }
+
+/* Marcador de ponto a confirmar por quem implementou ou decidiu (ver intro). */
+.verificar {
+  color: #d32f2f;
+  font-weight: 700;
+  cursor: help;
+}
+
+[data-theme='dark'] .verificar {
+  color: #ff6b6b;
+}
