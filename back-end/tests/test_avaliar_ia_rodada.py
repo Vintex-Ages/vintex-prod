@@ -223,6 +223,9 @@ def _controller_que_devolve(catalogo, ids, pedidas, *, personalized=True):
                     id=i,
                     name=catalogo[i]["name"],
                     price=catalogo[i]["price"],
+                    category=None,
+                    size=None,
+                    condition=None,
                     cover_image_url=None,
                     store=FeedStoreResponse(
                         id=1, name="Ateliê Reviver", verified=False

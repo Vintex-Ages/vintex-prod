@@ -46,6 +46,8 @@ class ProductFeedRow(TypedDict):
     name: str
     price: Decimal
     category: str | None
+    size: str | None
+    condition: str | None
     cover_image_url: str | None
     status: str
     store_id: int
@@ -102,6 +104,11 @@ def _feed_select() -> Select[tuple[object, ...]]:
         Product.name,
         Product.price,
         Product.category,
+        # Tamanho e conservação são o que o cartão do catálogo mostra ao lado da
+        # categoria, e sem eles o front buscava o detalhe de cada peça da página
+        # (back-end#352).
+        Product.size,
+        Product.condition,
         _cover_image_url().label("cover_image_url"),
         Product.status,
         Store.id.label("store_id"),
@@ -369,11 +376,16 @@ class ProductRepository:
     def atributos_das_pecas(self, ids: Sequence[int]) -> list[ProductAtributosRow]:
         """Os atributos da RN-49 das peças indicadas, na ordem em que vieram.
 
-        A linha do feed carrega nome, preço, categoria e loja; cor, tamanho,
-        marca, conservação, cidade e descrição não. A fala da assistente
+        A linha do feed carrega nome, preço, categoria, tamanho, conservação e
+        loja; cor, marca, cidade e descrição não. A fala da assistente
         (back-end#329) comenta justamente esses, então uma consulta a mais, com
         os ids que a busca já escolheu — não um `_feed_select()` mais gordo,
         que pesaria em toda listagem do catálogo por causa de uma.
+
+        Tamanho e conservação entraram na linha do feed depois, pela #352, para
+        tirar as 20 requisições de detalhe que a home fazia por página. Esta
+        consulta continua pedindo os dois, porque a fala monta a frase de uma
+        linha só.
 
         O preço não entra: na fala quem escreve preço é o servidor, a partir da
         linha da busca, que já o tem.
