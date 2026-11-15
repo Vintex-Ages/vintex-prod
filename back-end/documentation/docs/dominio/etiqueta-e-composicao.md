@@ -23,6 +23,17 @@ A URL da etiqueta é pública porque é pela rota pública que o servidor baixa 
 
 É o mesmo cuidado que o prompt já tinha com a marca (RN-58): a composição só é preenchida a partir de texto legível na etiqueta. Peça sem etiqueta legível volta com `composition: null`, e o vendedor escreve se quiser (RN-56). Campo vazio o vendedor corrige; campo errado ele não percebe.
 
+## Marca e tamanho só com texto lido
+
+O prompt sozinho não bastou: com a etiqueta ilegível, o modelo preenchia marca e tamanho mesmo assim ([#345](https://github.com/Vintex-Ages/back-end/issues/345)). Por isso a resposta do modelo traz também `label_text`, o texto que ele leu na etiqueta, no logo ou na estampa, e o servidor confere (`app/services/ai/etiqueta.py`):
+
+- **Sem texto lido, marca, tamanho e composição saem nulos** (RN-59, VS-015).
+- **A marca só fica se aparecer no texto lido**, sem acento, sem caixa e sem pontuação: "Levi's" casa com "LEVI STRAUSS & CO".
+- **O tamanho só fica se for uma palavra do texto lido**: "M" casa com "KIIKII M", e não com "MADE IN".
+- **Marca e tamanho precisam de confiança de pelo menos 0,95.** O modelo também inventa o texto lido: a blusa da suíte de avaliação voltou com "Keds M" como texto lido. As marcas que estavam na foto vieram sempre com 1,0, e a inventada com 0,8 e 0,9, e com um nome diferente a cada vez.
+
+`label_text` não chega ao formulário: a análise que sai é a `ImageAnalysisResult`, sem ele. Campo que cai fica vazio e editável (RN-56, RN-57).
+
 ## Texto na foto é dado
 
 Etiqueta, papel ao lado da peça ou qualquer texto visível na foto é lido como dado, não como instrução: desde a [#262](https://github.com/Vintex-Ages/back-end/issues/262), `ANALYZE_IMAGE_PROMPT` manda ignorar pedidos escritos na imagem para mudar o formato da resposta ou preencher outro valor. Marca e composição continuam saindo só de etiqueta legível da própria peça, e o formato da análise (`ImageAnalysisResult`) não muda: campo fora do schema é descartado.

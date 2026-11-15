@@ -103,6 +103,7 @@ function Consumer({ name = 'principal' }: { name?: string }) {
     loading,
     error,
     retry,
+    refresh,
     markAsRead,
     markAllAsRead,
     pendingIds,
@@ -124,6 +125,10 @@ function Consumer({ name = 'principal' }: { name?: string }) {
 
       <button type="button" onClick={retry}>
         Tentar novamente {name}
+      </button>
+
+      <button type="button" onClick={refresh}>
+        Atualizar {name}
       </button>
 
       <button
@@ -605,6 +610,174 @@ describe('NotificationsProvider — estado observado pelos consumidores', () => 
     await screen.findAllByText(`Bolsa de ${USER_A.id}`);
 
     expect(listNotifications).toHaveBeenCalledExactlyOnceWith(USER_A.id);
+  });
+
+  describe('refresh (FE-US036-2, #411)', () => {
+    it('com itens, busca de novo sem ligar o carregamento nem esvaziar a lista', async () => {
+      const user = userEvent.setup();
+      render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      const request = deferred<NotificationPage>();
+      vi.mocked(listNotifications).mockReturnValueOnce(request.promise);
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      expect(listNotifications).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('status', { name: 'Consulta principal' })).toHaveTextContent(
+        'Consulta encerrada',
+      );
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+
+      await act(async () =>
+        request.resolve({ ...pageFor(itemsFor(USER_A.id).slice(0, 1)), unreadCount: 4 }),
+      );
+
+      expect(screen.getAllByRole('listitem')).toHaveLength(1);
+      expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('4');
+    });
+
+    it('com itens, uma falha mantém a lista e a contagem e não expõe erro', async () => {
+      const user = userEvent.setup();
+      render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      vi.mocked(listNotifications).mockRejectedValueOnce(new Error('Falha controlada'));
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+      await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
+      await act(async () => {});
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('2');
+    });
+
+    it('com lista vazia já carregada, busca sem voltar a "Carregando"', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listNotifications).mockResolvedValueOnce(pageFor([]));
+      render(tree(USER_A));
+      await waitFor(() =>
+        expect(screen.getByRole('status', { name: 'Consulta principal' })).toHaveTextContent(
+          'Consulta encerrada',
+        ),
+      );
+
+      const request = deferred<NotificationPage>();
+      vi.mocked(listNotifications).mockReturnValueOnce(request.promise);
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      expect(screen.getByRole('status', { name: 'Consulta principal' })).toHaveTextContent(
+        'Consulta encerrada',
+      );
+      await act(async () => request.resolve(pageFor(itemsFor(USER_A.id))));
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    });
+
+    it('depois de uma carga com erro, se comporta como nova tentativa', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listNotifications).mockRejectedValueOnce(new Error('Falha controlada'));
+      render(tree(USER_A));
+      await screen.findByRole('alert');
+
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      expect(await screen.findByText(`Bolsa de ${USER_A.id}`)).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(listNotifications).toHaveBeenCalledTimes(2);
+    });
+
+    it('não duplica a busca enquanto a carga inicial está pendente', async () => {
+      const user = userEvent.setup();
+      const request = deferred<NotificationPage>();
+      vi.mocked(listNotifications).mockReturnValue(request.promise);
+      render(tree(USER_A));
+
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      expect(listNotifications).toHaveBeenCalledTimes(1);
+      await act(async () => request.resolve(pageFor(itemsFor(USER_A.id))));
+    });
+
+    it('sem sessão, não busca nada', async () => {
+      const user = userEvent.setup();
+      render(tree(null));
+
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      expect(listNotifications).not.toHaveBeenCalled();
+    });
+
+    it('dado velho não reacende leitura individual já confirmada', async () => {
+      const user = userEvent.setup();
+      render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      await user.click(screen.getByRole('button', { name: `Ler ${USER_A.id}-favorito principal` }));
+      await waitFor(() =>
+        expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('1'),
+      );
+
+      // O back ainda devolve as duas como não lidas.
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+      await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
+      await act(async () => {});
+
+      expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('1');
+      expect(screen.getAllByText('Não lida')).toHaveLength(1);
+    });
+
+    it('leitura confirmada durante a busca não reacende quando a resposta chega', async () => {
+      const user = userEvent.setup();
+      render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      const request = deferred<NotificationPage>();
+      vi.mocked(listNotifications).mockReturnValueOnce(request.promise);
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+      await user.click(screen.getByRole('button', { name: `Ler ${USER_A.id}-venda principal` }));
+      await waitFor(() =>
+        expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('1'),
+      );
+
+      await act(async () => request.resolve(pageFor(itemsFor(USER_A.id))));
+
+      expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('1');
+      expect(screen.getAllByText('Não lida')).toHaveLength(1);
+    });
+
+    it('dado velho não reacende o "marcar todas" já confirmado', async () => {
+      const user = userEvent.setup();
+      render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      await user.click(screen.getByRole('button', { name: 'Ler todas principal' }));
+      await waitFor(() =>
+        expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('0'),
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+      await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
+      await act(async () => {});
+
+      expect(screen.getByLabelText('Não lidas principal')).toHaveTextContent('0');
+      expect(screen.queryByText('Não lida')).not.toBeInTheDocument();
+    });
+
+    it('resposta atrasada do refresh de A não aparece para B', async () => {
+      const user = userEvent.setup();
+      const view = render(tree(USER_A));
+      await screen.findByText(`Bolsa de ${USER_A.id}`);
+
+      const request = deferred<NotificationPage>();
+      vi.mocked(listNotifications).mockReturnValueOnce(request.promise);
+      await user.click(screen.getByRole('button', { name: 'Atualizar principal' }));
+
+      view.rerender(tree(USER_B));
+      await screen.findByText(`Bolsa de ${USER_B.id}`);
+      await act(async () => request.resolve(pageFor(itemsFor(USER_A.id))));
+
+      expect(screen.queryByText(`Bolsa de ${USER_A.id}`)).not.toBeInTheDocument();
+      expect(screen.getByText(`Bolsa de ${USER_B.id}`)).toBeInTheDocument();
+    });
   });
 
   it('sessão expirada usa o handler de autenticação existente e oculta os dados', async () => {

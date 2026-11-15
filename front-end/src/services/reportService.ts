@@ -1,4 +1,5 @@
 import { httpClient } from '@/services/httpClient';
+import { findExampleOrder } from '@/services/orderService';
 import {
   ORDER_REPORT_REASONS,
   type AdminOrderReport,
@@ -6,6 +7,7 @@ import {
   type OrderReport,
   type OrderReportReason,
 } from '@/types/report';
+import type { OrderStatus } from '@/types/order';
 import type { Paginated } from '@/types/product';
 
 /**
@@ -59,6 +61,23 @@ export class OrderReportError extends Error {
   }
 }
 
+/** Só Pedido já confirmado pode ser reportado (RN-77). */
+const REPORTABLE_STATUSES: readonly OrderStatus[] = [
+  'confirmado',
+  'preparando',
+  'enviado',
+  'concluido',
+];
+
+/**
+ * Se o Pedido aceita Reclamação (RN-77). A mesma regra decide o botão
+ * "Reportar problema" no `OrderCard` e no detalhe do Pedido (#410) e a
+ * recusa `ORDER_NOT_REPORTABLE` do mock.
+ */
+export function canReportOrder(status: OrderStatus): boolean {
+  return REPORTABLE_STATUSES.includes(status);
+}
+
 const REASON_ERROR = 'Escolha um dos motivos: não recebido ou danificado.';
 const DESCRIPTION_ERROR = 'Descreva o problema.';
 
@@ -86,8 +105,11 @@ const ORDERS_KEY_PREFIX = 'orders:';
 
 const REPORTS_KEY = 'orderReports';
 
-/** Só Pedido já confirmado pode ser reportado (RN-77). */
-const REPORTABLE_STATUSES = ['confirmado', 'preparando', 'enviado', 'concluido'];
+/**
+ * Comprador gravado na Reclamação de um Pedido de exemplo: os exemplos são
+ * compartilhados por todos os compradores do mock e não têm dono.
+ */
+const EXAMPLE_BUYER_ID = 'exemplo';
 
 interface StoredOrder {
   id: string;
@@ -100,14 +122,19 @@ function readReports(): AdminOrderReport[] {
   return raw ? (JSON.parse(raw) as AdminOrderReport[]) : [];
 }
 
-/** Pedido real com o dono dele; `null` se não existe (o mock não distingue "de outra pessoa"). */
+/**
+ * Pedido com o dono dele; `null` se não existe (o mock não distingue "de outra
+ * pessoa"). Primeiro os Pedidos criados no `sessionStorage`; depois os de
+ * exemplo de "Meus pedidos", que ficam no `orderService` e não têm dono.
+ */
 function findOrder(orderId: string): { userId: string; order: StoredOrder } | null {
   for (const [key, value] of Object.entries(window.sessionStorage)) {
     if (!key.startsWith(ORDERS_KEY_PREFIX)) continue;
     const order = (JSON.parse(value) as StoredOrder[]).find(({ id }) => id === orderId);
     if (order) return { userId: key.slice(ORDERS_KEY_PREFIX.length), order };
   }
-  return null;
+  const example = findExampleOrder(orderId);
+  return example ? { userId: EXAMPLE_BUYER_ID, order: example } : null;
 }
 
 function mockReportOrder(
@@ -119,7 +146,7 @@ function mockReportOrder(
   if (!found) {
     throw new OrderReportError('ORDER_NOT_FOUND', `Pedido ${orderId} não encontrado.`);
   }
-  if (!REPORTABLE_STATUSES.includes(found.order.status)) {
+  if (!canReportOrder(found.order.status as OrderStatus)) {
     throw new OrderReportError(
       'ORDER_NOT_REPORTABLE',
       'Só é possível reportar um Pedido depois da confirmação.',

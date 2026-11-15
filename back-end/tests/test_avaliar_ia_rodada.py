@@ -173,31 +173,76 @@ def test_perfil_conta_os_k_primeiros_dentro_dos_estilos(monkeypatch):
         2: _peca(id=2, style="gotico-dark", name="Rasteira", price=Decimal("90")),
         3: _peca(id=3, style="y2k", name="Bolsa", price=Decimal("50")),
     }
-    devolvidas = [
-        {
-            "id": i,
-            "name": catalogo[i]["name"],
-            "price": catalogo[i]["price"],
-            "store_name": "Ateliê Reviver",
-        }
-        for i in (1, 3, 2)
-    ]
-
-    class Repositorio:
-        def __init__(self, db):
-            pass
-
-        def find_similar(self, vetor, modelo, pagina):
-            return devolvidas, len(devolvidas)
-
+    pedidas: list = []
     monkeypatch.setattr(avaliar, "vetor_do_perfil", lambda texto: ([0.0], "m"))
-    monkeypatch.setattr(avaliar, "ProductRepository", Repositorio)
+    monkeypatch.setattr(
+        avaliar,
+        "RecommendationController",
+        _controller_que_devolve(catalogo, (1, 3, 2), pedidas),
+    )
     linha = avaliar.rodar_perfil(None, {"estilos": ["gotico-dark"]}, catalogo)
 
     # Duas peças ativas no estilo, então k = 2; das duas primeiras, uma é dele.
     assert (linha["k"], linha["dentro_dos_estilos"], linha["taxa"]) == (2, 1, 0.5)
     assert linha["acerto"] is False
     assert linha["fora_do_catalogo"] == []
+    # O perfil chega ao controller como as preferências do onboarding.
+    assert [(p.type, p.value) for p in pedidas[0]] == [("estilo", "gotico-dark")]
+
+
+def test_perfil_com_recomendacao_generica_sai_da_conta(monkeypatch):
+    """Sem peça com vetor, a home mostra o feed: não é a recomendação errando."""
+    catalogo = {1: _peca(id=1, style="y2k")}
+    monkeypatch.setattr(avaliar, "vetor_do_perfil", lambda texto: ([0.0], "m"))
+    monkeypatch.setattr(
+        avaliar,
+        "RecommendationController",
+        _controller_que_devolve(catalogo, (1,), [], personalized=False),
+    )
+    linha = avaliar.rodar_perfil(None, {"estilos": ["y2k"]}, catalogo)
+
+    assert "invalido" in linha
+    assert linha["falha"] is True
+
+
+def _controller_que_devolve(catalogo, ids, pedidas, *, personalized=True):
+    from app.schemas.product_schema import (
+        FeedStoreResponse,
+        ProductFeedItemResponse,
+        RecommendationsResponse,
+    )
+
+    class Controller:
+        def __init__(self, db):
+            pass
+
+        def recommend_for(self, preferencias, pagina):
+            pedidas.append(preferencias)
+            itens = [
+                ProductFeedItemResponse(
+                    id=i,
+                    name=catalogo[i]["name"],
+                    price=catalogo[i]["price"],
+                    category=None,
+                    size=None,
+                    condition=None,
+                    cover_image_url=None,
+                    store=FeedStoreResponse(
+                        id=1, name="Ateliê Reviver", verified=False
+                    ),
+                    status="ativo",
+                )
+                for i in ids
+            ]
+            return RecommendationsResponse(
+                items=itens,
+                personalized=personalized,
+                page=1,
+                page_size=pagina.page_size,
+                total=len(itens),
+            )
+
+    return Controller
 
 
 def test_perfil_com_falha_do_provedor_sai_da_conta(monkeypatch):
