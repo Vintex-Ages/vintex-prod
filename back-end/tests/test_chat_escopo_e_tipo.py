@@ -29,11 +29,13 @@ from app.services.ai.search_interpretation import (
     interpretacao_da_resposta,
 )
 from tests.test_chat_filtros import (
+    _busca,
     _ids,
     _loja,
     _peca,
     _perguntar,
     _Provedor,
+    _texto,
     _usar,
     _vetor,
 )
@@ -213,14 +215,14 @@ def test_fora_do_escopo_vira_alternativa_sem_filtro(
 
     eventos = _perguntar(pg_client, "geladeira brastemp 400 litros")
 
-    assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
+    assert [e["type"] for e in eventos] == ["interpreted", "products", "text", "done"]
     # A marca lida não cortou nada, então não aparece como chip na tela, nem o
     # "parecido com".
     assert eventos[0]["filters"] == {}
     assert eventos[0]["similarity"] is None
     assert eventos[0]["in_scope"] is False
-    assert eventos[1]["delta"] == _FORA_DO_ESCOPO
-    assert eventos[2]["match_type"] == "fallback"
+    assert _texto(eventos) == _FORA_DO_ESCOPO
+    assert _busca(eventos)["match_type"] == "fallback"
     assert _ids(eventos) == [jaqueta.id]
 
 
@@ -245,9 +247,9 @@ def test_tipo_ausente_marca_alternativa_com_as_mesmas_pecas(
 
     eventos = _perguntar(pg_client, "vestido")
 
-    assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
-    assert eventos[1]["delta"].startswith("Não encontrei vestido.")
-    assert eventos[2]["match_type"] == "fallback"
+    assert [e["type"] for e in eventos] == ["interpreted", "products", "text", "done"]
+    assert _texto(eventos).startswith("Não encontrei vestido.")
+    assert _busca(eventos)["match_type"] == "fallback"
     assert _ids(eventos) == [calca.id]
 
 
@@ -273,8 +275,8 @@ def test_tipo_presente_pelo_sinonimo_continua_resultado_direto(
 
     eventos = _perguntar(pg_client, "sandália")
 
-    assert [e["type"] for e in eventos] == ["interpreted", "products", "done"]
-    assert eventos[1]["match_type"] == "exact"
+    assert [e["type"] for e in eventos] == ["interpreted", "products", "text", "done"]
+    assert _busca(eventos)["match_type"] == "exact"
     assert _ids(eventos) == [tenis.id, rasteira.id]
 
 
@@ -308,8 +310,8 @@ def test_tipo_ausente_dentro_do_filtro_cita_o_que_faltou(
 
     eventos = _perguntar(pg_client, "tênis 42")
 
-    assert eventos[1]["delta"].startswith("Não encontrei tênis com tamanho 42.")
-    assert eventos[2]["match_type"] == "fallback"
+    assert _texto(eventos).startswith("Não encontrei tênis com tamanho 42.")
+    assert _busca(eventos)["match_type"] == "fallback"
     assert _ids(eventos) == [scarpin.id]
 
 
@@ -325,7 +327,7 @@ def test_leitura_sem_escopo_nem_tipo_mantem_o_resultado_direto(
 
     eventos = _perguntar(pg_client, "algo anos 90")
 
-    assert eventos[1]["match_type"] == "exact"
+    assert _busca(eventos)["match_type"] == "exact"
     assert _ids(eventos) == [peca.id]
 
 
@@ -340,8 +342,8 @@ def test_leitura_que_falha_mantem_o_resultado_direto(
 
     eventos = _perguntar(pg_client, "geladeira 400 litros")
 
-    assert [e["type"] for e in eventos] == ["products", "done"]
-    assert eventos[0]["match_type"] == "exact"
+    assert [e["type"] for e in eventos] == ["products", "text", "done"]
+    assert _busca(eventos)["match_type"] == "exact"
     assert _ids(eventos) == [peca.id]
 
 
@@ -371,6 +373,6 @@ def test_peca_de_nome_sem_tipo_nao_salva_o_rotulo(
 
     eventos = _perguntar(pg_client, "vestido")
 
-    assert eventos[1]["delta"].startswith("Não encontrei vestido.")
-    assert eventos[2]["match_type"] == "fallback"
+    assert _texto(eventos).startswith("Não encontrei vestido.")
+    assert _busca(eventos)["match_type"] == "fallback"
     assert _ids(eventos) == [cropped.id, calca.id]

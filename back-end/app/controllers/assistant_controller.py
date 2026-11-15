@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Sequence
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
@@ -28,8 +28,14 @@ from app.services.ai.base import (
     ChatTurn,
     ImageAnalysisResult,
     InterpretedQuery,
+    PecaParaComentar,
     SearchDone,
     SearchTextDelta,
+)
+from app.services.ai.personalidade import (
+    PecaNaFala,
+    abertura_do_exato,
+    fala_conferida,
 )
 from app.services.chat_quota import ChatQuota, CotaEsgotada
 
@@ -52,6 +58,31 @@ _FORA_DO_ESCOPO = (
     "A Vintex vende roupas, sapatos e acessórios de brechó. Estas são peças do "
     "catálogo que podem te interessar."
 )
+
+
+class Achado(NamedTuple):
+    """O que a busca achou, antes de virar evento (back-end#329).
+
+    `_buscar` montava os eventos e acabava ali. A fala precisa das peças e do
+    rótulo para comentar, e precisa acontecer depois de a lista ir para a tela,
+    então quem monta os eventos agora é o `chat`.
+
+    `abertura` é a frase pronta que abre a resposta: quantas peças no caminho
+    exato, o aviso de alternativa (RN-61) quando nada casou, e o aviso de
+    escopo quando a pergunta não era sobre roupa. Vazia quando não há peça
+    nenhuma, caso em que a bolha fica para o front, que ainda oferece o
+    catálogo.
+
+    `comentar` é falso quando a pergunta não era sobre o que a Vintex vende. O
+    rótulo é o mesmo `fallback` do filtro que não achou nada, e os dois casos
+    pedem texto diferente: ali as peças são alternativas ao que a pessoa
+    pediu; aqui não há pedido nenhum a que se parecer.
+    """
+
+    rows: list[ProductSimilarRow]
+    match_type: Literal["exact", "fallback"]
+    abertura: str
+    comentar: bool = True
 
 
 class AssistantController:
@@ -106,6 +137,14 @@ class AssistantController:
         A pergunta é interpretada antes (back-end#260): o que é objetivo vira
         filtro e corta, o resto ordena por similaridade. O que foi lido vai
         para a tela no evento `interpreted`.
+
+        São três chamadas ao provedor por pergunta (back-end#329): ler a
+        pergunta, o vetor dela, e a fala sobre as peças achadas. Duas quando a
+        fala não sai, que é pergunta fora do escopo ou busca sem peça. **Cada
+        chamada pode custar mais de uma requisição:** o `_gerar_com_fallback`
+        troca de modelo quando o atual responde 429 ou 503, então o número de
+        requisições do dia não se calcula pelo de perguntas. A ordem dos
+        eventos é `interpreted`, `products`, `text`, `done`.
         """
         query = _last_user_message(messages)
         if query is None:
@@ -136,10 +175,22 @@ class AssistantController:
             else:
                 yield interpretada
 
-        for event in await run_in_threadpool(
+        achado = await run_in_threadpool(
             self._buscar, provider, modelo, query, interpretada
-        ):
-            yield event
+        )
+        if isinstance(achado, list):
+            for event in achado:
+                yield event
+            return
+
+        # As peças primeiro, o texto depois (back-end#329): a fala é uma
+        # segunda chamada ao modelo, e a lista não espera por ela. Antes desta
+        # issue o texto vinha antes, porque era frase pronta.
+        yield _pecas(achado.rows, achado.match_type)
+        texto = await run_in_threadpool(self._falar, provider, query, achado)
+        if texto:
+            yield SearchTextDelta(delta=texto)
+        yield SearchDone()
 
     def _preparar(self, pessoa: str) -> tuple[AIProvider, str] | list[ChatEvent]:
         """O provedor e o modelo, com a pergunta já contada na cota; ou os
@@ -169,8 +220,11 @@ class AssistantController:
         modelo: str,
         query: str,
         interpretada: InterpretedQuery | None,
-    ) -> list[ChatEvent]:
+    ) -> Achado | list[ChatEvent]:
         """Filtro corta, similaridade ordena (back-end#260).
+
+        Devolve o que achou (`Achado`), ou os eventos que encerram a conversa
+        quando o provedor falha — o mesmo arranjo do `_preparar`.
 
         O vetor é o da pergunta inteira, como antes. Dentro do que o filtro
         deixou passar, os atributos objetivos são iguais em todas as peças, e
@@ -198,41 +252,93 @@ class AssistantController:
         if interpretada is not None and interpretada.in_scope is False:
             rows, _ = self.repository.find_similar(vectors[0], modelo, pagina)
             if rows:
-                return [
-                    SearchTextDelta(delta=_FORA_DO_ESCOPO),
-                    _pecas(rows, "fallback"),
-                    SearchDone(),
-                ]
-            return [_pecas([], "exact"), SearchDone()]
+                return Achado(rows, "fallback", _FORA_DO_ESCOPO, comentar=False)
+            return Achado([], "exact", "")
 
         filtros = _filtros_da_pergunta(interpretada)
         tipo = interpretada.tipo if interpretada is not None else None
         rows, _ = self.repository.find_similar(vectors[0], modelo, pagina, filtros)
         if rows and _tem_o_tipo(rows, tipo):
-            return [_pecas(rows, "exact"), SearchDone()]
+            return Achado(rows, "exact", abertura_do_exato(len(rows)))
         if rows:
             # O filtro achou peças, mas nenhuma do tipo pedido: "vestido" num
             # catálogo sem vestido devolvia calça como resposta certa. As
             # peças continuam as mesmas; muda o rótulo e o aviso.
-            return [
-                SearchTextDelta(delta=_aviso_de_alternativas(filtros, tipo)),
-                _pecas(rows, "fallback"),
-                SearchDone(),
-            ]
+            return Achado(rows, "fallback", _aviso_de_alternativas(filtros, tipo))
         if not filtros.applied():
-            return [_pecas([], "exact"), SearchDone()]
+            return Achado([], "exact", "")
 
         # Filtro sem peça nenhuma não devolve vazio (RN-61): cai nas mais
         # parecidas, e a resposta diz que são alternativas.
         for relaxado in _relaxamentos(filtros):
             rows, _ = self.repository.find_similar(vectors[0], modelo, pagina, relaxado)
             if rows:
-                return [
-                    SearchTextDelta(delta=_aviso_de_alternativas(filtros, tipo)),
-                    _pecas(rows, "fallback"),
-                    SearchDone(),
-                ]
-        return [_pecas([], "exact"), SearchDone()]
+                return Achado(rows, "fallback", _aviso_de_alternativas(filtros, tipo))
+        return Achado([], "exact", "")
+
+    def _falar(self, provider: AIProvider, query: str, achado: Achado) -> str:
+        """O texto da resposta: a abertura do servidor e, depois dela, o
+        comentário do modelo em cada peça (back-end#329).
+
+        Nome e preço saem da linha da busca, nunca do modelo (RN-65). O
+        comentário passa por `fala_conferida` antes de sair, e o que não passa
+        vira a abertura sozinha, que é a frase pronta de antes desta issue.
+
+        Sem peça não há o que comentar: a bolha fica para o front
+        (`fallbackFor`), que no caso vazio ainda oferece o catálogo.
+
+        A segunda chamada não desconta cota da pessoa: a cota conta pergunta,
+        e foi reservada no `_preparar`. Ela pesa no custo e no limite diário do
+        provedor, que é o que a RN-71 pede para vigiar.
+        """
+        if not achado.rows:
+            return ""
+
+        # Pergunta que não é sobre roupa não vai ao modelo (back-end#231). A
+        # situação de alternativa manda relacionar cada peça ao pedido, e
+        # dizer o que uma jaqueta tem a ver com uma geladeira é pior que a
+        # frase pronta, que é o que a #231 decidiu mostrar. De graça, poupa a
+        # chamada justamente na pergunta que não era do site.
+        if not achado.comentar:
+            return achado.abertura
+
+        try:
+            pecas = [
+                PecaParaComentar(
+                    product_id=atributos["id"],
+                    name=atributos["name"],
+                    description=atributos["description"],
+                    category=atributos["category"],
+                    color=atributos["color"],
+                    size=atributos["size"],
+                    brand=atributos["brand"],
+                    condition=atributos["condition"],
+                    city=atributos["city"],
+                )
+                for atributos in self.repository.atributos_das_pecas(
+                    [row["id"] for row in achado.rows]
+                )
+            ]
+            conferida = fala_conferida(
+                provider.comentar_pecas(
+                    query, pecas, alternativas=achado.match_type == "fallback"
+                ),
+                abertura=achado.abertura,
+                pecas={
+                    row["id"]: PecaNaFala(nome=row["name"], preco=_reais(row["price"]))
+                    for row in achado.rows
+                },
+            )
+        except Exception:  # noqa: BLE001 - as peças já foram para a tela
+            # Degradação, não erro, e por isso o `except` é largo: aqui a lista
+            # já está na tela, e uma exceção que subisse encerraria o SSE sem o
+            # `done` que o front espera, deixando a bolha em "escrevendo" para
+            # sempre. Nenhuma falha da fala vale isso, nem a que não é do
+            # provedor (a consulta dos atributos, por exemplo).
+            logger.warning("Fala da assistente não foi gerada", exc_info=True)
+            return achado.abertura
+
+        return conferida or achado.abertura
 
 
 async def _interpretar(
