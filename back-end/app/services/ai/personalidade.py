@@ -21,9 +21,11 @@ comentário fala de peça que a busca não devolveu, ou tem número, `R$` ou
 Dois limites do que a conferência cobre, lidos no código e não medidos em
 produção:
 
-- **número por extenso passa.** A regra olha dígito e as duas palavras de
-  moeda; "custa uns cento e vinte" não é pego. O que segura isso é o prompt,
-  e o custo de errar é texto errado, não preço errado em campo nenhum.
+- **número por extenso passa.** A regra olha dígito, `R$` e as palavras de
+  dinheiro ("reais", "pratas", "contos", "pila", "mangos"); "custa uns cento e
+  vinte" não é pego. Palavra de número sozinha não entra na regra porque "um
+  casaco" e "dois bolsos" derrubariam a fala toda. O que segura isso é o
+  prompt, e o custo de errar é texto errado, não preço errado em campo nenhum.
 - **a conferência não julga se o comentário é verdade.** Ela amarra o
   comentário a uma peça que existe; se o modelo elogiar o couro de uma peça
   de algodão, a frase sai. O que limita isso é o prompt mandar usar só os
@@ -51,14 +53,27 @@ COMENTARIOS_NA_FALA = 3
 # curtas cabem com folga nisto. Serve de teto para o modelo não encher a bolha.
 _LIMITE_DO_COMENTARIO = 300
 
-# Nome e descrição são texto do vendedor: entram sem quebra de linha e
-# cortados, para uma descrição comprida não virar a maior parte do prompt e
-# para texto de várias linhas não imitar o formato da lista.
+# Todo campo da peça é texto que alguém digitou: entra sem quebra de linha e
+# cortado, para uma descrição comprida não virar a maior parte do prompt e para
+# texto de várias linhas não imitar o formato da lista. A marca é o caso que
+# obriga: é campo livre e o cadastro não limita o tamanho dela
+# (`ProductCreate`), então cabe nela uma lista de peças inteira.
 _LIMITE_DO_NOME = 150
 _LIMITE_DA_DESCRICAO = 200
+_LIMITE_DO_ATRIBUTO = 80
+
+# A pergunta vai até onde a leitura dela vai (`_CARACTERES_POR_TURNO`, em
+# `search_interpretation`). Comentar peça contra uma pergunta cortada na metade
+# é pior que prompt grande: os filtros e as peças foram escolhidos com a
+# pergunta inteira.
+_LIMITE_DA_PERGUNTA = 500
 
 _NUMERO = re.compile(r"\d")
-_MOEDA = re.compile(r"r\$|\breais\b", re.IGNORECASE)
+# "R$", "reais" e a gíria de dinheiro que aparece por aqui, "pila"
+# inclusive. Número por extenso continua passando, e está declarado no
+# topo: palavra de número sozinha ("duzentos") não entra na regra, porque
+# "um casaco" e "dois bolsos" derrubariam a fala toda.
+_MOEDA = re.compile(r"r\$|\b(reais|pratas?|contos?|pilas?|mangos?)\b", re.IGNORECASE)
 _ESPACO = re.compile(r"\s+")
 
 _SITUACAO_EXATA = (
@@ -90,9 +105,10 @@ chamar a pessoa de cliente ou de usuário, sem emoji.
 
 O comentário não pode ter:
 
-- **nenhum número, nem "R$", nem a palavra "reais"**. Preço, tamanho de \
-calçado e medida são escritos pelo sistema. Comentário com número é \
-descartado, e aí a pessoa fica sem resposta nenhuma;
+- **nenhum número, nem "R$", nem a palavra "reais"**. O preço é escrito pelo \
+sistema, antes do seu comentário. Tamanho que é número, como o de calçado, \
+também não se escreve; tamanho que é letra (P, M, G) pode. Comentário com \
+número é descartado inteiro, e aí a pessoa fica sem resposta nenhuma;
 - o nome nem o preço da peça: o sistema escreve os dois antes do seu \
 comentário, então repetir só ocupa espaço;
 - atributo que não está na lista daquela peça. Se a peça não traz a marca, \
@@ -131,21 +147,26 @@ def montar_pecas(
     """O texto que vai ao modelo depois do prompt: a situação da busca e, em
     bloco de dado, a pergunta e as peças.
 
-    A situação é instrução nossa e fica fora do bloco. Pergunta, nome e
-    descrição são texto de terceiro e vão dentro (back-end#262): o modelo lê
-    para comentar, não para obedecer.
+    A situação é instrução nossa e fica fora do bloco. A pergunta e **todo**
+    campo da peça são texto de terceiro e vão dentro (back-end#262): o modelo
+    lê para comentar, não para obedecer.
+
+    Todo campo entra numa linha só. Marca com quebra de linha forja peça
+    dentro da lista, com `product_id` que a busca não devolveu, e aí a
+    conferência derruba a fala inteira: o texto de toda busca que trouxesse
+    aquela peça viraria a frase pronta, em silêncio.
     """
-    dados = [f"Pergunta: {_uma_linha(pergunta, _LIMITE_DO_NOME)}", "", "Peças:"]
+    dados = [f"Pergunta: {_uma_linha(pergunta, _LIMITE_DA_PERGUNTA)}", "", "Peças:"]
     for peca in pecas:
         dados.append(f"- product_id: {peca.product_id}")
         for rotulo, valor in (
             ("nome", _uma_linha(peca.name, _LIMITE_DO_NOME)),
-            ("categoria", peca.category),
-            ("cor", peca.color),
-            ("tamanho", peca.size),
-            ("marca", peca.brand),
-            ("conservação", peca.condition),
-            ("cidade", peca.city),
+            ("categoria", _uma_linha(peca.category, _LIMITE_DO_ATRIBUTO)),
+            ("cor", _uma_linha(peca.color, _LIMITE_DO_ATRIBUTO)),
+            ("tamanho", _uma_linha(peca.size, _LIMITE_DO_ATRIBUTO)),
+            ("marca", _uma_linha(peca.brand, _LIMITE_DO_ATRIBUTO)),
+            ("conservação", _uma_linha(peca.condition, _LIMITE_DO_ATRIBUTO)),
+            ("cidade", _uma_linha(peca.city, _LIMITE_DO_ATRIBUTO)),
             ("descrição", _uma_linha(peca.description, _LIMITE_DA_DESCRICAO)),
         ):
             if valor:
@@ -168,8 +189,10 @@ def fala_conferida(
     modelo que escreveu preço, ou que falou de peça que não está na lista,
     não é confiável para as outras frases da mesma resposta.
 
-    Peça repetida é o caso que não derruba: a segunda menção é descartada e o
-    resto do texto segue valendo.
+    Peça repetida é o caso que não derruba: a segunda menção é descartada antes
+    de ser conferida, e o resto do texto segue valendo. A ordem importa: com a
+    conferência antes do descarte, um segundo comentário da mesma peça escrito
+    com número derrubava a fala por um texto que ninguém veria.
 
     O corte em `COMENTARIOS_NA_FALA` vem antes da conferência: comentário que
     não vai para a tela não derruba a fala. O que passa do teto não é lido, e
@@ -178,6 +201,9 @@ def fala_conferida(
     frases: list[str] = []
     vistos: set[int] = set()
     for comentario in fala.comentarios[:COMENTARIOS_NA_FALA]:
+        if comentario.product_id in vistos:
+            continue
+
         peca = pecas.get(comentario.product_id)
         if peca is None:
             logger.warning(
@@ -202,8 +228,6 @@ def fala_conferida(
             )
             return None
 
-        if comentario.product_id in vistos:
-            continue
         vistos.add(comentario.product_id)
         frases.append(f"{peca.nome}, {peca.preco}. {_frase(texto)}")
 

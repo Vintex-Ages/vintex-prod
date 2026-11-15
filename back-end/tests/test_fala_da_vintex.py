@@ -144,6 +144,43 @@ def test_peca_repetida_entra_uma_vez_e_nao_derruba() -> None:
     )
 
 
+def test_peca_repetida_com_numero_nao_derruba_a_fala() -> None:
+    """A repetida é descartada antes de ser conferida. Comentário que não vai
+    para a tela não derruba a fala, e o segundo da mesma peça não vai."""
+    texto = fala_conferida(
+        _fala((7, "primeira menção"), (7, "o tamanho 38 cai bem"), (9, "a outra peça")),
+        abertura="",
+        pecas=_PECAS,
+    )
+
+    assert texto == (
+        "Jaqueta jeans oversized, R$ 189,90. Primeira menção. "
+        "Coturno de couro preto, R$ 240,00. A outra peça."
+    )
+
+
+@pytest.mark.parametrize(
+    "comentario",
+    [
+        "essa sai por uns duzentos pratas",
+        "pechincha, cem pila",
+        "dois contos bem gastos",
+        "uns trocados em mangos",
+    ],
+)
+def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
+    """Preço na voz da plataforma é pior sem dígito nenhum: "cem pila" não tem
+    número para a regra pegar, e aqui o Rio Grande do Sul fala assim."""
+    assert (
+        fala_conferida(
+            _fala((7, comentario)),
+            abertura="Achei uma peça que combina com o que você pediu.",
+            pecas=_PECAS,
+        )
+        is None
+    )
+
+
 def test_fala_comenta_no_maximo_tres_pecas() -> None:
     """Cinco comentários numa bolha de chat é parede de texto."""
     pecas = {i: PecaNaFala(nome=f"Peça {i}", preco="R$ 100,00") for i in range(5)}
@@ -359,11 +396,24 @@ def test_na_alternativa_o_texto_diz_o_que_a_frase_pronta_dizia() -> None:
 
 def test_fala_reprovada_cai_na_frase_pronta() -> None:
     provedor = _ProvedorQueFala(_fala((99, "peça que a busca não devolveu")))
-    achado = Achado(_LINHAS, "fallback", _FORA_DO_ESCOPO)
+    achado = Achado(_LINHAS, "exact", abertura_do_exato(1))
 
-    texto = _controller(_ATRIBUTOS)._falar(provedor, "geladeira", achado)
+    texto = _controller(_ATRIBUTOS)._falar(provedor, "jaqueta", achado)
+
+    assert texto == abertura_do_exato(1)
+
+
+def test_pergunta_fora_do_escopo_nao_vai_ao_modelo() -> None:
+    """A #231 decidiu não fingir que a geladeira foi achada. A situação de
+    alternativa manda relacionar cada peça ao pedido, então aqui o modelo não
+    é chamado: vale a frase pronta."""
+    provedor = _ProvedorQueFala(_fala((7, "essa jaqueta gela que é uma beleza")))
+    achado = Achado(_LINHAS, "fallback", _FORA_DO_ESCOPO, comentar=False)
+
+    texto = _controller(_ATRIBUTOS)._falar(provedor, "geladeira 400 litros", achado)
 
     assert texto == _FORA_DO_ESCOPO
+    assert provedor.pedidos == []
 
 
 def test_preco_escrito_pelo_modelo_cai_na_frase_pronta() -> None:

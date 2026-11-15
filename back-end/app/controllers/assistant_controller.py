@@ -72,11 +72,17 @@ class Achado(NamedTuple):
     escopo quando a pergunta não era sobre roupa. Vazia quando não há peça
     nenhuma, caso em que a bolha fica para o front, que ainda oferece o
     catálogo.
+
+    `comentar` é falso quando a pergunta não era sobre o que a Vintex vende. O
+    rótulo é o mesmo `fallback` do filtro que não achou nada, e os dois casos
+    pedem texto diferente: ali as peças são alternativas ao que a pessoa
+    pediu; aqui não há pedido nenhum a que se parecer.
     """
 
     rows: list[ProductSimilarRow]
     match_type: Literal["exact", "fallback"]
     abertura: str
+    comentar: bool = True
 
 
 class AssistantController:
@@ -242,7 +248,7 @@ class AssistantController:
         if interpretada is not None and interpretada.in_scope is False:
             rows, _ = self.repository.find_similar(vectors[0], modelo, pagina)
             if rows:
-                return Achado(rows, "fallback", _FORA_DO_ESCOPO)
+                return Achado(rows, "fallback", _FORA_DO_ESCOPO, comentar=False)
             return Achado([], "exact", "")
 
         filtros = _filtros_da_pergunta(interpretada)
@@ -283,6 +289,14 @@ class AssistantController:
         """
         if not achado.rows:
             return ""
+
+        # Pergunta que não é sobre roupa não vai ao modelo (back-end#231). A
+        # situação de alternativa manda relacionar cada peça ao pedido, e
+        # dizer o que uma jaqueta tem a ver com uma geladeira é pior que a
+        # frase pronta, que é o que a #231 decidiu mostrar. De graça, poupa a
+        # chamada justamente na pergunta que não era do site.
+        if not achado.comentar:
+            return achado.abertura
 
         try:
             pecas = [
