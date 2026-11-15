@@ -15,17 +15,18 @@ quando o modelo escreve o preço: ele não vê a tabela, ele lembra de um númer
 parecido.
 
 Antes de aparecer na tela, `fala_conferida` recusa a fala inteira quando um
-comentário fala de peça que a busca não devolveu, ou tem número, `R$` ou
-"reais". A frase pronta de antes desta issue é o que vale nesse caso.
+comentário fala de peça que a busca não devolveu, ou escreve preço: `R$`, ou
+quantia junto de palavra de dinheiro. A frase pronta de antes desta issue é o
+que vale nesse caso.
 
 Dois limites do que a conferência cobre, lidos no código e não medidos em
 produção:
 
-- **número por extenso passa.** A regra olha dígito, `R$` e as palavras de
-  dinheiro ("reais", "pratas", "contos", "pila", "mangos"); "custa uns cento e
-  vinte" não é pego. Palavra de número sozinha não entra na regra porque "um
-  casaco" e "dois bolsos" derrubariam a fala toda. O que segura isso é o
-  prompt, e o custo de errar é texto errado, não preço errado em campo nenhum.
+- **quantia sem palavra de dinheiro passa.** A regra pede as duas juntas, então
+  "custa uns cento e vinte" e "sai por 150" não são pegos. Número solto passa
+  de propósito: a década e o tamanho estão no catálogo, e recusar dígito
+  derrubava a fala de "tênis 42". O que segura o resto é o prompt, e o custo de
+  errar é texto errado, não preço errado em campo nenhum.
 - **a conferência não julga se o comentário é verdade.** Ela amarra o
   comentário a uma peça que existe; se o modelo elogiar o couro de uma peça
   de algodão, a frase sai. O que limita isso é o prompt mandar usar só os
@@ -73,25 +74,44 @@ _LIMITE_DA_PERGUNTA = 500
 
 # O que a conferência recusa é preço: "R$", ou quantia junto de palavra de
 # dinheiro, com a quantia em dígito ou por extenso ("189 reais", "cem pila",
-# "cento e vinte reais"). A quantia tem de vir antes da palavra, e é isso que
-# deixa passar o vocabulário de brechó: "anel de prata", "blusa da Mango",
-# "medidas reais".
+# "cinquenta conto", "cento e vinte reais"). **A quantia tem de vir
+# imediatamente antes da palavra**, e é isso que deixa passar o vocabulário de
+# brechó: "jaqueta com dois bolsos e as medidas reais na descrição" não é
+# preço, e derrubava a fala quando a regra só pedia as duas coisas na mesma
+# frase.
 #
 # Número solto passa, de propósito. A versão anterior recusava qualquer dígito
-# e cada palavra de dinheiro sozinha, e isso derrubava a fala inteira em dois
-# casos do catálogo de hoje: a marca Mango, e a década, que está na descrição
-# de 12 dos 36 modelos do seed ("anos 90") e no tamanho que o `_descricao`
-# anexa a todo sapato. O preço é o que não pode sair na voz da plataforma
-# (RN-65); o resto o prompt pede, e errar nele custa uma frase, não a resposta.
+# e cada palavra de dinheiro sozinha, e isso derrubava a fala inteira na década,
+# que está na descrição de 12 dos 36 modelos do seed ("anos 90", "anos 2000",
+# "Y2K") e no tamanho que o `_descricao` anexa a todo sapato. O preço é o que
+# não pode sair na voz da plataforma (RN-65); o resto o prompt pede, e errar
+# nele custa uma frase, não a resposta.
+#
+# Três decisões sobre as listas, cada uma por uma colisão:
+#
+# - **"um" e "uma" não são quantia.** "um conto de fadas" é descrição de
+#   vestido, e seria preço pela regra. Perder "um real" não custa nada: não há
+#   peça de um real.
+# - **"mango" saiu da lista de dinheiro.** Mango é marca de roupa vendida no
+#   Brasil, `brand` é texto livre e o prompt manda usar a marca: "duas Mangos
+#   iguais" era preço pela regra. A gíria de dinheiro é rara o bastante para
+#   não valer isso. *(A versão anterior deste comentário dizia que a marca
+#   Mango derrubava a fala "no catálogo de hoje", e isso era hipótese escrita
+#   como medição: as 35 marcas do seed não incluem Mango. O risco é o cadastro
+#   real, não o seed.)*
+# - **"pratas" saiu pelo mesmo motivo**, trocado por "paus": a Vintex vende
+#   acessório de prata, e "duas pratas no mesmo look" é descrição.
 _QUANTIA = (
-    r"\d+|um|uma|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|"
-    r"quinze|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|"
-    r"noventa|cem|cento|duzentos|trezentos|quatrocentos|quinhentos|mil"
+    r"\d+|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|"
+    r"treze|catorze|quatorze|quinze|dezesseis|dezessete|dezoito|dezenove|"
+    r"vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|"
+    r"cento|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|"
+    r"oitocentos|novecentos|mil"
 )
-_DINHEIRO = r"reais|pratas|contos|pilas?|mangos?"
+_DINHEIRO = r"reais|contos?|pilas?|paus"
 _PRECO = re.compile(
-    rf"r\$|\b(?:{_QUANTIA})\s+(?:e\s+(?:{_QUANTIA})\s+)?(?:mil\s+)?"
-    rf"(?:{_DINHEIRO})\b",
+    rf"r\$|\b(?:{_QUANTIA})\s+(?:e\s+(?:{_QUANTIA}|poucos|tantos)\s+)?"
+    rf"(?:mil\s+)?(?:{_DINHEIRO})\b",
     re.IGNORECASE,
 )
 _ESPACO = re.compile(r"\s+")
@@ -128,7 +148,8 @@ O comentário não pode ter:
 - **preço, de jeito nenhum**: nem "R$", nem valor em número, nem por \
 extenso ("cem reais", "duzentos pila"). Quem escreve o preço é o sistema, \
 antes do seu comentário, e comentário com preço é descartado inteiro: aí a \
-pessoa fica sem resposta nenhuma. Número que não é preço pode, e é para usar \
+pessoa fica só com a frase pronta, sem nada do que você escreveu. Número que \
+não é preço pode, e é para usar \
 quando a peça traz: a década que está na descrição ("anos 90") e o tamanho \
 que está na lista;
 - o nome nem o preço da peça: o sistema escreve os dois antes do seu \

@@ -105,8 +105,17 @@ def test_peca_que_a_busca_nao_devolveu_descarta_a_fala() -> None:
         "custa R$ 189,90, um preço justo",
         "fica em cento e vinte reais",
         "uns 50 pila e é tua",
+        "sai por cem e poucos reais",
+        "dezoito reais e é tua",
     ],
-    ids=["digito-e-palavra", "r$", "extenso-composto", "giria"],
+    ids=[
+        "digito-e-palavra",
+        "r$",
+        "extenso-composto",
+        "giria",
+        "e-poucos",
+        "dezena-do-meio",
+    ],
 )
 def test_preco_no_comentario_descarta_a_fala(comentario: str) -> None:
     """Preço dito pelo modelo é preço de memória, não o do banco (RN-65). A
@@ -163,15 +172,18 @@ def test_peca_repetida_com_preco_nao_derruba_a_fala() -> None:
 @pytest.mark.parametrize(
     "comentario",
     [
-        "essa sai por uns duzentos pratas",
+        "essa sai por uns cinquenta conto",
         "pechincha, cem pila",
         "dois contos bem gastos",
-        "sai por uns vinte mangos",
+        "sai por uns oitenta paus",
     ],
 )
 def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
     """Preço na voz da plataforma é pior sem dígito nenhum: "cem pila" não tem
-    número para a regra pegar, e aqui o Rio Grande do Sul fala assim."""
+    número para a regra pegar, e aqui o Rio Grande do Sul fala assim.
+
+    O singular de "conto" conta: "cinquenta conto" é como se fala. Quem segura
+    "um conto de fadas" não é o plural, é "um" não ser quantia."""
     assert (
         fala_conferida(
             _fala((7, comentario)),
@@ -186,24 +198,48 @@ def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
     "comentario",
     [
         "a blusa da Mango tem caimento solto",
+        "é uma Mango original dos anos 90",
+        "tem duas Mangos iguais no catálogo",
         "esse anel de prata combina com tudo",
+        "duas pratas no mesmo look",
         "bem anos 90, do jeito que voltou a ser usado",
         "o tênis 42 é confortável para o dia inteiro",
         "as medidas reais estão na descrição do vendedor",
+        "jaqueta com dois bolsos e as medidas reais na descrição do vendedor",
+        "um conto de fadas, esse vestido",
         "o contorno do decote é o charme da peça",
     ],
-    ids=["marca", "prata", "decada", "tamanho", "medidas", "contorno"],
+    ids=[
+        "marca",
+        "marca-com-quantia",
+        "marca-no-plural",
+        "prata",
+        "prata-com-quantia",
+        "decada",
+        "tamanho",
+        "medidas",
+        "quantia-longe-da-palavra",
+        "um-conto-de-fadas",
+        "contorno",
+    ],
 )
 def test_palavra_do_catalogo_nao_derruba_a_fala(comentario: str) -> None:
     """Falso positivo aqui custa a resposta escrita inteira, não uma frase, e
     custa sempre: a mesma peça derruba toda busca que a trouxer.
 
-    Os seis casos são vocabulário que o próprio prompt manda usar. Mango é
-    marca de roupa e `brand` é campo livre; `anos 90` está na descrição de 12
-    dos 36 modelos do seed; o tamanho do calçado está na descrição de todos
-    eles, anexado pelo `_descricao`. A versão anterior desta regra recusava
-    dígito e palavra de dinheiro sozinhos, e derrubava a fala nos quatro
-    primeiros."""
+    Os casos são vocabulário que o próprio prompt manda usar. Mango é marca de
+    roupa e `brand` é campo livre; `anos 90` está na descrição de 12 dos 36
+    modelos do seed; o tamanho do calçado está na descrição de todos eles,
+    anexado pelo `_descricao`.
+
+    **`quantia-longe-da-palavra` é o caso que define a regra:** "dois bolsos" e
+    "medidas reais" na mesma frase não são preço. Sem ele, uma regra que só
+    pedisse as duas coisas no mesmo comentário passava a suíte inteira.
+
+    A regra anterior, que recusava dígito e cada palavra de dinheiro sozinha,
+    derrubava `marca`, `decada`, `tamanho` e `medidas`. A que veio depois dela,
+    com a quantia exigida, ainda derrubava `marca-com-quantia`,
+    `marca-no-plural`, `prata-com-quantia` e `um-conto-de-fadas`."""
     texto = fala_conferida(_fala((7, comentario)), abertura="", pecas=_PECAS)
 
     assert texto is not None
@@ -362,8 +398,10 @@ class _Repositorio:
     def __init__(self, atributos: list[dict[str, Any]]) -> None:
         self.atributos = atributos
         self.pedidos: list[list[int]] = []
+        self.buscas: list[Any] = []
 
     def find_similar(self, vetor, modelo, pagina, filtros=None):  # noqa: ANN001, ANN201
+        self.buscas.append(filtros)
         return list(_LINHAS), len(_LINHAS)
 
     def atributos_das_pecas(self, ids):  # noqa: ANN001, ANN201
@@ -453,6 +491,8 @@ def test_fora_do_escopo_marca_o_achado_para_nao_comentar() -> None:
     assert isinstance(achado, Achado)
     assert achado.comentar is False
     assert achado.abertura == _FORA_DO_ESCOPO
+    # A outra metade do ramo: fora do escopo a busca ignora o filtro lido.
+    assert controller.repository.buscas == [None]  # type: ignore[attr-defined]
     assert controller._falar(provedor, "geladeira brastemp", achado) == _FORA_DO_ESCOPO
     assert provedor.pedidos == []
 

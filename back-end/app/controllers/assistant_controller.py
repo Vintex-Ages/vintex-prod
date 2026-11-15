@@ -139,7 +139,11 @@ class AssistantController:
         para a tela no evento `interpreted`.
 
         São três chamadas ao provedor por pergunta (back-end#329): ler a
-        pergunta, o vetor dela, e a fala sobre as peças achadas. A ordem dos
+        pergunta, o vetor dela, e a fala sobre as peças achadas. Duas quando a
+        fala não sai, que é pergunta fora do escopo ou busca sem peça. **Cada
+        chamada pode custar mais de uma requisição:** o `_gerar_com_fallback`
+        troca de modelo quando o atual responde 429 ou 503, então o número de
+        requisições do dia não se calcula pelo de perguntas. A ordem dos
         eventos é `interpreted`, `products`, `text`, `done`.
         """
         query = _last_user_message(messages)
