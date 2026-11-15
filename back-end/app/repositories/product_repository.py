@@ -53,6 +53,21 @@ class ProductFeedRow(TypedDict):
     store_verified: bool
 
 
+class ProductAtributosRow(TypedDict):
+    """Os atributos da peça que a RN-49 lista, fora os que a linha do feed já
+    traz (back-end#329). A cidade é a do endereço da loja."""
+
+    id: int
+    name: str
+    description: str | None
+    category: str | None
+    color: str | None
+    size: str | None
+    brand: str | None
+    condition: str | None
+    city: str | None
+
+
 class ProductSimilarRow(ProductFeedRow):
     """Linha do feed mais a distância de cosseno até o vetor da busca
     (back-end#246): 0 é idêntica, e quanto maior, menos parecida."""
@@ -339,6 +354,43 @@ class ProductRepository:
             .all()
         )
         return [cast(ProductSimilarRow, dict(row)) for row in rows], total
+
+    def atributos_das_pecas(self, ids: Sequence[int]) -> list[ProductAtributosRow]:
+        """Os atributos da RN-49 das peças indicadas, na ordem em que vieram.
+
+        A linha do feed carrega nome, preço, categoria e loja; cor, tamanho,
+        marca, conservação, cidade e descrição não. A fala da assistente
+        (back-end#329) comenta justamente esses, então uma consulta a mais, com
+        os ids que a busca já escolheu — não um `_feed_select()` mais gordo,
+        que pesaria em toda listagem do catálogo por causa de uma.
+
+        O preço não entra: na fala quem escreve preço é o servidor, a partir da
+        linha da busca, que já o tem.
+        """
+        if not ids:
+            return []
+        rows = (
+            self.db.execute(
+                select(
+                    Product.id,
+                    Product.name,
+                    Product.description,
+                    Product.category,
+                    Product.color,
+                    Product.size,
+                    Product.brand,
+                    Product.condition,
+                    Address.city.label("city"),
+                )
+                .join(Store, Store.id == Product.store_id)
+                .outerjoin(Address, Store.address_id == Address.id)
+                .where(Product.id.in_(list(ids)))
+            )
+            .mappings()
+            .all()
+        )
+        por_id = {row["id"]: cast(ProductAtributosRow, dict(row)) for row in rows}
+        return [por_id[i] for i in ids if i in por_id]
 
     def vetores_pelo_nome(
         self,

@@ -5,10 +5,13 @@ pergunta do chat, de qualquer pessoa e sem conta (`montar_pergunta`); o texto
 visível nas fotos, que `ANALYZE_IMAGE_PROMPT` manda o modelo ler na etiqueta;
 e a descrição da peça, do vendedor.
 
-A descrição não entra em prompt de geração nenhum: ela é parte do texto que
-vira vetor (`app.services.product_embedding.texto_da_peca`) e volta ao front
-como dado do card. O que a protege é não ser interpretada em lugar nenhum — e,
-se voltar como turno do chat, voltar pelo caminho delimitado.
+Desde a #329 o nome e a descrição da peça também entram num prompt de
+geração: a fala da assistente comenta as peças que a busca devolveu
+(`app.services.ai.personalidade.montar_pecas`), e os dois vão no bloco
+delimitado, numa linha só e cortados. A versão anterior deste texto dizia que a
+descrição não entrava em prompt de geração nenhum, e isso valeu até a #329.
+Fora disso, ela continua sendo o texto que vira vetor
+(`app.services.product_embedding.texto_da_peca`) e o dado do card.
 
 `delimitar` envolve o texto em marcas que o prompt declara como dado, e
 `INSTRUCAO_DE_DADOS` é a regra que acompanha as marcas. Marcador escrito dentro

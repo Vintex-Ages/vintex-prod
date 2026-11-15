@@ -1,9 +1,11 @@
 """Provedor real do Google AI Studio (BE-US027-1, back-end#92).
 
 Primeira chamada real a uma API de IA no projeto — até aqui, `unavailable`
-era o único provider (VE-06). Cobre `embed`, `analyze_image` e, desde a
-#260, `stream_interpret_search`: a pergunta do chat separada em filtro e
-similaridade. Não gera texto conversacional; a resposta são as peças reais.
+era o único provider (VE-06). Cobre `embed`, `analyze_image`, desde a #260
+`stream_interpret_search` (a pergunta do chat separada em filtro e
+similaridade) e, desde a #329, `comentar_pecas`: o comentário em cada peça
+que a busca devolveu. A resposta continua sendo as peças reais; o modelo
+comenta o que foi achado, nunca escolhe nem inventa peça.
 """
 
 from __future__ import annotations
@@ -26,13 +28,16 @@ from app.services.ai.base import (
     AIProviderError,
     AIProviderUnavailableError,
     ChatTurn,
+    FalaDaVintex,
     ImageAnalysisResult,
     ImagePhoto,
+    PecaParaComentar,
     SearchDone,
     SearchStreamEvent,
 )
 from app.services.ai.etiqueta import RespostaDaFoto, analise_da_resposta
 from app.services.ai.media_urls import image_download_url
+from app.services.ai.personalidade import PERSONALIDADE_PROMPT, montar_pecas
 from app.services.ai.search_interpretation import (
     INTERPRET_SEARCH_PROMPT,
     InterpretacaoDaPergunta,
@@ -71,6 +76,12 @@ _GOOGLE_TIMEOUT_MS = 30_000
 _TETO_MINIMO_DA_API_MS = 10_000
 _LEITURA_TETO_POR_TENTATIVA_MS = _TETO_MINIMO_DA_API_MS
 _LEITURA_PRAZO_MS = 25_000
+# A fala da assistente (back-end#329) tem prazo mais curto que a leitura: ela
+# acontece depois de as peças já estarem na tela, então o que ela atrasa é só o
+# comentário. Com 15s cabe uma tentativa que esgota o teto de 10s, e ainda cabe
+# trocar de modelo quando o 503 responde na hora. Esperar meio minuto por um
+# comentário é pior que não ter comentário.
+_FALA_PRAZO_MS = 15_000
 # O `sleep` pode acordar um pouco depois do pedido; sem folga, a espera
 # terminava e a tentativa seguinte não cabia mais.
 _FOLGA_DA_ESPERA_MS = 500
@@ -367,6 +378,47 @@ class GoogleAIProvider(AIProvider):
 
         yield interpretacao_da_resposta(parsed)
         yield SearchDone()
+
+    def comentar_pecas(
+        self,
+        pergunta: str,
+        pecas: Sequence[PecaParaComentar],
+        *,
+        alternativas: bool = False,
+    ) -> FalaDaVintex:
+        """Comenta as peças que a busca devolveu (back-end#329).
+
+        Uma chamada só, com saída estruturada, nos mesmos modelos da leitura da
+        pergunta e com o mesmo fallback no 503. Não é streaming: o texto só vai
+        para a tela depois de conferido, então não há o que mandar aos poucos.
+        """
+        if not pecas:
+            return FalaDaVintex()
+
+        parts = [
+            types.Part.from_text(text=PERSONALIDADE_PROMPT),
+            types.Part.from_text(
+                text=montar_pecas(pergunta, pecas, alternativas=alternativas)
+            ),
+        ]
+        result = self._gerar_com_fallback(
+            parts,
+            schema=FalaDaVintex,
+            tarefa="comentar as peças",
+            prazo_ms=_FALA_PRAZO_MS,
+        )
+
+        parsed = result.parsed
+        if isinstance(parsed, FalaDaVintex):
+            return parsed
+        if not result.text:
+            raise AIProviderError("Provedor não devolveu a fala da assistente.")
+        try:
+            return FalaDaVintex.model_validate_json(result.text)
+        except ValueError as exc:
+            raise AIProviderError(
+                f"Fala da assistente fora do formato esperado: {exc}"
+            ) from exc
 
     def _gerar_com_fallback(
         self,
