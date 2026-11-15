@@ -42,7 +42,7 @@ A conversa anterior vai junto para a IA (os 6 últimos turnos): "e em vermelho?"
 A categoria tem três valores, e "vestido" e "calça" são os dois `Roupas` ([#231](https://github.com/Vintex-Ages/back-end/issues/231)). A leitura da pergunta diz também o **tipo** pedido (`tipo`, um valor de `TIPOS_DE_PECA`) e se a pergunta é sobre o que a Vintex vende (`in_scope`). Nenhum dos dois vira filtro: os dois só mudam o rótulo e o aviso.
 
 - **Tipo**: a peça não guarda o tipo, ele é lido do nome, palavra a palavra, sem acento e pela raiz ("Botas", "Botinha" e "Botina" são Bota; "Vestidão" é Vestido). Palavras que a raiz confundiria ("botão", "bolso", "calcinha", "cinta" e as derivadas com "zinho") ficam de fora; a lista é `_NAO_SAO_TIPO`, em `app/constants/catalog.py`. Se nenhuma das cinco peças é do tipo pedido, as mesmas peças vêm como `fallback`, com "Não encontrei vestido." antes. O aviso não diz "no catálogo", porque só as cinco peças da tela foram conferidas. **Limite:** o aviso sai sempre que nenhuma das cinco nomeia o tipo pedido. Peça cujo nome só diz o modelo ("Nike Air Force 1"), ou usa palavra que a lista não conhece ("Moletinho", "Relogião"), não é de tipo nenhum: entre cinco peças assim, para quem pediu tênis, o tênis aparece na tela com "Não encontrei tênis".
-- **Fora do escopo** (`in_scope: false`, "geladeira brastemp"): a busca ignora os filtros lidos e devolve as mais parecidas como `fallback`, com o aviso de que a Vintex vende roupas, sapatos e acessórios de brechó. O evento `interpreted` vai com `filters` vazio e sem `similarity`, porque a busca não usou nenhum dos dois.
+- **Fora do escopo** (`in_scope: false`, "geladeira brastemp"): a busca ignora os filtros lidos e devolve as mais parecidas como `fallback`, com o aviso de que a Vintex vende roupas, sapatos e acessórios de brechó. O evento `interpreted` vai com `filters` vazio e sem `similarity`, porque a busca não usou nenhum dos dois. **A fala não é gerada neste caso** (`Achado.comentar`): o `fallback` aqui e o do filtro que não achou nada pedem texto diferente, e mandar o modelo dizer o que uma jaqueta tem a ver com uma geladeira desfaria o que esta seção decidiu. Vale o aviso pronto, e a requisição é poupada.
 - Sem `tipo` e sem `in_scope` (o modelo não preencheu), o comportamento é o de antes.
 
 **A interpretação falhou** (modelo fora do ar, cota do provedor): a busca segue só por similaridade, sem o evento `interpreted`, como era antes. A IA ajuda, mas não trava a conversa (RN-57).
@@ -75,16 +75,18 @@ O resultado é um evento `text` só, inteiro, depois do `products`. Exemplo: *"A
 **O que a conferência recusa** (`fala_conferida`, em `app/services/ai/personalidade.py`). Qualquer um destes descarta a fala inteira, e o texto fica só com a frase pronta de antes da #329:
 
 - comentário sobre peça que a busca não devolveu;
-- comentário com dígito, `R$` ou "reais". Preço escrito pelo modelo é preço de memória, não o do banco (RN-65), e é por isso que o número todo é recusado junto;
+- comentário com dígito, `R$` ou palavra de dinheiro ("reais", "pratas", "contos", "pila", "mangos"). Preço escrito pelo modelo é preço de memória, não o do banco (RN-65), e é por isso que o número todo é recusado junto. A gíria entrou porque "cem pila" não tem dígito nenhum para a regra pegar;
 - comentário vazio, ou maior que 300 caracteres, que não é o formato pedido.
 
-Peça comentada duas vezes é o único caso que não descarta: a segunda menção sai e o resto do texto vale.
+Peça comentada duas vezes é o único caso que não descarta: a segunda menção sai **antes de ser conferida**, e o resto do texto vale. A ordem é o que faz a regra valer. Até a revisão deste PR a conferência vinha primeiro, e um segundo comentário da mesma peça escrito com número derrubava a fala inteira por um texto que ninguém veria.
 
-**A personalidade mora num arquivo** (`PERSONALIDADE_PROMPT`, no mesmo módulo), ao lado do prompt da foto. O tom é o da RN-66: informal, de quem trabalha no brechó, sem gíria forçada. O prompt também manda usar só os atributos que vão na lista de cada peça, que são os da RN-49 menos o preço: categoria, cor, tamanho, marca, conservação, cidade e a descrição do vendedor. **O modelo não recebe o preço** — não é só proibido de escrever, é impedido de saber.
+**Todo campo da peça entra numa linha só**, colapsado e cortado. A marca é o caso que obriga: é campo livre, o cadastro não limita o tamanho dela, e marca com quebra de linha escreve uma peça a mais dentro da lista que vai ao modelo, com `product_id` que a busca não devolveu. O modelo comentando esse id derrubaria a fala de toda busca que trouxesse aquela peça, em silêncio.
+
+**A personalidade mora num arquivo** (`PERSONALIDADE_PROMPT`, no mesmo módulo), ao lado do prompt da foto. O tom é o da RN-66: informal, de quem trabalha no brechó, sem gíria forçada. O prompt também manda usar só os atributos que vão na lista de cada peça, que são os da RN-49 menos o preço: categoria, cor, tamanho, marca, conservação, cidade e a descrição do vendedor. Tamanho que é número, como o de calçado, ele não pode escrever, porque a conferência recusa dígito; tamanho que é letra, pode. Até a revisão deste PR o prompt dizia que o sistema escrevia o tamanho, e não escreve: o servidor escreve nome e preço, e nada mais. **O modelo não recebe o preço** — não é só proibido de escrever, é impedido de saber.
 
 **Dois limites da conferência**, lidos no código e não medidos em produção:
 
-- **número por extenso passa.** A regra olha dígito e as duas palavras de moeda, então "custa uns cento e vinte" não é pego. O que segura isso é o prompt.
+- **número por extenso passa.** A regra olha dígito, `R$` e as palavras de dinheiro, então "custa uns cento e vinte" não é pego. Palavra de número sozinha não entra na regra, porque "um casaco" e "dois bolsos" derrubariam a fala toda. O que segura isso é o prompt. **A suíte de avaliação não mede isso:** `conferir_contra_o_banco` confere nome, preço e loja do evento `products`, e nunca o texto.
 - **a conferência não julga se o comentário é verdade.** Ela amarra o comentário a uma peça que existe; se o modelo elogiar o couro de uma peça de algodão, a frase sai.
 
 **Falha na fala não derruba a resposta.** As peças já foram para a tela quando ela é gerada: provedor fora do ar, tempo esgotado ou formato errado viram só a frase pronta. O prazo dela é mais curto que o da leitura da pergunta (15s contra 25s), porque esperar meio minuto por um comentário é pior que não ter comentário.
@@ -106,7 +108,7 @@ Por isso o chat tem duas cotas por dia, as duas configuráveis ([Configuração]
 | `CHAT_QUOTA_PER_PERSON` | `5` | perguntas de cada pessoa |
 | `CHAT_QUOTA_PER_DAY` | `40` | perguntas de todo mundo somadas |
 
-**40 e não 50** deixa margem diária para a análise de foto e o vetor da peça: a cota do chat acabar não derruba o cadastro. A sugestão de anúncio (`POST /api/ai/listing-suggestions`) não passa pela cota, e continua exigindo login.
+**A cota conta pergunta, e uma pergunta não é uma requisição.** O teto de 40 foi escrito para deixar margem à análise de foto e ao vetor da peça, e a conta não fecha: com três requisições por pergunta, 40 perguntas pedem 120 das 50 do dia. Antes da #329 eram duas por pergunta, 80, e já não fechava. O número que faria fechar é 15. *(A versão anterior deste parágrafo dizia que 40 deixava margem, e estava errada.)* A sugestão de anúncio (`POST /api/ai/listing-suggestions`) não passa pela cota, e continua exigindo login.
 
 **Cada pergunta são três chamadas ao provedor** desde a #329: a interpretação, o vetor e a fala sobre as peças achadas. A cota conta perguntas, não chamadas: a fala não tira pergunta de ninguém, mas pesa no limite diário do provedor e no custo. A interpretação divide os modelos de geração com a análise de foto, e é por isso que o `429` num modelo faz tentar o próximo da lista.
 

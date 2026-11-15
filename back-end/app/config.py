@@ -35,9 +35,18 @@ class Settings(BaseSettings):
 
     # Cota da busca conversacional (back-end#258), por dia UTC. O provedor
     # gratuito dá 50 requisições por dia para o projeto inteiro, e a mesma
-    # chave serve a sugestão de anúncio pela foto e o vetor da peça publicada:
-    # 40 para o chat deixa margem a eles. Pessoa logada conta pelo id;
-    # visitante, pela origem da requisição.
+    # chave serve a sugestão de anúncio pela foto e o vetor da peça publicada.
+    # Pessoa logada conta pelo id; visitante, pela origem da requisição.
+    #
+    # Esta conta não fecha, e não fechava antes da #329: a cota conta
+    # pergunta, e **cada pergunta são três requisições ao provedor** desde a
+    # #329 (a leitura da pergunta, o vetor e a fala sobre as peças), contra
+    # duas antes dela. 40 perguntas pedem 120 requisições do teto de 50 que a
+    # linha acima declara. Quando o teto do provedor acaba, o `429` vira
+    # indisponibilidade: o chat devolve falha do provedor e a análise de foto
+    # cai na cadeia de modelos. O valor que faria a conta fechar é 15, e
+    # mudá-lo é decisão de produto, não de código. A versão anterior deste
+    # comentário dizia que "40 deixa margem" e estava errada.
     CHAT_QUOTA_PER_PERSON: int = Field(default=5, ge=1)
     CHAT_QUOTA_PER_DAY: int = Field(default=40, ge=1)
 
