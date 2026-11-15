@@ -31,7 +31,7 @@ test.describe('compra', () => {
     await page.getByLabel('Número').fill(ADDRESS.number);
     await page.getByLabel('Bairro').fill(ADDRESS.neighborhood);
     await page.getByLabel('Cidade').fill(ADDRESS.city);
-    await page.getByLabel('UF').selectOption(ADDRESS.state);
+    await page.getByLabel('UF', { exact: true }).selectOption(ADDRESS.state);
 
     await page.getByRole('button', { name: 'Confirmar pedido' }).click();
 

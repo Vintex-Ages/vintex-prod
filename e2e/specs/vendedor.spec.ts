@@ -41,7 +41,7 @@ test.describe('vendedor', () => {
     await page.getByLabel('Número', { exact: true }).fill(ADDRESS.number);
     await page.getByLabel('Bairro').fill(ADDRESS.neighborhood);
     await page.getByLabel('Cidade').fill(ADDRESS.city);
-    await page.getByLabel('UF').selectOption(ADDRESS.state);
+    await page.getByLabel('UF', { exact: true }).selectOption(ADDRESS.state);
     await page.getByLabel('Chave Pix').fill(`pix+${Date.now()}@vintex.example.com`);
 
     await page.getByRole('button', { name: 'Abrir minha loja' }).click();
