@@ -522,9 +522,8 @@ function mesesNaPlataforma(createdAt: string): number {
 }
 
 /**
- * `shippingWithoutComplaintRate` e `rating` seguem ausentes: o back diz na
- * própria docstring que só entrega o que já existe, e a tela mostra "em breve"
- * para o resto.
+ * `shippingWithoutComplaintRate` segue ausente: o back diz na própria docstring
+ * que só entrega o que já existe, e a tela mostra "em breve" para o resto.
  */
 function mapStoreMetrics(metrics: ApiStoreMetrics): StoreMetrics {
   return {
