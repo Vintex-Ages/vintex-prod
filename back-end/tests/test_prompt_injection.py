@@ -1,7 +1,8 @@
 """Texto de terceiro é dado, não instrução, nos prompts (back-end#262).
 
-Um caso por entrada — pergunta do chat, descrição da peça e texto dentro da
-foto — mais o controle do que já funciona. Os payloads ficam em
+Um caso por entrada — pergunta do chat, descrição da peça (no vetor e no
+prompt da fala, desde a #329) e texto dentro da foto — mais o controle do que
+já funciona. Os payloads ficam em
 `CASOS_DE_INJECAO`, em dados, para a suíte de avaliação da IA (VE-10)
 reaproveitar sem reescrevê-los.
 """
@@ -24,9 +25,11 @@ from app.services.ai.base import (
     ChatTurn,
     ImageAnalysisResult,
     InterpretedQuery,
+    PecaParaComentar,
     SearchDone,
 )
 from app.services.ai.etiqueta import RespostaDaFoto
+from app.services.ai.personalidade import montar_pecas
 from app.services.ai.search_interpretation import (
     INTERPRET_SEARCH_PROMPT,
     InterpretacaoDaPergunta,
@@ -90,12 +93,29 @@ def test_descricao_da_peca_vira_vetor_como_esta_escrita() -> None:
     assert CASOS_DE_INJECAO["descricao_da_peca"] in texto_da_peca(product)
 
 
-def test_descricao_da_peca_nao_entra_no_prompt_do_chat() -> None:
-    """O modelo da conversa só lê a pergunta; texto do anúncio não é prompt."""
+def test_descricao_da_peca_nao_entra_na_leitura_da_pergunta() -> None:
+    """Quem lê a pergunta só vê a pergunta. O texto do anúncio chega ao modelo
+    noutra chamada, a da fala, e lá vai delimitado (teste abaixo)."""
     texto = montar_pergunta("tem jaqueta jeans?")
 
     assert CASOS_DE_INJECAO["descricao_da_peca"] not in texto
     assert CASOS_DE_INJECAO["descricao_da_peca"] not in INTERPRET_SEARCH_PROMPT
+
+
+def test_descricao_da_peca_vai_delimitada_no_prompt_da_fala() -> None:
+    """Desde a #329 a descrição entra num prompt de geração: o da fala sobre as
+    peças que a busca devolveu. Vai como dado, no mesmo bloco da pergunta."""
+    payload = CASOS_DE_INJECAO["descricao_da_peca"]
+
+    texto = montar_pecas(
+        "tem jaqueta jeans?",
+        [PecaParaComentar(product_id=7, name="Jaqueta jeans", description=payload)],
+        alternativas=False,
+    )
+
+    assert payload in texto
+    assert (texto.count(INICIO), texto.count(FIM)) == (1, 1)
+    assert texto.index(INICIO) < texto.index(payload) < texto.index(FIM)
 
 
 def test_descricao_que_volta_como_turno_do_chat_vai_delimitada() -> None:
