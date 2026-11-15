@@ -3,6 +3,7 @@ import type { MyStoreDetails, StoreAddress, StoreDocument, StoreUpdate } from '@
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
+import type { OrderStatus } from '@/types/order';
 import type { Paginated, Product, Store } from '@/types/product';
 import type {
   StoreInput,
@@ -967,6 +968,17 @@ async function apiRateStore(storeId: string, orderId: string, score: number): Pr
   } catch (error) {
     throw toStoreError(error);
   }
+}
+
+/**
+ * Se o Pedido abre a avaliação da loja (FE-US026-1, #409; RN-82): só
+ * `concluido`, o status derivado que o back devolve três dias depois da
+ * aprovação. É o mesmo critério do back para "entregue": fora dele, a rota
+ * responde `403 RATING_NOT_ALLOWED`. A mesma regra decide o "Avaliar loja" no
+ * cartão de "Meus pedidos" e no detalhe do Pedido.
+ */
+export function canRateOrder(status: OrderStatus): boolean {
+  return status === 'concluido';
 }
 
 /** RN-75/RN-76: apenas nota, sem comentário; autorização validada pelo backend. */

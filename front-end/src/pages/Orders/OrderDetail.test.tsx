@@ -8,6 +8,7 @@ import { paths, productDetail, storeProfile } from '@/routes/paths';
 import { CombinationError, getCombinations } from '@/services/combinationService';
 import { getOrder, OrderError } from '@/services/orderService';
 import { OrderReportError, reportOrder } from '@/services/reportService';
+import { rateStore, StoreError } from '@/services/storeService';
 import type { LookSuggestion } from '@/types/look';
 import type { Order, OrderStatus } from '@/types/order';
 import OrderDetail from './OrderDetail';
@@ -20,6 +21,11 @@ vi.mock('@/services/orderService', async (importOriginal) => ({
 vi.mock('@/services/reportService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/reportService')>()),
   reportOrder: vi.fn(),
+}));
+
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  rateStore: vi.fn(),
 }));
 
 /** Looks do Pedido (#430): a rota de combinações é sempre mockada aqui. */
@@ -155,6 +161,7 @@ function etapas() {
 beforeEach(() => {
   vi.mocked(getOrder).mockReset();
   vi.mocked(reportOrder).mockReset();
+  vi.mocked(rateStore).mockReset();
   // Padrão: sem combinações, nenhuma seção de look aparece nos demais testes.
   vi.mocked(getCombinations).mockReset().mockResolvedValue(EMPTY_LOOK);
 });
@@ -318,7 +325,7 @@ describe('<OrderDetail />', () => {
     expect(container.textContent).not.toContain('R$ 14,40');
   });
 
-  // RN-83: sem rastreio de transportadora. "Avaliar loja" é outra issue.
+  // RN-83: sem rastreio de transportadora. Enviado ainda não abre "Avaliar loja" (#409, RN-82).
   it('não mostra rastreio nem avaliação', async () => {
     vi.mocked(getOrder).mockResolvedValue(
       makeOrder({
@@ -426,6 +433,103 @@ describe('<OrderDetail />', () => {
 
     expect(await within(dialogo).findByRole('alert')).toHaveTextContent(
       'Erro ao processar a Reclamação.',
+    );
+    expect(screen.getByRole('region', { name: 'Andamento do pedido' })).toBeInTheDocument();
+  });
+
+  // #409 (FE-US026-1): "Avaliar loja" só no concluído (RN-82).
+  it('Pedido concluído tem "Avaliar loja" no detalhe', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    renderDetail();
+    await pronto();
+
+    expect(screen.getByRole('button', { name: 'Avaliar loja' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['aguardando_comprovante', null],
+    ['em_analise', { status: 'pendente' as const, receiptName: 'pix.pdf' }],
+    ['confirmado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['preparando', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['enviado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['expirado', null],
+  ] as const)('Pedido %s não tem "Avaliar loja"', async (status, payment) => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder({ status, payment }));
+    renderDetail();
+    await pronto();
+
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+  });
+
+  it('avalia a loja no detalhe: só a nota vai, e o botão some', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockResolvedValue({
+      id: 'r_1',
+      storeId: '5',
+      orderId: 'ped-1',
+      score: 4,
+      createdAt: '2026-11-15T12:00:00Z',
+    });
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    expect(within(dialogo).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '4 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent('Avaliação enviada');
+    expect(rateStore).toHaveBeenCalledWith('5', 'ped-1', 4);
+
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Entendi' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+  });
+
+  it('409 ALREADY_RATED no detalhe vira "já avaliado" e tira o botão', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockRejectedValue(
+      new StoreError('ALREADY_RATED', 'Este pedido já foi avaliado.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '5 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(/já avaliou/i);
+    expect(within(dialogo).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+  });
+
+  it('403 RATING_NOT_ALLOWED no detalhe mostra a mensagem do back e a página continua', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockRejectedValue(
+      new StoreError('RATING_NOT_ALLOWED', 'Só quem recebeu um pedido desta loja pode avaliá-la.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '3 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('alert')).toHaveTextContent(
+      'Só quem recebeu um pedido desta loja pode avaliá-la.',
     );
     expect(screen.getByRole('region', { name: 'Andamento do pedido' })).toBeInTheDocument();
   });
