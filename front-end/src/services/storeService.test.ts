@@ -276,7 +276,13 @@ describe('storeService', () => {
   it('loja criada no mock já nasce com métricas zeradas (sem avaliação ainda, RN-74)', async () => {
     const created = await createStore(input);
 
-    expect(created.metrics).toEqual({ activeProducts: 0, soldProducts: 0, monthsOnPlatform: 0 });
+    expect(created.metrics).toEqual({
+      activeProducts: 0,
+      soldProducts: 0,
+      monthsOnPlatform: 0,
+      rating: null,
+      ratingCount: 0,
+    });
     expect((await getStore(created.id)).metrics).toEqual(created.metrics);
   });
 });
@@ -971,5 +977,182 @@ describe('searchStores (API real)', () => {
     const loja = await apiGetStore('3');
 
     expect(loja.metrics?.activeProducts).toBe(7);
+  });
+});
+
+describe('#422 — avaliação da loja', () => {
+  let client: (typeof import('./httpClient'))['httpClient'];
+  let originalAdapter: typeof client.defaults.adapter;
+  let service: typeof import('./storeService');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'false');
+
+    client = (await import('./httpClient')).httpClient;
+    originalAdapter = client.defaults.adapter;
+    service = await import('./storeService');
+  });
+
+  afterEach(() => {
+    client.defaults.adapter = originalAdapter;
+    vi.unstubAllEnvs();
+  });
+
+  it('envia a avaliação e mapeia a resposta 201', async () => {
+    let requestUrl: string | undefined;
+    let requestMethod: string | undefined;
+    let requestBody: unknown;
+
+    client.defaults.adapter = async (config) => {
+      requestUrl = config.url;
+      requestMethod = config.method;
+      requestBody = JSON.parse(String(config.data));
+
+      return {
+        data: {
+          id: 10,
+          store_id: 7,
+          order_id: 31,
+          score: 4,
+          created_at: '2026-11-11T12:00:00Z',
+        },
+        status: 201,
+        statusText: 'Created',
+        headers: {},
+        config,
+      };
+    };
+
+    const result = await service.rateStore('7', '31', 4);
+
+    expect(requestMethod).toBe('post');
+    expect(requestUrl).toBe('/stores/7/ratings');
+    expect(requestBody).toEqual({ order_id: 31, score: 4 });
+    expect(result).toEqual({
+      id: '10',
+      storeId: '7',
+      orderId: '31',
+      score: 4,
+      createdAt: '2026-11-11T12:00:00Z',
+    });
+  });
+
+  it.each([
+    [403, 'RATING_NOT_ALLOWED'],
+    [409, 'ALREADY_RATED'],
+    [422, 'VALIDATION_ERROR'],
+  ])('preserva o erro HTTP %i como StoreError %s', async (status, code) => {
+    client.defaults.adapter = async (config) => {
+      const error = Object.assign(new Error('Falha na avaliação'), {
+        response: {
+          status,
+          data: {
+            error: {
+              code,
+              message: 'Avaliação não permitida.',
+            },
+          },
+          config,
+        },
+      });
+
+      throw error;
+    };
+
+    await expect(service.rateStore('7', '31', 4)).rejects.toMatchObject({
+      name: 'StoreError',
+      code,
+    });
+  });
+
+  it.each([
+    [4.6, 12],
+    [null, 0],
+  ])('mapeia rating %s e rating_count %i no GET da loja', async (rating, ratingCount) => {
+    client.defaults.adapter = async (config) => ({
+      data: {
+        id: 7,
+        name: 'Brechó Aurora',
+        description: null,
+        logo_url: null,
+        verified: true,
+        address: null,
+        metrics: {
+          created_at: '2026-03-27T00:00:00',
+          products_listed: 12,
+          products_sold: 4,
+          active_count: 7,
+          rating,
+          rating_count: ratingCount,
+        },
+      },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    });
+
+    const store = await service.getStore('7');
+
+    expect(store.metrics?.rating).toBe(rating);
+    expect(store.metrics?.ratingCount).toBe(ratingCount);
+  });
+});
+
+describe('#422 — avaliação da loja no mock', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_USE_MOCKS', 'true');
+
+    const auth = await import('./authService');
+
+    await auth.logout();
+    await auth.register({
+      name: 'Cliente Avaliador',
+      email: `avaliador${Date.now()}${Math.random()}@vintex.com`,
+      password: 'senha123',
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('rejeita nota fora do intervalo de 1 a 5', async () => {
+    const { rateStore } = await import('./storeService');
+
+    await expect(rateStore('1', '31', 0)).rejects.toMatchObject({
+      name: 'StoreError',
+      code: 'VALIDATION_ERROR',
+    });
+
+    await expect(rateStore('1', '31', 6)).rejects.toMatchObject({
+      name: 'StoreError',
+      code: 'VALIDATION_ERROR',
+    });
+  });
+
+  it('rejeita nota decimal', async () => {
+    const { rateStore } = await import('./storeService');
+
+    await expect(rateStore('1', '31', 3.5)).rejects.toMatchObject({
+      name: 'StoreError',
+      code: 'VALIDATION_ERROR',
+    });
+  });
+
+  it('impede avaliar o mesmo pedido duas vezes', async () => {
+    const { rateStore } = await import('./storeService');
+    const { createStore } = await import('./storeService');
+
+    const store = await createStore(input);
+
+    await rateStore(store.id, '999422', 5);
+
+    await expect(rateStore(store.id, '999422', 4)).rejects.toMatchObject({
+      name: 'StoreError',
+      code: 'ALREADY_RATED',
+    });
   });
 });

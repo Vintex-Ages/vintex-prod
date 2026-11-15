@@ -161,9 +161,7 @@ function SellerProfile() {
           />
           <StoreMetric
             label="Avaliação"
-            value={
-              store.metrics.rating !== undefined ? store.metrics.rating.toFixed(1) : 'Em breve'
-            }
+            value={store.metrics.rating != null ? store.metrics.rating.toFixed(1) : 'Em breve'}
           />
         </section>
       ) : null}
