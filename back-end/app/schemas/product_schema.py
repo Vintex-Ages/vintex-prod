@@ -98,9 +98,21 @@ class FeedStoreResponse(BaseModel):
 
 
 class ProductFeedItemResponse(BaseModel):
+    """Uma peça em qualquer listagem: feed, favoritos, recomendação, busca por
+    foto e as peças que o chat devolve.
+
+    `category`, `size` e `condition` são o que o cartão do catálogo mostra
+    (back-end#352). A **RN-39** declara foto, título, preço e loja; estes três
+    são atributos da peça pela **RN-49**, e estão aqui porque sem eles o front
+    buscava o detalhe de cada peça da página só para desenhar o cartão.
+    """
+
     id: int
     name: str
     price: Decimal
+    category: str | None = None
+    size: str | None = None
+    condition: str | None = None
     cover_image_url: str | None
     store: FeedStoreResponse
     status: str
@@ -112,6 +124,9 @@ class ProductFeedItemResponse(BaseModel):
             id=row["id"],
             name=row["name"],
             price=row["price"],
+            category=row["category"],
+            size=row["size"],
+            condition=row["condition"],
             cover_image_url=row["cover_image_url"],
             status=row["status"],
             store=FeedStoreResponse(
@@ -186,7 +201,11 @@ class FeedResponse(BaseModel):
     page: int
     page_size: int
     total: int
-    applied_filters: dict[str, str | float | list[str]] = Field(default_factory=dict)
+    # `int` antes de `float` para o `store_id` ecoar `7`, e não `7.0`: a união
+    # sem ele empurrava o inteiro para float (back-end#352).
+    applied_filters: dict[str, str | int | float | list[str]] = Field(
+        default_factory=dict
+    )
     match_type: Literal["exact", "fallback"] = "exact"
     suggestions: SuggestionsResponse | None = None
 
