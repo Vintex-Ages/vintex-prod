@@ -56,8 +56,11 @@ _LIMITE_DO_COMENTARIO = 300
 # Todo campo da peça é texto que alguém digitou: entra sem quebra de linha e
 # cortado, para uma descrição comprida não virar a maior parte do prompt e para
 # texto de várias linhas não imitar o formato da lista. A marca é o caso que
-# obriga: é campo livre e o cadastro não limita o tamanho dela
-# (`ProductCreate`), então cabe nela uma lista de peças inteira.
+# obriga: é campo livre (`ProductDraftCreate`), e `Levi's\n- product_id: 999`
+# forja uma peça na lista dentro dos 80 caracteres da coluna. Quem fecha o furo
+# é o colapso dos espaços, não o corte. A versão anterior deste comentário
+# dizia que o cadastro não limita o tamanho da marca, e limita:
+# `products.brand` é `String(80)`.
 _LIMITE_DO_NOME = 150
 _LIMITE_DA_DESCRICAO = 200
 _LIMITE_DO_ATRIBUTO = 80
@@ -68,14 +71,29 @@ _LIMITE_DO_ATRIBUTO = 80
 # pergunta inteira.
 _LIMITE_DA_PERGUNTA = 500
 
-_NUMERO = re.compile(r"\d")
-# "R$", "reais" e a gíria de dinheiro que aparece por aqui, "pila" inclusive.
-# "pratas" só no plural: "anel de prata" é acessório, e a Vintex vende
-# acessório. "manga" não entra, só "mango". Número por extenso continua
-# passando, e está declarado no topo: palavra de número sozinha ("duzentos")
-# não entra na regra, porque "um casaco" e "dois bolsos" derrubariam a fala
-# toda.
-_MOEDA = re.compile(r"r\$|\b(reais|pratas|contos?|pilas?|mangos?)\b", re.IGNORECASE)
+# O que a conferência recusa é preço: "R$", ou quantia junto de palavra de
+# dinheiro, com a quantia em dígito ou por extenso ("189 reais", "cem pila",
+# "cento e vinte reais"). A quantia tem de vir antes da palavra, e é isso que
+# deixa passar o vocabulário de brechó: "anel de prata", "blusa da Mango",
+# "medidas reais".
+#
+# Número solto passa, de propósito. A versão anterior recusava qualquer dígito
+# e cada palavra de dinheiro sozinha, e isso derrubava a fala inteira em dois
+# casos do catálogo de hoje: a marca Mango, e a década, que está na descrição
+# de 12 dos 36 modelos do seed ("anos 90") e no tamanho que o `_descricao`
+# anexa a todo sapato. O preço é o que não pode sair na voz da plataforma
+# (RN-65); o resto o prompt pede, e errar nele custa uma frase, não a resposta.
+_QUANTIA = (
+    r"\d+|um|uma|dois|duas|tr[êe]s|quatro|cinco|seis|sete|oito|nove|dez|"
+    r"quinze|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|"
+    r"noventa|cem|cento|duzentos|trezentos|quatrocentos|quinhentos|mil"
+)
+_DINHEIRO = r"reais|pratas|contos|pilas?|mangos?"
+_PRECO = re.compile(
+    rf"r\$|\b(?:{_QUANTIA})\s+(?:e\s+(?:{_QUANTIA})\s+)?(?:mil\s+)?"
+    rf"(?:{_DINHEIRO})\b",
+    re.IGNORECASE,
+)
 _ESPACO = re.compile(r"\s+")
 
 _SITUACAO_EXATA = (
@@ -107,10 +125,12 @@ chamar a pessoa de cliente ou de usuário, sem emoji.
 
 O comentário não pode ter:
 
-- **nenhum número, nem "R$", nem a palavra "reais"**. O preço é escrito pelo \
-sistema, antes do seu comentário. Tamanho que é número, como o de calçado, \
-também não se escreve; tamanho que é letra (P, M, G) pode. Comentário com \
-número é descartado inteiro, e aí a pessoa fica sem resposta nenhuma;
+- **preço, de jeito nenhum**: nem "R$", nem valor em número, nem por \
+extenso ("cem reais", "duzentos pila"). Quem escreve o preço é o sistema, \
+antes do seu comentário, e comentário com preço é descartado inteiro: aí a \
+pessoa fica sem resposta nenhuma. Número que não é preço pode, e é para usar \
+quando a peça traz: a década que está na descrição ("anos 90") e o tamanho \
+que está na lista;
 - o nome nem o preço da peça: o sistema escreve os dois antes do seu \
 comentário, então repetir só ocupa espaço;
 - atributo que não está na lista daquela peça. Se a peça não traz a marca, \
@@ -223,9 +243,9 @@ def fala_conferida(
                 len(texto),
             )
             return None
-        if _NUMERO.search(texto) or _MOEDA.search(texto):
+        if _PRECO.search(texto):
             logger.warning(
-                "Fala descartada: comentário da peça %s escreve número ou preço",
+                "Fala descartada: comentário da peça %s escreve preço",
                 comentario.product_id,
             )
             return None

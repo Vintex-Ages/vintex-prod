@@ -39,10 +39,11 @@ class Settings(BaseSettings):
     # Pessoa logada conta pelo id; visitante, pela origem da requisição.
     #
     # Esta conta não fecha, e não fechava antes da #329: a cota conta
-    # pergunta, e **cada pergunta são três requisições ao provedor** desde a
-    # #329 (a leitura da pergunta, o vetor e a fala sobre as peças), contra
-    # duas antes dela. 40 perguntas pedem 120 requisições do teto de 50 que a
-    # linha acima declara. Quando o teto do provedor acaba, o `429` vira
+    # pergunta, e **cada pergunta pede até três requisições ao provedor** desde
+    # a #329 (a leitura da pergunta, o vetor e a fala sobre as peças), contra
+    # duas antes dela. São duas quando a fala não sai: pergunta que não é sobre
+    # roupa, ou busca que não achou peça. No teto, 40 perguntas pedem 120
+    # requisições das 50 que a linha acima declara. Quando o teto do provedor acaba, o `429` vira
     # indisponibilidade: o chat devolve falha do provedor e a análise de foto
     # cai na cadeia de modelos. O valor que faria a conta fechar é 15, e
     # mudá-lo é decisão de produto, não de código. A versão anterior deste

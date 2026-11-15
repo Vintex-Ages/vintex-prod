@@ -103,14 +103,15 @@ def test_peca_que_a_busca_nao_devolveu_descarta_a_fala() -> None:
     [
         "sai por 189 reais e vale cada centavo",
         "custa R$ 189,90, um preço justo",
-        "o tamanho 40 cai bem",
-        "é a peça 7 da lista",
+        "fica em cento e vinte reais",
+        "uns 50 pila e é tua",
     ],
-    ids=["reais", "r$", "numero", "id"],
+    ids=["digito-e-palavra", "r$", "extenso-composto", "giria"],
 )
-def test_numero_ou_preco_no_comentario_descarta_a_fala(comentario: str) -> None:
-    """Preço dito pelo modelo é preço de memória, não o do banco. O número
-    some junto, porque é com ele que o preço volta."""
+def test_preco_no_comentario_descarta_a_fala(comentario: str) -> None:
+    """Preço dito pelo modelo é preço de memória, não o do banco (RN-65). A
+    quantia pode ser dígito ou palavra; o que a regra pede é a quantia junto
+    da palavra de dinheiro."""
     assert (
         fala_conferida(_fala((7, comentario)), abertura="Achei.", pecas=_PECAS) is None
     )
@@ -144,11 +145,11 @@ def test_peca_repetida_entra_uma_vez_e_nao_derruba() -> None:
     )
 
 
-def test_peca_repetida_com_numero_nao_derruba_a_fala() -> None:
+def test_peca_repetida_com_preco_nao_derruba_a_fala() -> None:
     """A repetida é descartada antes de ser conferida. Comentário que não vai
     para a tela não derruba a fala, e o segundo da mesma peça não vai."""
     texto = fala_conferida(
-        _fala((7, "primeira menção"), (7, "o tamanho 38 cai bem"), (9, "a outra peça")),
+        _fala((7, "primeira menção"), (7, "sai por 38 reais"), (9, "a outra peça")),
         abertura="",
         pecas=_PECAS,
     )
@@ -165,7 +166,7 @@ def test_peca_repetida_com_numero_nao_derruba_a_fala() -> None:
         "essa sai por uns duzentos pratas",
         "pechincha, cem pila",
         "dois contos bem gastos",
-        "uns trocados em mangos",
+        "sai por uns vinte mangos",
     ],
 )
 def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
@@ -184,15 +185,25 @@ def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
 @pytest.mark.parametrize(
     "comentario",
     [
+        "a blusa da Mango tem caimento solto",
         "esse anel de prata combina com tudo",
-        "manga curta, cai bem no calor",
+        "bem anos 90, do jeito que voltou a ser usado",
+        "o tênis 42 é confortável para o dia inteiro",
+        "as medidas reais estão na descrição do vendedor",
         "o contorno do decote é o charme da peça",
-        "tem pegada de aula de pilates",
     ],
+    ids=["marca", "prata", "decada", "tamanho", "medidas", "contorno"],
 )
-def test_palavra_parecida_com_dinheiro_nao_derruba_a_fala(comentario: str) -> None:
-    """A Vintex vende acessório: "anel de prata" não é preço. Falso positivo
-    aqui custa a resposta escrita inteira, não só uma frase."""
+def test_palavra_do_catalogo_nao_derruba_a_fala(comentario: str) -> None:
+    """Falso positivo aqui custa a resposta escrita inteira, não uma frase, e
+    custa sempre: a mesma peça derruba toda busca que a trouxer.
+
+    Os seis casos são vocabulário que o próprio prompt manda usar. Mango é
+    marca de roupa e `brand` é campo livre; `anos 90` está na descrição de 12
+    dos 36 modelos do seed; o tamanho do calçado está na descrição de todos
+    eles, anexado pelo `_descricao`. A versão anterior desta regra recusava
+    dígito e palavra de dinheiro sozinhos, e derrubava a fala nos quatro
+    primeiros."""
     texto = fala_conferida(_fala((7, comentario)), abertura="", pecas=_PECAS)
 
     assert texto is not None
@@ -346,11 +357,14 @@ class _ProvedorQueFala(_Provedor):
 
 
 class _Repositorio:
-    """Só o que o `_falar` usa do repositório de peças."""
+    """Só o que o `_buscar` e o `_falar` usam do repositório de peças."""
 
     def __init__(self, atributos: list[dict[str, Any]]) -> None:
         self.atributos = atributos
         self.pedidos: list[list[int]] = []
+
+    def find_similar(self, vetor, modelo, pagina, filtros=None):  # noqa: ANN001, ANN201
+        return list(_LINHAS), len(_LINHAS)
 
     def atributos_das_pecas(self, ids):  # noqa: ANN001, ANN201
         self.pedidos.append(list(ids))
@@ -419,6 +433,28 @@ def test_fala_reprovada_cai_na_frase_pronta() -> None:
     texto = _controller(_ATRIBUTOS)._falar(provedor, "jaqueta", achado)
 
     assert texto == abertura_do_exato(1)
+
+
+def test_fora_do_escopo_marca_o_achado_para_nao_comentar() -> None:
+    """A economia de requisição da #231 depende de um argumento só, e o
+    caminho que o passa não tinha teste que o cobrisse: o da rota roda contra
+    Postgres e passa dos dois jeitos, porque o dublê dele levanta ao comentar
+    e a degradação devolve a mesma frase."""
+    controller = _controller(_ATRIBUTOS)
+    provedor = _ProvedorQueFala(_fala((7, "essa jaqueta gela que é uma beleza")))
+
+    achado = controller._buscar(
+        provedor,
+        "modelo-de-vetor",
+        "geladeira brastemp",
+        InterpretedQuery(in_scope=False),
+    )
+
+    assert isinstance(achado, Achado)
+    assert achado.comentar is False
+    assert achado.abertura == _FORA_DO_ESCOPO
+    assert controller._falar(provedor, "geladeira brastemp", achado) == _FORA_DO_ESCOPO
+    assert provedor.pedidos == []
 
 
 def test_pergunta_fora_do_escopo_nao_vai_ao_modelo() -> None:
