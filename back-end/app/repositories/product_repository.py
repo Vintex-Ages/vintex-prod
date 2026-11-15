@@ -46,11 +46,28 @@ class ProductFeedRow(TypedDict):
     name: str
     price: Decimal
     category: str | None
+    size: str | None
+    condition: str | None
     cover_image_url: str | None
     status: str
     store_id: int
     store_name: str
     store_verified: bool
+
+
+class ProductAtributosRow(TypedDict):
+    """Os atributos da peça que a RN-49 lista, fora os que a linha do feed já
+    traz (back-end#329). A cidade é a do endereço da loja."""
+
+    id: int
+    name: str
+    description: str | None
+    category: str | None
+    color: str | None
+    size: str | None
+    brand: str | None
+    condition: str | None
+    city: str | None
 
 
 class ProductSimilarRow(ProductFeedRow):
@@ -87,6 +104,11 @@ def _feed_select() -> Select[tuple[object, ...]]:
         Product.name,
         Product.price,
         Product.category,
+        # Tamanho e conservação são o que o cartão do catálogo mostra ao lado da
+        # categoria, e sem eles o front buscava o detalhe de cada peça da página
+        # (back-end#352).
+        Product.size,
+        Product.condition,
         _cover_image_url().label("cover_image_url"),
         Product.status,
         Store.id.label("store_id"),
@@ -153,7 +175,8 @@ class ProductRepository:
     def _condicoes_do_catalogo(
         self, filters: ProductFilters
     ) -> list[ColumnElement[bool]]:
-        """Peça ativa mais os filtros do catálogo, somados por E lógico.
+        """Peça ativa mais os filtros do catálogo: filtros diferentes somam
+        por E lógico, e os valores de um mesmo filtro por OU.
 
         Compartilhado pelo feed e pela busca por semelhança (back-end#246),
         para os dois filtrarem do mesmo jeito. Quem chama junta `Store` e,
@@ -171,8 +194,18 @@ class ProductRepository:
         }
         for field_name, column in filter_columns.items():
             value = getattr(filters, field_name)
-            if value is not None:
-                conditions.append(self._normalizado(column) == self._normalizado(value))
+            if value is None:
+                continue
+            # Tamanho, marca, conservação e cor chegam como lista: a tela deixa
+            # marcar mais de um valor, e os valores do mesmo filtro somam
+            # (back-end#351). Filtros diferentes seguem combinando por E, como
+            # a #87 estabeleceu.
+            valores = value if isinstance(value, list) else [value]
+            conditions.append(
+                self._normalizado(column).in_(
+                    [self._normalizado(valor) for valor in valores]
+                )
+            )
         if filters.price_min is not None:
             conditions.append(Product.price >= filters.price_min)
         if filters.price_max is not None:
@@ -286,6 +319,7 @@ class ProductRepository:
         *,
         exclude_category: str | None = None,
         exclude_product_id: int | None = None,
+        prefer_styles: Sequence[str] = (),
     ) -> tuple[list[ProductSimilarRow], int]:
         """Peças ativas mais próximas do vetor da busca, paginadas, e o total
         (BE-US027-3, back-end#149; paginação, filtros e distância na #246).
@@ -302,6 +336,10 @@ class ProductRepository:
         - **`exclude_category` e `exclude_product_id`** servem à combinação de
           peças (back-end#328): a mesma semelhança, com a categoria da peça de
           origem e ela mesma fora (`_exclusoes`).
+        - **`prefer_styles`** serve à recomendação (back-end#346): as peças
+          cujo `style` está na lista vêm antes das outras, e cada grupo segue
+          pela semelhança. Ninguém sai da lista: com menos peças do estilo que
+          a página, as outras completam.
 
         Nunca inventa peça: só o que já existe no catálogo real (RN-65).
         """
@@ -319,9 +357,14 @@ class ProductRepository:
             )
         )
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        estilo_primeiro = (
+            [case((Product.style.in_(list(prefer_styles)), 0), else_=1)]
+            if prefer_styles
+            else []
+        )
         rows = (
             self.db.execute(
-                stmt.order_by(distancia, Product.id)
+                stmt.order_by(*estilo_primeiro, distancia, Product.id)
                 .offset(params.offset)
                 .limit(params.limit)
             )
@@ -329,6 +372,48 @@ class ProductRepository:
             .all()
         )
         return [cast(ProductSimilarRow, dict(row)) for row in rows], total
+
+    def atributos_das_pecas(self, ids: Sequence[int]) -> list[ProductAtributosRow]:
+        """Os atributos da RN-49 das peças indicadas, na ordem em que vieram.
+
+        A linha do feed carrega nome, preço, categoria, tamanho, conservação e
+        loja; cor, marca, cidade e descrição não. A fala da assistente
+        (back-end#329) comenta justamente esses, então uma consulta a mais, com
+        os ids que a busca já escolheu — não um `_feed_select()` mais gordo,
+        que pesaria em toda listagem do catálogo por causa de uma.
+
+        Tamanho e conservação entraram na linha do feed depois, pela #352, para
+        tirar as 20 requisições de detalhe que a home fazia por página. Esta
+        consulta continua pedindo os dois, porque a fala monta a frase de uma
+        linha só.
+
+        O preço não entra: na fala quem escreve preço é o servidor, a partir da
+        linha da busca, que já o tem.
+        """
+        if not ids:
+            return []
+        rows = (
+            self.db.execute(
+                select(
+                    Product.id,
+                    Product.name,
+                    Product.description,
+                    Product.category,
+                    Product.color,
+                    Product.size,
+                    Product.brand,
+                    Product.condition,
+                    Address.city.label("city"),
+                )
+                .join(Store, Store.id == Product.store_id)
+                .outerjoin(Address, Store.address_id == Address.id)
+                .where(Product.id.in_(list(ids)))
+            )
+            .mappings()
+            .all()
+        )
+        por_id = {row["id"]: cast(ProductAtributosRow, dict(row)) for row in rows}
+        return [por_id[i] for i in ids if i in por_id]
 
     def vetores_pelo_nome(
         self,
@@ -437,6 +522,31 @@ class ProductRepository:
             .where(Product.id.in_(product_ids))
         )
         return list(self.db.scalars(stmt).unique())
+
+    def list_moderated(self, params: PageParams) -> tuple[list[Product], int]:
+        """Peças tiradas do ar pela moderação, mais recente primeiro (#327).
+
+        O filtro é `moderated_at IS NOT NULL`, e não `status = 'despublicado'`:
+        a peça que o **vendedor** pausou também está `despublicado` e não é
+        Suspensa. A capa vem na mesma consulta (back-end#265), e `moderated_by`
+        entra por join para a tela mostrar quem moderou.
+        """
+        moderadas = Product.moderated_at.is_not(None)
+        total = self.db.scalar(select(func.count(Product.id)).where(moderadas)) or 0
+        stmt = (
+            select(Product)
+            .options(
+                joinedload(Product.store),
+                joinedload(Product.moderated_by),
+                with_expression(Product.cover_image_url, _cover_image_url()),
+            )
+            .execution_options(populate_existing=True)
+            .where(moderadas)
+            .order_by(Product.moderated_at.desc(), Product.id.desc())
+            .offset(params.offset)
+            .limit(params.limit)
+        )
+        return list(self.db.scalars(stmt).unique()), total
 
     def reserve(self, product_ids: Sequence[int]) -> int:
         """`ativo -> reservado` num comando só, e devolve quantas mudaram.

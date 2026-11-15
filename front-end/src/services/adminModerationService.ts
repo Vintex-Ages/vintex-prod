@@ -252,8 +252,8 @@ async function mockSuspend(id: string, reason: string): Promise<ModerationResult
     ...product,
     status: 'despublicado',
     moderationReason: normalized,
-    // Geração UTC sem sufixo, como utcnow_naive do backend; datas da API não são convertidas.
-    moderatedAt: new Date().toISOString().slice(0, -1),
+    // Mesmo formato da API: UTC com o `Z` (back-end#350).
+    moderatedAt: new Date().toISOString(),
     moderatedBy: { id: admin.id, name: admin.name },
   };
   mockState.set(id, next);

@@ -137,7 +137,7 @@ def test_chat_devolve_pecas_reais_ordenadas_por_semelhanca(
 
     assert response.status_code == 200
     events = _sse_events(response.text)
-    assert [e["type"] for e in events] == ["products", "done"]
+    assert [e["type"] for e in events] == ["products", "text", "done"]
     ids = [item["id"] for item in events[0]["products"]]
     assert ids == [perto.id, longe.id]  # o mais próximo primeiro
     assert sem_embedding.id not in ids  # peça sem posição nunca entra no ranking
