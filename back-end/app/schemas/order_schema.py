@@ -5,11 +5,12 @@ serializa como string sem `@field_serializer`, e isso já custou dois PRs ao
 projeto (#212).
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
+
+from app.schemas.datas import DataComFuso
 
 
 class DeliveryAddress(BaseModel):
@@ -63,7 +64,7 @@ class OrderItemResponse(BaseModel):
 
 class OrderHistoryResponse(BaseModel):
     status: str
-    at: datetime
+    at: DataComFuso
 
 
 class OrderPaymentResponse(BaseModel):
@@ -77,7 +78,7 @@ class OrderPaymentResponse(BaseModel):
     # Nome original do arquivo, gravado no envio (back-end#244). Nulo só em
     # comprovante anterior à coluna: a chave do storage é um uuid sem nome.
     receipt_name: str | None = None
-    submitted_at: datetime
+    submitted_at: DataComFuso
     rejection_reason: str | None = None
 
 
@@ -98,8 +99,8 @@ class OrderResponse(BaseModel):
     delivery_address: DeliveryAddress
     # `null` até o primeiro comprovante (back-end#249), inclusive na criação.
     payment: OrderPaymentResponse | None = None
-    expires_at: datetime
-    created_at: datetime
+    expires_at: DataComFuso
+    created_at: DataComFuso
 
     @field_serializer("product_amount", "platform_fee", "total_amount")
     def serializar_valor(self, valor: Decimal) -> float:
@@ -144,7 +145,7 @@ class OrderListItemResponse(BaseModel):
     status: str
     payment: OrderListPaymentResponse | None
     delivery_address: DeliveryAddress
-    created_at: datetime
+    created_at: DataComFuso
 
     @field_serializer("total_amount")
     def serializar_valor(self, valor: Decimal) -> float:
