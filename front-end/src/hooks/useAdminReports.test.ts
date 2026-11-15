@@ -19,7 +19,7 @@ function reclamacao(id: string, overrides: Partial<AdminOrderReport> = {}): Admi
     reason: 'danificado',
     description: 'A manga veio rasgada.',
     createdAt: '2026-10-29T14:32:00',
-    buyer: { id: 'u_1', name: 'Ana Compradora' },
+    buyer: { name: 'Ana Compradora' },
     store: { id: 's_1', name: 'Brechó da Bia' },
     ...overrides,
   };

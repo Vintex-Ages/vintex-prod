@@ -5,7 +5,11 @@ import FormErrorSummary from '@/components/common/FormErrorSummary';
 import Select from '@/components/common/Select';
 import TextArea from '@/components/common/TextArea';
 import { OrderReportError, reportOrder, type OrderReportField } from '@/services/reportService';
-import { ORDER_REPORT_REASONS, type OrderReportReason } from '@/types/report';
+import {
+  ORDER_REPORT_DESCRIPTION_MAX,
+  ORDER_REPORT_REASONS,
+  type OrderReportReason,
+} from '@/types/report';
 
 /**
  * "Reportar problema" num Pedido (FE-US025-1, #410; RN-77/RN-78). Formulário
@@ -186,6 +190,9 @@ function ReportProblemDialog({ open, orderId, onClose }: ReportProblemDialogProp
           value={description}
           onChange={setDescription}
           rows={5}
+          // O mesmo teto do back (`OrderComplaintCreate.description`): o texto
+          // para de crescer em vez de ser recusado depois de escrito.
+          maxLength={ORDER_REPORT_DESCRIPTION_MAX}
           placeholder="Conte o que aconteceu com o pedido."
           error={fieldErrors.description}
           disabled={submitting}

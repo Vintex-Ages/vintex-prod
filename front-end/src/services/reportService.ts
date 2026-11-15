@@ -18,15 +18,18 @@ import type { Paginated } from '@/types/product';
  *     (lê os Pedidos de todos os compradores do mock e guarda as Reclamações);
  *   - `'false'` → API real via `httpClient`.
  *
- * API real CONTRATO PROPOSTO pelo front (back-end#268), não fixado pelo back.
- * O back fixa; o front segue o que vier. A diferença, se houver, é corrigida
- * aqui no service (a tela não muda):
- *   `POST /users/me/orders/{order_id}/reports` { reason, description }
+ * API real, como o back entregou (back-end#268, `vintex-prod#82`). O contrato
+ * proposto por este arquivo era outro, e a diferença foi corrigida aqui, sem
+ * mexer na tela (front-end#441):
+ *   `POST /users/me/orders/{order_id}/complaints` { reason, description }
  *        → 201 { id, order_id, reason, description, created_at }
- *   `GET  /admin/reports?page=&page_size=`
- *        → 200 { items: [{ id, order_id, reason, description, created_at,
- *                          buyer: { id, name }, store: { id, name } }],
+ *        → 409 `ALREADY_REPORTED` na segunda Reclamação do mesmo Pedido
+ *   `GET  /admin/complaints?page=&page_size=`
+ *        → 200 { items: [{ id, reason, description, created_at,
+ *                          buyer: { name, email, phone },
+ *                          order: { id, status, store, items, total_amount } }],
  *                page, page_size, total }
+ * A loja e o número do Pedido vêm dentro de `order`. O comprador não tem id.
  *
  * O comprador NÃO tem rota para ler a Reclamação que enviou (pendência no plano
  * da S4): por isso o service não oferece essa leitura.
@@ -154,6 +157,11 @@ function mockReportOrder(
   }
 
   const reports = readReports();
+  // Uma Reclamação por Pedido: o back tem índice único e recusa a segunda com
+  // `409 ALREADY_REPORTED` (back-end#268).
+  if (reports.some((report) => report.orderId === orderId)) {
+    throw new OrderReportError('ALREADY_REPORTED', 'Este Pedido já tem uma Reclamação registrada.');
+  }
   const stored: AdminOrderReport = {
     id: `r_${reports.length + 1}`,
     orderId,
@@ -161,7 +169,7 @@ function mockReportOrder(
     description,
     createdAt: new Date().toISOString(),
     // O mock de Pedidos não guarda dados do comprador: deriva do `userId`.
-    buyer: { id: found.userId, name: found.userId },
+    buyer: { name: found.userId },
     store: { id: found.order.store.id, name: found.order.store.name },
   };
   window.sessionStorage.setItem(REPORTS_KEY, JSON.stringify([...reports, stored]));
@@ -197,9 +205,21 @@ interface ApiReport {
   created_at: string;
 }
 
-interface ApiAdminReport extends ApiReport {
-  buyer: { id: number | string; name: string };
-  store: { id: number | string; name: string };
+/**
+ * Entrada da lista da administradora. O envelope reaproveita os blocos da fila
+ * de comprovantes, por isso o comprador e a loja trazem contato: é o que a
+ * RN-79 pede, já que não há chat direto.
+ */
+interface ApiAdminReport {
+  id: number | string;
+  reason: OrderReportReason;
+  description: string;
+  created_at: string;
+  buyer: { name: string; email: string; phone?: string | null };
+  order: {
+    id: number | string;
+    store: { id: number | string; name: string };
+  };
 }
 
 interface ApiPage<T> {
@@ -221,9 +241,13 @@ function mapApiReport(data: ApiReport): OrderReport {
 
 function mapApiAdminReport(data: ApiAdminReport): AdminOrderReport {
   return {
-    ...mapApiReport(data),
-    buyer: { id: String(data.buyer.id), name: data.buyer.name },
-    store: { id: String(data.store.id), name: data.store.name },
+    id: String(data.id),
+    orderId: String(data.order.id),
+    reason: data.reason,
+    description: data.description,
+    createdAt: data.created_at,
+    buyer: { name: data.buyer.name },
+    store: { id: String(data.order.store.id), name: data.order.store.name },
   };
 }
 
@@ -284,7 +308,7 @@ async function apiReportOrder(
   description: string,
 ): Promise<OrderReport> {
   try {
-    const { data } = await httpClient.post<ApiReport>(`/users/me/orders/${orderId}/reports`, {
+    const { data } = await httpClient.post<ApiReport>(`/users/me/orders/${orderId}/complaints`, {
       reason,
       description,
     });
@@ -296,7 +320,7 @@ async function apiReportOrder(
 
 async function apiListReports(params: ListReportsParams): Promise<Paginated<AdminOrderReport>> {
   try {
-    const { data } = await httpClient.get<ApiPage<ApiAdminReport>>('/admin/reports', {
+    const { data } = await httpClient.get<ApiPage<ApiAdminReport>>('/admin/complaints', {
       params: { page: params.page, page_size: params.pageSize },
     });
     return {

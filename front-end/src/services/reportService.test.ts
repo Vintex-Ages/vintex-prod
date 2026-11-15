@@ -58,13 +58,25 @@ describe('reportService (mock)', () => {
 
     it('aceita os dois motivos', async () => {
       seedOrder('u_ana', '10');
+      seedOrder('u_ana', '20');
 
       await expect(
         reports.reportOrder('10', 'nao_recebido', 'Nunca chegou.'),
       ).resolves.toMatchObject({ reason: 'nao_recebido' });
       await expect(
-        reports.reportOrder('10', 'danificado', 'Chegou rasgada.'),
+        reports.reportOrder('20', 'danificado', 'Chegou rasgada.'),
       ).resolves.toMatchObject({ reason: 'danificado' });
+    });
+
+    // Uma Reclamação por Pedido: o back tem índice único (back-end#268).
+    it('recusa a segunda Reclamação no mesmo Pedido', async () => {
+      seedOrder('u_ana', '10');
+      await reports.reportOrder('10', 'nao_recebido', 'Nunca chegou.');
+
+      const error = await failure(reports.reportOrder('10', 'danificado', 'E veio rasgada.'));
+
+      expect(error).toMatchObject({ name: 'OrderReportError', code: 'ALREADY_REPORTED' });
+      expect((await reports.listReports()).total).toBe(1);
     });
 
     it('404 quando o Pedido não existe', async () => {
@@ -131,15 +143,16 @@ describe('reportService (mock)', () => {
       expect(items[0]).toMatchObject({
         orderId: '20',
         reason: 'nao_recebido',
-        buyer: { id: 'u_bia' },
+        buyer: { name: 'u_bia' },
         store: { id: 's_1', name: 'Brechó Mercado Público' },
       });
     });
 
     it('pagina por page e pageSize', async () => {
-      seedOrder('u_ana', '10');
+      // Um Pedido por Reclamação: a segunda no mesmo Pedido é recusada.
       for (let i = 1; i <= 5; i += 1) {
-        await reports.reportOrder('10', 'danificado', `Reclamação ${i}`);
+        seedOrder('u_ana', `1${i}`);
+        await reports.reportOrder(`1${i}`, 'danificado', `Reclamação ${i}`);
         await new Promise((resolve) => setTimeout(resolve, 2));
       }
 
@@ -205,14 +218,14 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     });
   }
 
-  it('reportOrder chama POST /users/me/orders/{id}/reports e converte o 201', async () => {
+  it('reportOrder chama POST /users/me/orders/{id}/complaints e converte o 201', async () => {
     const calls = await stubAdapter(() => API_REPORT);
     const { reportOrder } = await import('./reportService');
 
     const report = await reportOrder('10', 'danificado', '  A manga veio rasgada. ');
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ url: '/users/me/orders/10/reports', method: 'post' });
+    expect(calls[0]).toMatchObject({ url: '/users/me/orders/10/complaints', method: 'post' });
     expect(JSON.parse(calls[0].data as string)).toEqual({
       reason: 'danificado',
       description: 'A manga veio rasgada.',
@@ -287,13 +300,24 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     });
   });
 
-  it('listReports chama GET /admin/reports paginado e converte o envelope', async () => {
+  it('listReports chama GET /admin/complaints paginado e converte o envelope', async () => {
+    // O envelope é o do back: a loja e o número do Pedido vêm dentro de
+    // `order`, e o comprador vem com contato e sem id (back-end#268).
     const calls = await stubAdapter(() => ({
       items: [
         {
-          ...API_REPORT,
-          buyer: { id: 3, name: 'Ana' },
-          store: { id: 9, name: 'Roupa Rodada' },
+          id: 5,
+          reason: 'danificado',
+          description: 'A manga veio rasgada.',
+          created_at: '2026-10-29T12:00:00Z',
+          buyer: { name: 'Ana', email: 'ana@test.local', phone: null },
+          order: {
+            id: 10,
+            status: 'confirmado',
+            store: { id: 9, name: 'Roupa Rodada', seller_name: 'Rita', pix_key: null },
+            items: [{ product_id: 1, name: 'Jaqueta', price: 100 }],
+            total_amount: 100,
+          },
         },
       ],
       page: 2,
@@ -305,7 +329,7 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     const page = await listReports({ page: 2, pageSize: 5 });
 
     expect(calls[0]).toMatchObject({
-      url: '/admin/reports',
+      url: '/admin/complaints',
       method: 'get',
       params: { page: 2, page_size: 5 },
     });
@@ -316,7 +340,7 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
       reason: 'danificado',
       description: 'A manga veio rasgada.',
       createdAt: '2026-10-29T12:00:00Z',
-      buyer: { id: '3', name: 'Ana' },
+      buyer: { name: 'Ana' },
       store: { id: '9', name: 'Roupa Rodada' },
     });
   });
@@ -376,7 +400,7 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
       orderId: id,
       description: 'A manga veio rasgada.',
       // Pedido de exemplo não tem dono: comprador fixo e explícito.
-      buyer: { id: 'exemplo', name: 'exemplo' },
+      buyer: { name: 'exemplo' },
       store,
     });
   });
@@ -423,7 +447,7 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
     const { items } = await reports.listReports();
     expect(items[0]).toMatchObject({
       orderId: order.id,
-      buyer: { id: 'u_ana' },
+      buyer: { name: 'u_ana' },
       store: { id: order.store.id, name: order.store.name },
     });
   });

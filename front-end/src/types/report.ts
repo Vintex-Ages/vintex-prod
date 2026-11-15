@@ -10,6 +10,9 @@ export type OrderReportReason = 'nao_recebido' | 'danificado';
 
 export const ORDER_REPORT_REASONS: readonly OrderReportReason[] = ['nao_recebido', 'danificado'];
 
+/** Teto do texto da Reclamação, igual ao do back (`OrderComplaintCreate`). */
+export const ORDER_REPORT_DESCRIPTION_MAX = 1000;
+
 /** Reclamação criada, como o comprador a recebe de volta. */
 export interface OrderReport {
   id: string;
@@ -20,9 +23,14 @@ export interface OrderReport {
   createdAt: string;
 }
 
-/** Item da listagem da administradora: a Reclamação mais quem reclamou e de qual loja. */
+/**
+ * Item da listagem da administradora: a Reclamação mais quem reclamou e de qual loja.
+ *
+ * O comprador vem sem `id`: a rota da administradora manda nome, e-mail e
+ * telefone, que é o que a RN-79 pede para ela intermediar, e nenhum id.
+ */
 export interface AdminOrderReport extends OrderReport {
-  buyer: { id: string; name: string };
+  buyer: { name: string };
   store: { id: string; name: string };
 }
 

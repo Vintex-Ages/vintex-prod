@@ -83,7 +83,7 @@ describe('<ReportProblemDialog />', () => {
 
     expect(reportOrder).not.toHaveBeenCalled();
     expect(descricao()).toHaveAttribute('aria-invalid', 'true');
-    expect(descricao()).toHaveAccessibleDescription('Descreva o problema.');
+    expect(descricao()).toHaveAccessibleDescription('Descreva o problema. 3/1000');
     // Uma região `alert` só: a do resumo, não a do campo.
     const alertas = screen.getAllByRole('alert');
     expect(alertas).toHaveLength(1);
@@ -130,7 +130,7 @@ describe('<ReportProblemDialog />', () => {
     enviar();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Confira 1 campo');
-    expect(descricao()).toHaveAccessibleDescription('Descrição muito curta.');
+    expect(descricao()).toHaveAccessibleDescription('Descrição muito curta. 2/1000');
     expect(descricao()).toHaveFocus();
   });
 

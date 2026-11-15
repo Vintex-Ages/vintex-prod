@@ -330,3 +330,97 @@ def test_rotas_publicas_nao_trazem_a_reclamacao(client, db_session, cenario, rep
         assert TEXTO.lower() not in texto, caminho
         assert "complaint" not in texto, caminho
         assert "reclama" not in texto, caminho
+
+
+# ---------------------------------------------------------------------------
+# Ordem da lista da administradora (back-end#353)
+#
+# A mais recente primeiro, que é o critério escrito na `front-end#427`: esta
+# lista é só leitura, ao contrário da fila de comprovantes, em que a
+# administradora age e o item sai da fila. O desempate por `id` existe porque
+# duas reclamações feitas no mesmo instante têm o mesmo `created_at`.
+# ---------------------------------------------------------------------------
+
+
+def datar(db: Session, complaint_id: int, quando) -> None:
+    """Põe `created_at` na reclamação: o default é `now()`, e três reclamações
+    da mesma transação sairiam com a mesma data."""
+    complaint = db.get(OrderComplaint, complaint_id)
+    assert complaint is not None
+    complaint.created_at = quando
+    db.commit()
+
+
+@pytest.fixture
+def tres_reclamacoes(db_session, cenario, reportar):
+    """Três reclamações em pedidos diferentes, datadas da mais antiga para a
+    mais nova. Devolve os ids na ordem em que foram criadas."""
+    agora = utcnow_naive()
+    ids = []
+    for dias, texto in ((3, "A primeira."), (2, "A do meio."), (1, "A mais nova.")):
+        pedido = make_order(db_session, cenario["compradora"], cenario["loja"])
+        resposta = reportar(pedido.id, description=texto)
+        assert resposta.status_code == 201, resposta.text
+        complaint_id = resposta.json()["id"]
+        datar(db_session, complaint_id, agora - timedelta(days=dias))
+        ids.append(complaint_id)
+    return ids
+
+
+def test_lista_sai_da_mais_recente_para_a_mais_antiga(
+    client, cenario, tres_reclamacoes
+):
+    resposta = client.get(ADMIN_URL, headers=cenario["como_admin"])
+
+    assert resposta.status_code == 200
+    body = resposta.json()
+    assert body["total"] == 3
+    assert [i["id"] for i in body["items"]] == list(reversed(tres_reclamacoes))
+    assert [i["description"] for i in body["items"]] == [
+        "A mais nova.",
+        "A do meio.",
+        "A primeira.",
+    ]
+
+
+def test_a_pagina_respeita_a_ordem(client, cenario, tres_reclamacoes):
+    antiga, meio, nova = tres_reclamacoes
+
+    primeira = client.get(
+        ADMIN_URL, params={"page": 1, "page_size": 2}, headers=cenario["como_admin"]
+    )
+    segunda = client.get(
+        ADMIN_URL, params={"page": 2, "page_size": 2}, headers=cenario["como_admin"]
+    )
+
+    assert primeira.status_code == 200 and segunda.status_code == 200
+    assert [i["id"] for i in primeira.json()["items"]] == [nova, meio]
+    assert [i["id"] for i in segunda.json()["items"]] == [antiga]
+    assert primeira.json()["total"] == segunda.json()["total"] == 3
+
+
+def test_empate_de_data_sai_em_ordem_estavel(db_session, client, cenario, reportar):
+    """Duas reclamações no mesmo instante: a de id maior primeiro, e a ordem
+    não muda entre duas leituras."""
+    mesmo_instante = utcnow_naive()
+    ids = []
+    for texto in ("A de antes.", "A de depois."):
+        pedido = make_order(db_session, cenario["compradora"], cenario["loja"])
+        resposta = reportar(pedido.id, description=texto)
+        assert resposta.status_code == 201, resposta.text
+        complaint_id = resposta.json()["id"]
+        datar(db_session, complaint_id, mesmo_instante)
+        ids.append(complaint_id)
+
+    leituras = [
+        [
+            i["id"]
+            for i in client.get(ADMIN_URL, headers=cenario["como_admin"]).json()[
+                "items"
+            ]
+        ]
+        for _ in range(2)
+    ]
+
+    assert leituras[0] == list(reversed(ids))
+    assert leituras[0] == leituras[1]

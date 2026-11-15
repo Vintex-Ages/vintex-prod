@@ -157,7 +157,7 @@ def get_complaint_controller(db: Session = Depends(get_db)) -> OrderComplaintCon
 @router.get(
     "/complaints",
     response_model=Page[AdminComplaintEntry],
-    summary="Reclamações de pedidos, mais antiga primeiro",
+    summary="Reclamações de pedidos, mais recente primeiro",
     responses={403: {"description": "ADMIN_REQUIRED"}},
 )
 def list_complaints(

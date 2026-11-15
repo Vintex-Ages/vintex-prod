@@ -37,7 +37,7 @@ function reclamacao(id: string, overrides: Partial<AdminOrderReport> = {}): Admi
     reason: 'danificado',
     description: `Descrição ${id}.`,
     createdAt: '2026-10-29T14:32:00',
-    buyer: { id: 'u_1', name: 'Ana Compradora' },
+    buyer: { name: 'Ana Compradora' },
     store: { id: 's_1', name: 'Brechó da Bia' },
     ...overrides,
   };
@@ -96,7 +96,7 @@ describe('<ReportQueue />', () => {
         reclamacao('2', {
           reason: 'nao_recebido',
           orderId: '42',
-          buyer: { id: 'u_2', name: 'Bia' },
+          buyer: { name: 'Bia' },
         }),
         reclamacao('1'),
       ]),
