@@ -281,7 +281,9 @@ class _ProvedorQueFala(_Provedor):
         self.fala = fala
         self.pedidos: list[tuple[str, list[PecaParaComentar], bool]] = []
 
-    def comentar_pecas(self, pergunta, pecas, *, alternativas=False):  # noqa: ANN001, ANN201
+    def comentar_pecas(
+        self, pergunta, pecas, *, alternativas=False
+    ):  # noqa: ANN001, ANN201
         self.pedidos.append((pergunta, list(pecas), alternativas))
         if isinstance(self.fala, Exception):
             raise self.fala
