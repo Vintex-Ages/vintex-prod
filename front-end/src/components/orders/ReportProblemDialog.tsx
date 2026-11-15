@@ -120,6 +120,7 @@ function ReportProblemDialog({ open, orderId, onClose }: ReportProblemDialogProp
       <Dialog
         open={open}
         onClose={handleClose}
+        size="md"
         title="Reportar problema"
         footer={
           <div ref={confirmationRef} className="flex justify-end">
