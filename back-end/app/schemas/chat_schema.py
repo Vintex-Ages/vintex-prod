@@ -5,8 +5,12 @@ Eventos SSE combinados com o front (`FE-SVC-vintex-ai-chat`, front-end#199):
 
 - `interpreted` (back-end#260): o que a pergunta virou, com `filters` nos
   nomes do catálogo (`category`, `price_max`...) e `similarity`.
-- `text`: hoje só o aviso de que as peças são alternativas, quando nada casou
-  com os filtros (RN-61). Não há geração de texto conversacional.
+- `text`: a resposta escrita da assistente, depois das peças (back-end#329).
+  A frase que abre é do servidor (quantas peças, ou o aviso de que são
+  alternativas, RN-61) e o comentário de cada peça vem de uma segunda chamada
+  ao modelo, conferido antes de sair (`app/services/ai/personalidade.py`).
+  Vem num evento só, inteiro: a versão anterior deste contrato dizia que não
+  havia geração de texto conversacional, e isso valeu até a #329.
 - `products`, com `match_type` (`exact` ou `fallback`, como no feed).
 - `error`, e `error` com `code: quota_exceeded` (back-end#258).
 - `done`, sempre por último.

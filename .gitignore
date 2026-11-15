@@ -1,0 +1,4 @@
+node_modules/
+documentation/.docusaurus/
+documentation/build/
+*.log
