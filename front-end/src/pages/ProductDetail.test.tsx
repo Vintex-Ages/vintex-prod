@@ -1,7 +1,7 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { AuthProvider } from '@/context/AuthContext';
@@ -11,15 +11,23 @@ import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
 import { useAuth } from '@/context/useAuth';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { useFavorites } from '@/context/useFavorites';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { PENDING_ACTION_STORAGE_KEY } from '@/hooks/useProtectedAction';
 import { paths } from '@/routes/paths';
 import * as catalogService from '@/services/catalogService';
+import { AdminModerationError, suspendProduct } from '@/services/adminModerationService';
+import type { ModerationResult } from '@/types/adminModeration';
 import type { AuthUser } from '@/types/auth';
 import type { Cart } from '@/types/cart';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
 import ProductDetail from './ProductDetail';
+
+vi.mock('@/services/adminModerationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminModerationService')>()),
+  suspendProduct: vi.fn(),
+}));
 
 vi.mock('@/services/cartService', () => ({
   getCart: vi.fn(),
@@ -1204,5 +1212,284 @@ describe('<ProductDetail />', () => {
     expect(await screen.findByRole('button', { name: 'No carrinho' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sacola (1)' })).toBeInTheDocument();
     expect(mockedAddItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
+  });
+});
+
+/** #414 RED: fixtures próprias, independentes dos IDs dos dois mocks reais. */
+const MODERATION_ADMIN: AuthUser = {
+  id: '414-admin',
+  name: 'Admin de teste',
+  email: 'admin@example.test',
+  is_admin: true,
+  is_seller: false,
+};
+const MODERATION_OWNER: AuthUser = {
+  id: '414-owner',
+  name: 'Dona do Brechó Aurora',
+  email: 'owner@example.test',
+  is_admin: false,
+  is_seller: true,
+};
+const MODERATION_PRODUCT: ProductDetailData = {
+  id: '41401',
+  name: 'Jaqueta do fluxo de moderação',
+  price: 120,
+  coverImageUrl: null,
+  store: { id: '414-store', name: 'Brechó Aurora' },
+  category: 'Roupas',
+  size: 'M',
+  color: 'Preto',
+  brand: 'Vintage',
+  condition: 'Usado',
+  description: 'Peça da proprietária 414-owner.',
+  status: 'ativo',
+  media: [],
+};
+const MODERATION_REASON = 'As fotos não correspondem à peça.';
+const MODERATION_RESULT: ModerationResult = {
+  productId: MODERATION_PRODUCT.id,
+  status: 'despublicado',
+  moderationReason: MODERATION_REASON,
+  moderatedAt: '2026-11-14T12:00:00',
+};
+
+function moderationAuth(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
+  return {
+    user: MODERATION_ADMIN,
+    token: 'test-token',
+    isAuthenticated: true,
+    loading: false,
+    login: () => {},
+    logout: () => {},
+    refreshUser: async () => {},
+    ...overrides,
+  };
+}
+
+function renderModerationDetail(auth = moderationAuth(), cartValue = createCartValue()) {
+  return render(
+    <MemoryRouter initialEntries={['/product/41401']}>
+      <AuthContext.Provider value={auth}>
+        <FavoritesProvider>
+          <CartContext.Provider value={cartValue}>
+            <ToastProvider>
+              <Link to="/product/41402">Outra peça do catálogo</Link>
+              <Routes>
+                <Route path={paths.product} element={<ProductDetail />} />
+                <Route path={paths.checkout} element={<CheckoutDestination />} />
+              </Routes>
+            </ToastProvider>
+          </CartContext.Provider>
+        </FavoritesProvider>
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  );
+}
+
+async function submitModerationReason() {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Suspender anúncio' }));
+  const dialog = screen.getByRole('dialog', { name: /suspender anúncio/i });
+  const field = within(dialog).getByRole('textbox', { name: /motivo|justificativa/i });
+  await user.type(field, MODERATION_REASON);
+  await user.click(within(dialog).getByRole('button', { name: /confirmar suspensão/i }));
+  return { user, dialog, field };
+}
+
+describe('#414 — suspensão administrativa no detalhe público', () => {
+  beforeEach(() => {
+    vi.spyOn(catalogService, 'getProduct').mockImplementation(async (id) => ({
+      ...MODERATION_PRODUCT,
+      id,
+      name: id === '41401' ? MODERATION_PRODUCT.name : 'Outra peça ativa',
+      store: { ...MODERATION_PRODUCT.store },
+      media: [],
+    }));
+    vi.mocked(suspendProduct).mockReset().mockResolvedValue(MODERATION_RESULT);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('admin vê Suspender anúncio na página pública já existente', async () => {
+    renderModerationDetail();
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+    expect(catalogService.getProduct).toHaveBeenCalledExactlyOnceWith('41401');
+  });
+
+  it.each([
+    { role: 'comprador', auth: moderationAuth({ user: SAMPLE_USER }) },
+    {
+      role: 'vendedor',
+      auth: moderationAuth({ user: { ...SAMPLE_USER, id: '414-other-seller', is_seller: true } }),
+    },
+    { role: 'vendedor proprietário', auth: moderationAuth({ user: MODERATION_OWNER }) },
+    {
+      role: 'visitante',
+      auth: moderationAuth({ user: null, token: null, isAuthenticated: false }),
+    },
+    { role: 'auth loading com admin disponível', auth: moderationAuth({ loading: true }) },
+  ])('$role não vê ação administrativa nem dispara suspensão', async ({ auth }) => {
+    renderModerationDetail(auth);
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('admin sem sessão autenticada não vê a ação, mesmo com user preenchido', async () => {
+    renderModerationDetail(moderationAuth({ isAuthenticated: false, token: null }));
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+  });
+
+  it('admin não recebe ação antes da carga do produto', async () => {
+    let resolve!: (value: ProductDetailData) => void;
+    vi.mocked(catalogService.getProduct).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    renderModerationDetail();
+    expect(screen.getByRole('status')).toHaveTextContent(/Carregando produto/);
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    await act(async () => resolve({ ...MODERATION_PRODUCT }));
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('produto não encontrado não oferece suspensão', async () => {
+    vi.mocked(catalogService.getProduct).mockRejectedValue(
+      new catalogService.CatalogError('PRODUCT_NOT_FOUND', 'Peça não encontrada.'),
+    );
+    renderModerationDetail();
+    expect(await screen.findByText('Peça não encontrada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('falha no detalhe preserva o erro existente sem ação administrativa', async () => {
+    vi.mocked(catalogService.getProduct).mockRejectedValue(new Error('rede'));
+    renderModerationDetail();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar esta peça agora.',
+    );
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('suspensão confirmada bloqueia compra e carrinho da peça atual sem refetch obrigatório', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    renderModerationDetail(moderationAuth(), createCartValue({ add }));
+    const buy = await screen.findByRole('button', { name: /Comprar Agora/ });
+    const cart = screen.getByRole('button', { name: 'Adicionar ao carrinho' });
+    expect(buy).toBeEnabled();
+    const { user } = await submitModerationReason();
+    expect(suspendProduct).toHaveBeenCalledExactlyOnceWith('41401', MODERATION_REASON);
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((node) => /suspens|suspenso/i.test(node.textContent ?? '')),
+    ).toBe(true);
+    expect(buy).toBeDisabled();
+    expect(cart).toBeDisabled();
+    fireEvent.click(cart);
+    fireEvent.click(buy);
+    expect(add).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Checkout' })).not.toBeInTheDocument();
+    const repeatedAction = screen.queryByRole('button', { name: 'Suspender anúncio' });
+    if (repeatedAction) await user.click(repeatedAction);
+    expect(suspendProduct).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(catalogService.getProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      status: 'vendido' as const,
+      code: 'PRODUCT_SOLD',
+      message: 'Peça vendida não pode ser suspensa.',
+      expected: /vendida/i,
+    },
+    {
+      status: 'reservado' as const,
+      code: 'PRODUCT_NOT_EDITABLE',
+      message: 'O estado atual da peça não permite suspensão.',
+      expected: /reservad|pedido em aberto/i,
+    },
+    {
+      status: 'ativo' as const,
+      code: 'CONFLICT',
+      message: 'O estado atual impede a suspensão.',
+      expected: /estado atual|situação atual/i,
+    },
+  ])(
+    '409 de $status não altera a peça nem as ações existentes',
+    async ({ status, code, message, expected }) => {
+      vi.mocked(catalogService.getProduct).mockResolvedValue({ ...MODERATION_PRODUCT, status });
+      vi.mocked(suspendProduct).mockRejectedValue(
+        new AdminModerationError(code, message, 409, code),
+      );
+      renderModerationDetail();
+      const buy = await screen.findByRole('button', { name: /Comprar Agora/ });
+      const wasDisabled = buy.hasAttribute('disabled');
+      const { dialog, field } = await submitModerationReason();
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(expected);
+      expect(field).toHaveValue(MODERATION_REASON);
+      expect(buy.hasAttribute('disabled')).toBe(wasDisabled);
+      expect(screen.queryByText(/anúncio suspenso com sucesso/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: MODERATION_PRODUCT.name })).toBeInTheDocument();
+      if (code === 'CONFLICT')
+        expect(within(dialog).getByRole('alert')).not.toHaveTextContent(/vendida|reservada/i);
+    },
+  );
+
+  it('falha genérica mantém anúncio ativo e contexto para corrigir ou tentar novamente', async () => {
+    vi.mocked(suspendProduct).mockRejectedValue(new Error('rede'));
+    renderModerationDetail();
+    const { dialog, field } = await submitModerationReason();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      /suspender|conexão|tente novamente/i,
+    );
+    expect(field).toHaveValue(MODERATION_REASON);
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeEnabled();
+  });
+
+  it('suspensão local não bloqueia a próxima peça navegada no mesmo componente', async () => {
+    renderModerationDetail();
+    const { user } = await submitModerationReason();
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
+    await user.click(screen.getByRole('link', { name: 'Outra peça do catálogo' }));
+    await screen.findByRole('heading', { name: 'Outra peça ativa' });
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('suspensão pendente de outra peça não aplica estado à peça recém-navegada', async () => {
+    let resolve!: (value: ModerationResult) => void;
+    vi.mocked(suspendProduct).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    renderModerationDetail();
+    const { user } = await submitModerationReason();
+    await user.click(screen.getByRole('link', { name: 'Outra peça do catálogo' }));
+    await screen.findByRole('heading', { name: 'Outra peça ativa' });
+    await act(async () => resolve(MODERATION_RESULT));
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('sucesso preserva sugestões de looks e navegação da loja', async () => {
+    mockedGetCombinations.mockResolvedValue(LOOK);
+    renderModerationDetail();
+    await screen.findByRole('heading', { name: LOOK_TITLE });
+    await submitModerationReason();
+    expect(screen.getByRole('heading', { name: LOOK_TITLE })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Adicionar.*Bolsa baú/i })).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Brechó Aurora.*Ver loja/i })).toHaveAttribute(
+      'href',
+      '/store/414-store',
+    );
   });
 });
