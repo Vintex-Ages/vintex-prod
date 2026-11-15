@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
+
+from app.schemas.datas import DataComFuso
 
 
 class LegalDocumentResponse(BaseModel):
@@ -9,4 +9,4 @@ class LegalDocumentResponse(BaseModel):
     document_type: str
     version: str
     content: str
-    published_at: datetime
+    published_at: DataComFuso

@@ -5,12 +5,11 @@ O formato segue o modelo do front (`front-end/src/types/notification.ts`):
 sabe que alguém favoritou, não quem.
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel
 
 from app.core.pagination import Page
 from app.models.notification import NotificationType
+from app.schemas.datas import DataComFuso
 
 
 class NotificationResponse(BaseModel):
@@ -23,7 +22,7 @@ class NotificationResponse(BaseModel):
     # Só na suspensão: por que a administradora tirou a peça do ar (RN-80).
     # Nulo nos outros tipos e na venda, que não têm texto.
     moderation_reason: str | None = None
-    created_at: datetime
+    created_at: DataComFuso
     is_read: bool
 
 

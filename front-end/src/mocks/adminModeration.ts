@@ -22,7 +22,7 @@ function product(id: string, name: string, status: ProductStatus): MockModeratio
 // Autor histórico da fixture, não uma conta ou sessão de autenticação.
 const moderation = {
   moderationReason: 'Fotos não correspondem à peça de demonstração.',
-  moderatedAt: '2026-11-10T12:00:00',
+  moderatedAt: '2026-11-10T12:00:00Z',
   moderatedBy: { id: '900', name: 'Moderadora de demonstração' },
 };
 

@@ -1,7 +1,8 @@
-from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, field_serializer
+
+from app.schemas.datas import DataComFuso
 
 
 class ProductManagementResponse(BaseModel):
@@ -27,7 +28,7 @@ class ProductManagementResponse(BaseModel):
     # vendedor vê o motivo na peça dele. Nulos quando a peça não foi suspensa —
     # inclusive na peça que o próprio vendedor pausou, que continua `Pausada`.
     moderation_reason: str | None = None
-    moderated_at: datetime | None = None
+    moderated_at: DataComFuso | None = None
 
     # `Decimal` sai como string em JSON se ninguem interferir. O front absorvia
     # com `Number(...)`, mas a mesma peca chegava como numero pelo feed e como
