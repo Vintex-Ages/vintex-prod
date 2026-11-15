@@ -378,6 +378,17 @@ def _ids(eventos: list[dict]) -> list[int]:
     return [p["id"] for e in eventos if e["type"] == "products" for p in e["products"]]
 
 
+def _busca(eventos: list[dict]) -> dict:
+    """O evento `products`, achado pelo tipo e não pela posição: a ordem dos
+    eventos já mudou uma vez (back-end#329, quando entrou o `text`)."""
+    return next(e for e in eventos if e["type"] == "products")
+
+
+def _texto(eventos: list[dict]) -> str:
+    """O texto que a Vintex escreveu."""
+    return next(e["delta"] for e in eventos if e["type"] == "text")
+
+
 @pytest.mark.postgres
 def test_tenis_verde_ate_400_nao_traz_outra_cor_nem_outro_preco(
     pg_client: TestClient, pg_session: Session, monkeypatch
@@ -414,10 +425,16 @@ def test_tenis_verde_ate_400_nao_traz_outra_cor_nem_outro_preco(
 
     eventos = _perguntar(pg_client, "tênis verde até 400")
 
-    assert eventos[0] == {"type": "interpreted", "filters": pedido, "similarity": None}
+    assert eventos[0] == {
+        "type": "interpreted",
+        "filters": pedido,
+        "similarity": None,
+        "tipo": None,
+        "in_scope": None,
+    }
     assert _ids(eventos) == [certo.id]
     assert {branco.id, caro.id, roupa.id}.isdisjoint(_ids(eventos))
-    assert eventos[1]["match_type"] == "exact"
+    assert _busca(eventos)["match_type"] == "exact"
     assert eventos[-1] == {"type": "done"}
 
 
@@ -489,9 +506,11 @@ def test_pergunta_sem_atributo_objetivo_ordena_so_por_similaridade(
         "type": "interpreted",
         "filters": {},
         "similarity": "confortável",
+        "tipo": None,
+        "in_scope": None,
     }
     assert _ids(eventos) == [primeira.id, segunda.id]
-    assert eventos[1]["match_type"] == "exact"
+    assert _busca(eventos)["match_type"] == "exact"
 
 
 @pytest.mark.postgres
@@ -517,9 +536,9 @@ def test_filtro_sem_peca_cai_nas_alternativas_marcadas(
 
     eventos = _perguntar(pg_client, "tênis verde")
 
-    assert [e["type"] for e in eventos] == ["interpreted", "text", "products", "done"]
-    assert eventos[1]["delta"].startswith("Não encontrei peças com Sapatos e Verde.")
-    assert eventos[2]["match_type"] == "fallback"
+    assert [e["type"] for e in eventos] == ["interpreted", "products", "text", "done"]
+    assert _texto(eventos).startswith("Não encontrei peças com Sapatos e Verde.")
+    assert _busca(eventos)["match_type"] == "fallback"
     assert _ids(eventos) == [primeira.id, segunda.id]
 
 
@@ -554,7 +573,7 @@ def test_alternativa_mantem_a_categoria_antes_de_soltar_tudo(
 
     assert _ids(eventos) == [bota.id]
     assert jaqueta.id not in _ids(eventos)
-    assert eventos[2]["match_type"] == "fallback"
+    assert _busca(eventos)["match_type"] == "fallback"
 
 
 @pytest.mark.postgres
@@ -577,7 +596,7 @@ def test_categoria_sem_peca_solta_todos_os_filtros(
     eventos = _perguntar(pg_client, "bota bege")
 
     assert _ids(eventos) == [jaqueta.id]
-    assert eventos[2]["match_type"] == "fallback"
+    assert _busca(eventos)["match_type"] == "fallback"
 
 
 @pytest.mark.postgres
@@ -594,9 +613,9 @@ def test_falha_na_interpretacao_busca_so_por_similaridade(
 
     eventos = _perguntar(pg_client, "tênis verde")
 
-    assert [e["type"] for e in eventos] == ["products", "done"]
+    assert [e["type"] for e in eventos] == ["products", "text", "done"]
     assert _ids(eventos) == [peca.id]
-    assert eventos[0]["match_type"] == "exact"
+    assert _busca(eventos)["match_type"] == "exact"
 
 
 @pytest.mark.postgres

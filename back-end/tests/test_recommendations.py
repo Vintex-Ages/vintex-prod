@@ -16,7 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.constants.embedding import EMBEDDING_DIM
+from app.controllers.recommendation_controller import RecommendationController
+from app.core.pagination import PageParams
 from app.models import Product, ProductImage, Seller, Store, User, UserPreference
+from app.repositories.product_repository import ProductRepository
 from app.services import product_embedding, style_profile
 from app.services.ai.base import AIProvider, AIProviderError
 from app.services.product_embedding import texto_da_peca
@@ -292,6 +295,146 @@ def test_resposta_segue_o_contrato_e_o_item_e_o_do_feed(
     assert set(item) == set(feed_item)
     assert set(item["store"]) == {"id", "name", "verified"}
     assert isinstance(item["price"], float)
+
+
+def _ids(resposta) -> list[int]:
+    return [item["id"] for item in resposta.json()["items"]]
+
+
+@pytest.fixture
+def vitrine(pg_session, loja):
+    """Peças em que a semelhança sozinha põe o estilo pedido no fim.
+
+    O texto do perfil streetwear fala de "conforto urbano" e "oversized", e as
+    peças de outro estilo repetem essas palavras: pelo vetor, ficam mais perto
+    do perfil que as peças streetwear de nome curto.
+    """
+    pecas = {
+        "boho_parecida": peca(
+            pg_session,
+            loja,
+            "Vestido oversized conforto urbano streetwear inspirado",
+            "boho-romantico",
+        ),
+        "alfa_parecida": peca(
+            pg_session, loja, "Blazer oversized urbano conforto", "alfaiataria"
+        ),
+        "street_1": peca(pg_session, loja, "Moletom cinza", "streetwear"),
+        "street_2": peca(pg_session, loja, "Tênis branco", "streetwear"),
+        "boho_2": peca(pg_session, loja, "Saia floral", "boho-romantico"),
+        "sem_estilo": peca(pg_session, loja, "Bolsa de palha", None),
+    }
+    pg_session.commit()
+    return pecas
+
+
+def test_as_pecas_do_estilo_vem_antes_das_outras(
+    pg_client, pg_session, auth_headers, provider, vitrine
+):
+    perfil(pg_session, COMPRADORA, "streetwear")
+    pg_session.commit()
+
+    ids = _ids(recomendacoes(pg_client, auth_headers))
+
+    street = {vitrine["street_1"].id, vitrine["street_2"].id}
+    assert set(ids[:2]) == street
+    assert len(ids) == len(vitrine)  # ninguém sai da lista (RN-61)
+
+
+def test_perfil_com_dois_estilos_traz_os_dois_antes(
+    pg_client, pg_session, auth_headers, provider, vitrine
+):
+    perfil(pg_session, COMPRADORA, "streetwear", "boho-romantico")
+    pg_session.commit()
+
+    ids = _ids(recomendacoes(pg_client, auth_headers))
+
+    dos_estilos = {
+        vitrine[k].id for k in ("street_1", "street_2", "boho_parecida", "boho_2")
+    }
+    assert set(ids[:4]) == dos_estilos
+    assert set(ids[4:]) == {vitrine["alfa_parecida"].id, vitrine["sem_estilo"].id}
+
+
+def test_dentro_de_cada_grupo_a_ordem_e_a_semelhanca(
+    pg_client, pg_session, auth_headers, provider, vitrine
+):
+    """Os dois grupos seguem pela semelhança: a vitrine não vira ordem de id."""
+    perfil(pg_session, COMPRADORA, "boho-romantico")
+    pg_session.commit()
+
+    ids = _ids(recomendacoes(pg_client, auth_headers))
+
+    sem_estilo = _pela_semelhanca(pg_session, "boho-romantico")
+    boho = {vitrine["boho_parecida"].id, vitrine["boho_2"].id}
+    assert ids == [i for i in sem_estilo if i in boho] + [
+        i for i in sem_estilo if i not in boho
+    ]
+
+
+def test_sem_a_preferencia_pelo_estilo_a_vitrine_esconde_o_streetwear(
+    pg_session, provider, vitrine
+):
+    """Confere a premissa da vitrine: sem o conserto, o estilo não vem antes."""
+    sem_estilo = _pela_semelhanca(pg_session, "streetwear")
+
+    street = {vitrine["street_1"].id, vitrine["street_2"].id}
+    assert set(sem_estilo[:2]) != street
+
+
+def _pela_semelhanca(db, *estilos: str) -> list[int]:
+    """A ordem só pela semelhança, como era antes da back-end#346."""
+    texto = style_profile.texto_do_perfil(
+        [UserPreference(type="estilo", value=v) for v in estilos]
+    )
+    rows, _ = ProductRepository(db).find_similar(
+        vetor_por_palavras(texto),
+        settings.GOOGLE_EMBEDDING_MODEL,
+        PageParams(page=1, page_size=50),
+    )
+    return [row["id"] for row in rows]
+
+
+def test_com_poucas_pecas_do_estilo_a_pagina_completa_com_as_outras(
+    pg_session, provider, vitrine
+):
+    """A rota usa a página padrão; a página curta se confere no controller."""
+    perfil(pg_session, COMPRADORA, "streetwear")
+    pg_session.commit()
+
+    primeira = RecommendationController(pg_session).recommend(
+        COMPRADORA, PageParams(page=1, page_size=3)
+    )
+
+    assert primeira.total == len(vitrine)
+    assert len(primeira.items) == 3
+    street = {vitrine["street_1"].id, vitrine["street_2"].id}
+    assert {i.id for i in primeira.items[:2]} == street
+
+
+def test_a_ordem_do_estilo_vale_entre_as_paginas(pg_session, provider, vitrine):
+    perfil(pg_session, COMPRADORA, "streetwear")
+    pg_session.commit()
+    controller = RecommendationController(pg_session)
+
+    pagina_1 = controller.recommend(COMPRADORA, PageParams(page=1, page_size=2))
+    pagina_2 = controller.recommend(COMPRADORA, PageParams(page=2, page_size=2))
+
+    street = {vitrine["street_1"].id, vitrine["street_2"].id}
+    assert {i.id for i in pagina_1.items} == street
+    assert not street & {i.id for i in pagina_2.items}
+
+
+def test_estilo_que_nenhuma_peca_tem_segue_pela_semelhanca(
+    pg_client, pg_session, auth_headers, provider, vitrine
+):
+    perfil(pg_session, COMPRADORA, "gotico-dark")
+    pg_session.commit()
+
+    resposta = recomendacoes(pg_client, auth_headers).json()
+
+    assert resposta["personalized"] is True
+    assert len(resposta["items"]) == len(vitrine)
 
 
 def test_paginacao(pg_client, pg_session, auth_headers, provider, loja):

@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from sqlalchemy.orm import Session
 
 from app.core.pagination import PageParams
+from app.models.user_preference import UserPreference
 from app.repositories.product_repository import ProductFeedRow, ProductRepository
 from app.repositories.user_preference_repository import UserPreferenceRepository
 from app.schemas.product_schema import (
@@ -15,7 +16,11 @@ from app.schemas.product_schema import (
     ProductFilters,
     RecommendationsResponse,
 )
-from app.services.style_profile import texto_do_perfil, vetor_do_perfil
+from app.services.style_profile import (
+    estilos_do_perfil,
+    texto_do_perfil,
+    vetor_do_perfil,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +32,10 @@ class RecommendationController:
     `personalized: false`, e não lista vazia (RN-61). O mesmo vale quando a
     recomendação não consegue sair: a IA falhou ao gerar o vetor do perfil, ou
     nenhuma peça do catálogo tem vetor ainda (ambiente sem IA, como a staging).
+
+    As peças do estilo escolhido vêm antes das outras (back-end#346, VS-029):
+    a semelhança sozinha deixava o estilo como uma palavra no meio do texto da
+    peça, e a peça já guarda o estilo em `style`.
     """
 
     def __init__(self, db: Session):
@@ -34,7 +43,23 @@ class RecommendationController:
         self.preferences = UserPreferenceRepository(db)
 
     def recommend(self, user_id: int, params: PageParams) -> RecommendationsResponse:
-        texto = texto_do_perfil(self.preferences.list_for_user(user_id))
+        return self.recommend_for(
+            self.preferences.list_for_user(user_id), params, user_id=user_id
+        )
+
+    def recommend_for(
+        self,
+        preferencias: Sequence[UserPreference],
+        params: PageParams,
+        *,
+        user_id: int | None = None,
+    ) -> RecommendationsResponse:
+        """A recomendação para um conjunto de preferências.
+
+        A rota passa as gravadas no onboarding. A suíte de avaliação
+        (`scripts/avaliar_ia.py`) passa as de cada perfil, sem criar usuário.
+        """
+        texto = texto_do_perfil(preferencias)
         if texto is not None:
             try:
                 vetor, modelo = vetor_do_perfil(texto)
@@ -45,7 +70,12 @@ class RecommendationController:
                     exc_info=True,
                 )
             else:
-                parecidas, total = self.products.find_similar(vetor, modelo, params)
+                parecidas, total = self.products.find_similar(
+                    vetor,
+                    modelo,
+                    params,
+                    prefer_styles=estilos_do_perfil(preferencias),
+                )
                 if total:
                     return self._resposta(parecidas, total, params, personalized=True)
 

@@ -1,9 +1,11 @@
 """Provedor real do Google AI Studio (BE-US027-1, back-end#92).
 
 Primeira chamada real a uma API de IA no projeto — até aqui, `unavailable`
-era o único provider (VE-06). Cobre `embed`, `analyze_image` e, desde a
-#260, `stream_interpret_search`: a pergunta do chat separada em filtro e
-similaridade. Não gera texto conversacional; a resposta são as peças reais.
+era o único provider (VE-06). Cobre `embed`, `analyze_image`, desde a #260
+`stream_interpret_search` (a pergunta do chat separada em filtro e
+similaridade) e, desde a #329, `comentar_pecas`: o comentário em cada peça
+que a busca devolveu. A resposta continua sendo as peças reais; o modelo
+comenta o que foi achado, nunca escolhe nem inventa peça.
 """
 
 from __future__ import annotations
@@ -26,12 +28,16 @@ from app.services.ai.base import (
     AIProviderError,
     AIProviderUnavailableError,
     ChatTurn,
+    FalaDaVintex,
     ImageAnalysisResult,
     ImagePhoto,
+    PecaParaComentar,
     SearchDone,
     SearchStreamEvent,
 )
+from app.services.ai.etiqueta import RespostaDaFoto, analise_da_resposta
 from app.services.ai.media_urls import image_download_url
+from app.services.ai.personalidade import PERSONALIDADE_PROMPT, montar_pecas
 from app.services.ai.search_interpretation import (
     INTERPRET_SEARCH_PROMPT,
     InterpretacaoDaPergunta,
@@ -48,6 +54,37 @@ _ANALYZE_IMAGE_PROMPT = ANALYZE_IMAGE_PROMPT
 # muda o preenchimento de 2 campos para 5.
 # Teto para a chamada ao modelo (o SDK conta em milissegundos).
 _GOOGLE_TIMEOUT_MS = 30_000
+# A leitura da pergunta do chat tem prazo próprio. Ela é opcional (sem ela a
+# busca segue por similaridade), e com o teto geral um modelo travado segurava
+# a conversa meio minuto antes de tentar o próximo.
+#
+# Cada tentativa tem teto de 10s, e a cadeia inteira, com as trocas de modelo,
+# as repetições do 503 e as esperas entre elas, para quando o que sobra do prazo
+# não cabe mais uma tentativa.
+#
+# O prazo é 25s, não 30s: na staging, o nginx e o CloudFront cortam a resposta
+# que passa 30s sem mandar nada (`proxy_read_timeout` e `origin_read_timeout`,
+# em `infra/`). A leitura que cai não manda evento, e depois dela ainda vêm o
+# vetor (0,3s de mediana em 15 chamadas, 13/11) e a busca. Com 25s cabem duas
+# tentativas que esgotam o tempo, não três: um tempo
+# esgotado real passa um pouco dos 10s, e na rodada D (12/11), com prazo de 30s,
+# duas leituras anunciaram o terceiro modelo e acabaram antes de chamá-lo. O 503
+# responde na hora, então 503 seguido de tempo esgotado ainda chega ao terceiro.
+#
+# 10s é o mínimo que a API aceita: com 8s ela responde 400 "Minimum allowed
+# deadline is 10s" em toda chamada (rodada de 12/11), e a leitura nunca sai.
+_TETO_MINIMO_DA_API_MS = 10_000
+_LEITURA_TETO_POR_TENTATIVA_MS = _TETO_MINIMO_DA_API_MS
+_LEITURA_PRAZO_MS = 25_000
+# A fala da assistente (back-end#329) tem prazo mais curto que a leitura: ela
+# acontece depois de as peças já estarem na tela, então o que ela atrasa é só o
+# comentário. Com 15s cabe uma tentativa que esgota o teto de 10s, e ainda cabe
+# trocar de modelo quando o 503 responde na hora. Esperar meio minuto por um
+# comentário é pior que não ter comentário.
+_FALA_PRAZO_MS = 15_000
+# O `sleep` pode acordar um pouco depois do pedido; sem folga, a espera
+# terminava e a tentativa seguinte não cabia mais.
+_FOLGA_DA_ESPERA_MS = 500
 
 
 def _lista(valor: str) -> list[str]:
@@ -104,19 +141,57 @@ def modelo_de_embedding() -> str:
 
 
 def _e_indisponibilidade(exc: Exception) -> bool:
-    """503 ou 429 do provedor, pelo código do SDK ou pela mensagem.
+    """503, 500 ou 429 do provedor, pelo código do SDK ou pela mensagem.
 
     O 429 (`RESOURCE_EXHAUSTED`) é a cota do provedor esgotada, o que a camada
     gratuita responde quando acabam as requisições (back-end#258). Para quem
     pede, é o mesmo que um 503: aquele modelo não responde agora, e outro pode
     responder. Antes o 429 caía direto no erro, sem tentar o próximo.
+
+    O 500 (`INTERNAL`) é erro do lado do Google, e a documentação dele manda
+    tentar de novo. Na rodada D (12/11) foi 1 das 6 leituras que caíram, e
+    parou a cadeia no primeiro modelo.
     """
     codigo = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    if codigo in (503, 429):
+    if codigo in (503, 500, 429):
         return True
     texto = str(exc).upper()
-    return ("503" in texto and "UNAVAILABLE" in texto) or (
-        "429" in texto and "RESOURCE_EXHAUSTED" in texto
+    return (
+        ("503" in texto and "UNAVAILABLE" in texto)
+        or ("500" in texto and "INTERNAL" in texto)
+        or ("429" in texto and "RESOURCE_EXHAUSTED" in texto)
+    )
+
+
+def _e_tempo_esgotado(exc: Exception) -> bool:
+    """504 do provedor ou estouro do teto do lado do cliente.
+
+    Medido em 11/11: 6 leituras da pergunta em 111 caíram com 504
+    `DEADLINE_EXCEEDED` perto dos 30s. Nas 5 que ficaram no log, o primeiro
+    modelo tinha dado 503, e em 4 o 504 veio do segundo: a cadeia parava ali,
+    sem tentar o terceiro. O SDK manda o teto do cliente ao servidor
+    (`X-Server-Timeout`), então o 504 perto dos 30s era o nosso próprio prazo.
+
+    O httpx levanta `ReadTimeout`, que não herda de `TimeoutError`: por isso o
+    nome da classe.
+    """
+    codigo = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if codigo == 504:
+        return True
+    if isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__:
+        return True
+    texto = str(exc).upper()
+    return "DEADLINE_EXCEEDED" in texto or "TIMED OUT" in texto
+
+
+def _erro_de_prazo(
+    tarefa: str, prazo_ms: int | None, ultimo: Exception | None
+) -> AIProviderError:
+    """O erro de quando a cadeia para pelo prazo. Leva o último erro junto: só
+    a mensagem do último modelo esconderia que houve tempo esgotado antes."""
+    return AIProviderError(
+        f"Falha ao {tarefa}: prazo de {(prazo_ms or 0) / 1000:.0f}s esgotado "
+        f"antes da próxima tentativa (último erro: {ultimo})"
     )
 
 
@@ -127,8 +202,10 @@ logger = logging.getLogger(__name__)
 # de dois minutos. A cadeia inteira falha em menos de um segundo, entao trocar
 # de modelo nao cobre esse caso -- so esperar cobre.
 #
-# 2s + 4s de espera, mais as chamadas, cabem folgado no limite de 30s que o API
-# Gateway impoe (documento de infra de 02/09).
+# 2s + 4s de espera, mais as chamadas que respondem 503 na hora, cabem no limite
+# de 30s que o API Gateway impoe (documento de infra de 02/09). Uma tentativa
+# lenta de foto, com o teto geral de 30s, nao cabe: por isso a foto nao troca de
+# modelo no tempo esgotado.
 _RODADAS = 3
 _ESPERA_ENTRE_RODADAS_S = (2.0, 4.0)
 
@@ -209,10 +286,12 @@ class GoogleAIProvider(AIProvider):
 
         parsed = result.parsed
         if isinstance(parsed, ImageAnalysisResult):
-            return parsed
+            return analise_da_resposta(parsed)
         if result.text:
             try:
-                return ImageAnalysisResult.model_validate_json(result.text)
+                return analise_da_resposta(
+                    RespostaDaFoto.model_validate_json(result.text)
+                )
             except ValueError as exc:
                 raise AIProviderError(
                     f"Resposta do provedor não bate com o formato esperado: {exc}"
@@ -283,6 +362,7 @@ class GoogleAIProvider(AIProvider):
             parts,
             schema=InterpretacaoDaPergunta,
             tarefa="interpretar a pergunta",
+            prazo_ms=_LEITURA_PRAZO_MS,
         )
 
         parsed = result.parsed
@@ -299,12 +379,54 @@ class GoogleAIProvider(AIProvider):
         yield interpretacao_da_resposta(parsed)
         yield SearchDone()
 
+    def comentar_pecas(
+        self,
+        pergunta: str,
+        pecas: Sequence[PecaParaComentar],
+        *,
+        alternativas: bool = False,
+    ) -> FalaDaVintex:
+        """Comenta as peças que a busca devolveu (back-end#329).
+
+        Uma chamada só, com saída estruturada, nos mesmos modelos da leitura da
+        pergunta e com o mesmo fallback no 503. Não é streaming: o texto só vai
+        para a tela depois de conferido, então não há o que mandar aos poucos.
+        """
+        if not pecas:
+            return FalaDaVintex()
+
+        parts = [
+            types.Part.from_text(text=PERSONALIDADE_PROMPT),
+            types.Part.from_text(
+                text=montar_pecas(pergunta, pecas, alternativas=alternativas)
+            ),
+        ]
+        result = self._gerar_com_fallback(
+            parts,
+            schema=FalaDaVintex,
+            tarefa="comentar as peças",
+            prazo_ms=_FALA_PRAZO_MS,
+        )
+
+        parsed = result.parsed
+        if isinstance(parsed, FalaDaVintex):
+            return parsed
+        if not result.text:
+            raise AIProviderError("Provedor não devolveu a fala da assistente.")
+        try:
+            return FalaDaVintex.model_validate_json(result.text)
+        except ValueError as exc:
+            raise AIProviderError(
+                f"Fala da assistente fora do formato esperado: {exc}"
+            ) from exc
+
     def _gerar_com_fallback(
         self,
         parts: list[types.Part],
         *,
-        schema: type[BaseModel] = ImageAnalysisResult,
+        schema: type[BaseModel] = RespostaDaFoto,
         tarefa: str = "analisar as fotos",
+        prazo_ms: int | None = None,
     ) -> types.GenerateContentResponse:
         """Tenta os modelos configurados em ordem, pulando os que dão 503 ou 429.
 
@@ -317,6 +439,17 @@ class GoogleAIProvider(AIProvider):
         os três modelos recusaram no mesmo instante e voltaram em menos de dois
         minutos. A cadeia falha em menos de um segundo, então trocar de modelo
         não cobre o congestionamento simultâneo -- só esperar cobre.
+
+        Tempo esgotado (504 ou o teto do cliente) depende de `prazo_ms`:
+
+        - sem prazo (a análise da foto), levanta na hora, como sempre fez: cada
+          tentativa leva o teto geral de 30s, e trocar de modelo levaria a
+          chamada a minutos;
+        - com prazo (a leitura da pergunta), cada tentativa tem teto de 10s e
+          tempo esgotado pula para o próximo modelo, como o 503, mas o modelo
+          lento não volta nas rodadas de repetição. A cadeia para quando o que
+          sobra do prazo não cabe mais uma tentativa, inclusive antes de
+          esperar para repetir.
         """
         modelos = modelos_de_visao()
         if not modelos:
@@ -326,21 +459,48 @@ class GoogleAIProvider(AIProvider):
                 "GOOGLE_VISION_MODEL está vazio: nenhum modelo para tentar."
             )
         ultimo: Exception | None = None
+        opcoes_http = (
+            types.HttpOptions(timeout=_LEITURA_TETO_POR_TENTATIVA_MS)
+            if prazo_ms is not None
+            else None
+        )
+        inicio = time.monotonic()
+        # Modelo que esgotou o tempo não volta nas rodadas de repetição: elas
+        # são para o 503, que passa em segundos, e repetir o lento gastaria o
+        # teto de novo sem chance melhor.
+        lentos: set[str] = set()
+
+        def cabe(espera_s: float = 0.0, folga_ms: float = 0.0) -> bool:
+            if prazo_ms is None:
+                return True
+            gasto_ms = (time.monotonic() - inicio) * 1000
+            sobra_ms = prazo_ms - gasto_ms - espera_s * 1000 - folga_ms
+            return sobra_ms >= _LEITURA_TETO_POR_TENTATIVA_MS
 
         for rodada in range(_RODADAS):
+            da_vez = [m for m in modelos if m not in lentos]
+            if not da_vez:
+                break
             if rodada:
                 espera = _ESPERA_ENTRE_RODADAS_S[rodada - 1]
+                # A folga cobre o atraso do próprio `sleep`: sem ela, a espera
+                # podia terminar um pouco depois e a tentativa não caber.
+                if not cabe(espera, _FOLGA_DA_ESPERA_MS):
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo) from ultimo
                 logger.warning(
-                    "Os %d modelos responderam 503; esperando %.0fs e repetindo "
-                    "a cadeia (rodada %d de %d)",
-                    len(modelos),
+                    "Nenhum modelo respondeu; esperando %.0fs e repetindo os %d "
+                    "que deram 503 (rodada %d de %d)",
                     espera,
+                    len(da_vez),
                     rodada + 1,
                     _RODADAS,
                 )
                 time.sleep(espera)
 
-            for indice, modelo in enumerate(modelos):
+            for modelo in da_vez:
+                if not cabe():
+                    raise _erro_de_prazo(tarefa, prazo_ms, ultimo) from ultimo
+                comeco = time.monotonic()
                 try:
                     return self._client.models.generate_content(
                         model=modelo,
@@ -348,21 +508,30 @@ class GoogleAIProvider(AIProvider):
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             response_schema=schema,
+                            http_options=opcoes_http,
                         ),
                     )
                 except Exception as exc:  # SDK do Google não documenta uma exceção só
                     ultimo = exc
-                    if not _e_indisponibilidade(exc):
+                    if _e_tempo_esgotado(exc) and prazo_ms is not None:
+                        motivo = "tempo esgotado"
+                        lentos.add(modelo)
+                    elif _e_indisponibilidade(exc):
+                        motivo = "indisponível"
+                    else:
                         raise AIProviderError(f"Falha ao {tarefa}: {exc}") from exc
 
-                    if indice < len(modelos) - 1:
-                        logger.warning(
-                            "Modelo %s indisponível (503); tentando %s",
-                            modelo,
-                            modelos[indice + 1],
-                        )
+                    # Sem "tentando o próximo": quem decide se ele cabe é o
+                    # prazo, na volta do laço. A duração é o que diz se o 503
+                    # respondeu na hora ou gastou o prazo.
+                    logger.warning(
+                        "Modelo %s %s em %.1fs",
+                        modelo,
+                        motivo,
+                        time.monotonic() - comeco,
+                    )
 
-        raise AIProviderError(f"Falha ao {tarefa}: {ultimo}")
+        raise AIProviderError(f"Falha ao {tarefa}: {ultimo}") from ultimo
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:

@@ -24,6 +24,11 @@ preencha este campo. Nunca chute a marca a partir do estilo da peça.
 (ex.: "100% algodão", "95% poliéster, 5% elastano"), APENAS se a etiqueta \
 estiver legível na foto. Nunca estime a composição pelo aspecto ou pela \
 textura do tecido: sem etiqueta legível, não preencha este campo.
+- label_text: copie aqui, como está escrito, o texto que você leu na \
+etiqueta, no logo ou na estampa e de onde tirou brand, size ou composition. \
+Se não leu nenhum texto com certeza, deixe nulo: aí brand, size e \
+composition ficam nulos também. Este campo não aparece para o vendedor; ele \
+serve para conferir que a marca e o tamanho saíram de texto lido.
 
 Uma das fotos pode mostrar só a etiqueta da peça. Use a etiqueta para brand, \
 size e composition; category, color, condition e description saem das fotos \

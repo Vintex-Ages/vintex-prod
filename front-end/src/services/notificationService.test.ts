@@ -24,7 +24,7 @@ function apiNotification(overrides: Record<string, unknown> = {}) {
     product_id: 7,
     product_name: 'Jaqueta jeans',
     order_id: 31,
-    created_at: '2026-10-28T14:03:11',
+    created_at: '2026-10-28T14:03:11Z',
     is_read: false,
     ...overrides,
   };
@@ -56,7 +56,7 @@ describe('notificationService', () => {
           type: 'favorite',
           productId: '7',
           productName: 'Jaqueta jeans',
-          createdAt: '2026-10-28T14:03:11',
+          createdAt: '2026-10-28T14:03:11Z',
           isRead: false,
         },
       ];
@@ -81,7 +81,7 @@ describe('notificationService', () => {
           id: 'notification-1',
           type: 'sale',
           productName: 'Jaqueta',
-          createdAt: '2026-10-28T14:03:11',
+          createdAt: '2026-10-28T14:03:11Z',
           isRead: false,
         },
       ]);
@@ -112,7 +112,7 @@ describe('notificationService', () => {
           id: 'notification-1',
           type: 'sale',
           productName: 'Jaqueta',
-          createdAt: '2026-10-28T14:03:11',
+          createdAt: '2026-10-28T14:03:11Z',
           isRead: false,
         },
         {
@@ -163,7 +163,7 @@ describe('notificationService', () => {
             productId: '7',
             productName: 'Jaqueta jeans',
             orderId: '31',
-            createdAt: '2026-10-28T14:03:11',
+            createdAt: '2026-10-28T14:03:11Z',
             isRead: false,
           },
         ],
@@ -206,7 +206,7 @@ describe('notificationService', () => {
         id: '12',
         type: 'sale',
         productName: 'Jaqueta jeans',
-        createdAt: '2026-10-28T14:03:11',
+        createdAt: '2026-10-28T14:03:11Z',
         isRead: false,
       });
     });
