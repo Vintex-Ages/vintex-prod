@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     field_serializer,
@@ -24,14 +25,33 @@ ProductAIStatusValue = Literal[
 ]
 
 
+def _lista_de_filtro(valor: object) -> object:
+    """Por dentro, filtro de múltipla escolha é sempre lista (back-end#351).
+
+    Entra string de quem manda um valor só: a sugestão de preço monta
+    `ProductFilters(**valores)` com os campos do pedido. E entra lista de quem
+    manda o parâmetro repetido, que é como o front manda os filtros marcados
+    (`catalogService.ts`, `size=M&size=G`).
+    """
+    if isinstance(valor, str):
+        return [valor]
+    if isinstance(valor, list) and not valor:
+        return None
+    return valor
+
+
+FiltroMultivalor = Annotated[list[str] | None, BeforeValidator(_lista_de_filtro)]
+"""Filtro que a tela deixa marcar em mais de um valor (RN-40)."""
+
+
 class ProductFilters(BaseModel):
     category: str | None = None
     price_min: Decimal | None = Field(default=None, ge=0)
     price_max: Decimal | None = Field(default=None, ge=0)
-    size: str | None = None
-    brand: str | None = None
-    condition: str | None = None
-    color: str | None = None
+    size: FiltroMultivalor = None
+    brand: FiltroMultivalor = None
+    condition: FiltroMultivalor = None
+    color: FiltroMultivalor = None
     store_id: int | None = Field(default=None, gt=0)
     city: str | None = None
     state: str | None = None
@@ -46,19 +66,29 @@ class ProductFilters(BaseModel):
             raise ValueError("price_min deve ser menor ou igual a price_max")
         return self
 
-    def applied(self) -> dict[str, str | float | int]:
+    def applied(self) -> dict[str, str | float | int | list[str]]:
         """Os filtros que de fato entraram, para a resposta ecoar.
 
         `Decimal` dentro de dict nao passa por `field_serializer`: sairia como
         string ao lado de um `price` numerico, na mesma resposta. Era a ultima
         ponta da `#212` -- `GET /api/products?price_min=100.50` devolvia
         `"price": 246.7` e `"price_min": "100.50"` no mesmo JSON.
+
+        Filtro de múltipla escolha com um valor só ecoa string, e não lista de
+        um elemento: quem manda `size=M` recebe o mesmo `applied_filters` de
+        antes da `#351`.
         """
-        return {
-            key: float(value) if isinstance(value, Decimal) else value
-            for key, value in self.model_dump().items()
-            if value is not None
-        }
+        aplicados: dict[str, str | float | int | list[str]] = {}
+        for key, value in self.model_dump().items():
+            if value is None:
+                continue
+            if isinstance(value, Decimal):
+                aplicados[key] = float(value)
+            elif isinstance(value, list):
+                aplicados[key] = value[0] if len(value) == 1 else value
+            else:
+                aplicados[key] = value
+        return aplicados
 
 
 class FeedStoreResponse(BaseModel):
@@ -156,7 +186,7 @@ class FeedResponse(BaseModel):
     page: int
     page_size: int
     total: int
-    applied_filters: dict[str, str | float] = Field(default_factory=dict)
+    applied_filters: dict[str, str | float | list[str]] = Field(default_factory=dict)
     match_type: Literal["exact", "fallback"] = "exact"
     suggestions: SuggestionsResponse | None = None
 
