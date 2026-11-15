@@ -23,6 +23,7 @@ import Favorites from '@/pages/Profile/Favorites';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
 import ReportQueue from '@/pages/PlatformAdmin/ReportQueue';
 import AdminPlaceholder from '@/pages/PlatformAdmin/AdminPlaceholder';
+import ModerationQueue from '@/pages/PlatformAdmin/ModerationQueue';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import OrderPayment from '@/pages/Orders/OrderPayment';
 import Orders from '@/pages/Orders/Orders';
@@ -75,7 +76,7 @@ function WithLayout() {
  *
  * Na Sprint 4, as rotas administrativas exigem papel admin (`RequireRole`).
  * Reclamações já tem tela (lista só de leitura, FE-US025-2, #427); Painel
- * geral e Anúncios suspensos ainda são `AdminPlaceholder`.
+ * geral ainda usa `AdminPlaceholder`; Moderação lista as peças Suspensas.
  */
 function AppRoutes() {
   return (
@@ -206,7 +207,7 @@ function AppRoutes() {
         path={paths.adminModeration}
         element={
           <RequireRole role="admin">
-            <AdminPlaceholder title="Anúncios suspensos" />
+            <ModerationQueue />
           </RequireRole>
         }
       />
