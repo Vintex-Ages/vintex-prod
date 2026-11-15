@@ -1,0 +1,55 @@
+name: Documentation CI
+
+on:
+  pull_request:
+    branches: [develop, main, deploy]
+    types: [opened, synchronize, reopened, ready_for_review]
+    # Só roda quando o PR altera algo que o documentation/path-map.json mapeia.
+    # Código de front-end/ e back-end/ fica de fora de propósito. Mantenha esta lista
+    # alinhada ao mapa: scripts/docs/generate-draft.test.mjs confere.
+    paths:
+      - "documentation/**"
+      - "scripts/docs/**"
+      - ".github/**"
+      - "config/governance/**"
+      - "components/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "docs/aws-roadmap.md"
+      - "back-end/documentation/**"
+      - "back-end/scripts/docs/**"
+      - "front-end/docs/**"
+  push:
+    branches: [develop, main, deploy]
+    # Só roda quando o PR altera algo que o documentation/path-map.json mapeia.
+    # Código de front-end/ e back-end/ fica de fora de propósito. Mantenha esta lista
+    # alinhada ao mapa: scripts/docs/generate-draft.test.mjs confere.
+    paths:
+      - "documentation/**"
+      - "scripts/docs/**"
+      - ".github/**"
+      - "config/governance/**"
+      - "components/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "docs/aws-roadmap.md"
+      - "back-end/documentation/**"
+      - "back-end/scripts/docs/**"
+      - "front-end/docs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Documentation generator tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Testar gerador e páginas do mapa
+        run: node --test scripts/docs/generate-draft.test.mjs

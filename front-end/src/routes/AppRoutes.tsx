@@ -21,6 +21,8 @@ import Stores from '@/pages/Stores/Stores';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import Favorites from '@/pages/Profile/Favorites';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
+import ReportQueue from '@/pages/PlatformAdmin/ReportQueue';
+import AdminPlaceholder from '@/pages/PlatformAdmin/AdminPlaceholder';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import OrderPayment from '@/pages/Orders/OrderPayment';
 import Orders from '@/pages/Orders/Orders';
@@ -40,8 +42,8 @@ import { paths } from './paths';
  *   dentro do Layout a página ganharia dois `banner` e o campo de mensagem
  *   cairia abaixo da dobra.
  * - `/style-guide`: documentação interna, não é tela de produto.
- * - `/admin/receipts`: a fila de comprovantes (FE-US032-1) tem o cabeçalho da
- *   área administrativa e não usa o rodapé do app.
+ * - As quatro rotas administrativas têm cabeçalho próprio e não usam o
+ *   rodapé do app (FE-FND-7, #419).
  */
 function WithLayout() {
   const { pathname } = useLocation();
@@ -56,7 +58,8 @@ function WithLayout() {
 }
 
 /**
- * Rotas das Sprints 1 (FE-FND-1c, #106), 2 (FE-FND-4, #205) e 3 (FE-FND-6, #302).
+ * Rotas das Sprints 1 (FE-FND-1c, #106), 2 (FE-FND-4, #205), 3 (FE-FND-6, #302)
+ * e 4 (FE-FND-7, #419).
  *
  * Guardas (FE-US005-3, #75): `/sell`, `/cart` e `/profile/preferences`
  * exigem sessão (`RequireAuth`); `/seller` e as três rotas de peça exigem
@@ -69,6 +72,10 @@ function WithLayout() {
  * (FE-US013-2, #329), pagamento do pedido (FE-US022-2, #320) e brechós
  * (FE-US011-1, #330). Comprovantes exigem papel admin e já têm tela (fila,
  * FE-US032-1), fora do `WithLayout`.
+ *
+ * Na Sprint 4, as rotas administrativas exigem papel admin (`RequireRole`).
+ * Reclamações já tem tela (lista só de leitura, FE-US025-2, #427); Painel
+ * geral e Anúncios suspensos ainda são `AdminPlaceholder`.
  */
 function AppRoutes() {
   return (
@@ -184,6 +191,30 @@ function AppRoutes() {
         element={
           <RequireRole role="admin">
             <ReceiptQueue />
+          </RequireRole>
+        }
+      />
+      <Route
+        path={paths.adminDashboard}
+        element={
+          <RequireRole role="admin">
+            <AdminPlaceholder title="Painel geral" />
+          </RequireRole>
+        }
+      />
+      <Route
+        path={paths.adminModeration}
+        element={
+          <RequireRole role="admin">
+            <AdminPlaceholder title="Anúncios suspensos" />
+          </RequireRole>
+        }
+      />
+      <Route
+        path={paths.adminReports}
+        element={
+          <RequireRole role="admin">
+            <ReportQueue />
           </RequireRole>
         }
       />

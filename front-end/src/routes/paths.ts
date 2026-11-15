@@ -52,6 +52,9 @@ export const paths = {
   orderPayment: '/profile/orders/:id/payment',
   favorites: '/profile/favorites',
   adminReceipts: '/admin/receipts',
+  adminDashboard: '/admin/dashboard',
+  adminModeration: '/admin/moderation',
+  adminReports: '/admin/reports',
   stores: '/stores',
 } as const;
 

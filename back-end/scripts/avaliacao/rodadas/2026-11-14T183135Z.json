@@ -1,0 +1,290 @@
+{
+  "quando": "2026-11-14T18:31:35Z",
+  "nota": "back-end#346 antes: develop f104b77, recomendação só pela semelhança. Mesmo banco e mesmo dia da rodada depois.",
+  "commit_do_script": "f104b77",
+  "alteracoes_locais": false,
+  "completa": true,
+  "modelos": {
+    "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",
+    "vetor": "gemini-embedding-2"
+  },
+  "chamadas_previstas": 8,
+  "conjuntos": {
+    "perfis": {
+      "hash": "4373f90031a1",
+      "completo": true,
+      "resumo": {
+        "acertos": 1,
+        "validos": 8,
+        "taxa": 0.12,
+        "invalidos": 0,
+        "taxa_media": 0.54
+      },
+      "casos": [
+        {
+          "estilos": [
+            "vintage-80-90"
+          ],
+          "k": 9,
+          "dentro_dos_estilos": 8,
+          "taxa": 0.89,
+          "ids": [
+            33,
+            29,
+            47,
+            57,
+            15,
+            30,
+            43,
+            51,
+            49,
+            17,
+            19,
+            59,
+            37,
+            27,
+            55,
+            14,
+            50,
+            38,
+            28,
+            45
+          ],
+          "acerto": true,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "streetwear"
+          ],
+          "k": 7,
+          "dentro_dos_estilos": 2,
+          "taxa": 0.29,
+          "ids": [
+            29,
+            30,
+            49,
+            33,
+            35,
+            47,
+            56,
+            45,
+            17,
+            15,
+            19,
+            57,
+            31,
+            50,
+            14,
+            38,
+            59,
+            25,
+            22,
+            51
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "alfaiataria"
+          ],
+          "k": 10,
+          "dentro_dos_estilos": 6,
+          "taxa": 0.6,
+          "ids": [
+            50,
+            22,
+            20,
+            48,
+            29,
+            60,
+            49,
+            33,
+            34,
+            30,
+            57,
+            18,
+            36,
+            47,
+            32,
+            25,
+            51,
+            15,
+            46,
+            17
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "gotico-dark"
+          ],
+          "k": 6,
+          "dentro_dos_estilos": 3,
+          "taxa": 0.5,
+          "ids": [
+            49,
+            29,
+            33,
+            28,
+            13,
+            47,
+            41,
+            57,
+            38,
+            27,
+            30,
+            19,
+            15,
+            55,
+            50,
+            51,
+            59,
+            25,
+            22,
+            17
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "boho-romantico"
+          ],
+          "k": 8,
+          "dentro_dos_estilos": 4,
+          "taxa": 0.5,
+          "ids": [
+            25,
+            29,
+            33,
+            51,
+            26,
+            44,
+            23,
+            49,
+            54,
+            53,
+            40,
+            30,
+            47,
+            15,
+            22,
+            57,
+            50,
+            41,
+            27,
+            28
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "y2k"
+          ],
+          "k": 8,
+          "dentro_dos_estilos": 5,
+          "taxa": 0.62,
+          "ids": [
+            37,
+            29,
+            33,
+            21,
+            16,
+            24,
+            30,
+            52,
+            47,
+            15,
+            42,
+            38,
+            57,
+            51,
+            58,
+            49,
+            41,
+            17,
+            50,
+            19
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "streetwear",
+            "y2k"
+          ],
+          "k": 15,
+          "dentro_dos_estilos": 5,
+          "taxa": 0.33,
+          "ids": [
+            29,
+            33,
+            47,
+            15,
+            30,
+            49,
+            38,
+            57,
+            37,
+            19,
+            17,
+            56,
+            50,
+            51,
+            45,
+            59,
+            21,
+            35,
+            31,
+            16
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        },
+        {
+          "estilos": [
+            "alfaiataria",
+            "boho-romantico"
+          ],
+          "k": 18,
+          "dentro_dos_estilos": 10,
+          "taxa": 0.56,
+          "ids": [
+            60,
+            22,
+            49,
+            50,
+            34,
+            29,
+            33,
+            48,
+            20,
+            25,
+            51,
+            30,
+            47,
+            57,
+            18,
+            23,
+            28,
+            32,
+            55,
+            15
+          ],
+          "acerto": false,
+          "fora_do_catalogo": []
+        }
+      ]
+    }
+  },
+  "pecas_ativas": 48,
+  "leituras": {
+    "chegaram": 0,
+    "perguntas": 0
+  }
+}

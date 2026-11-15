@@ -150,6 +150,8 @@ def test_aprovar_o_comprovante_avisa_a_vendedora_da_venda(
     assert aviso["product_name"] == "Jaqueta"
     assert aviso["is_read"] is False
     assert aviso["created_at"]
+    # O motivo só existe na suspensão; a venda não tem texto (RN-80).
+    assert aviso["moderation_reason"] is None
 
 
 def test_criar_o_pedido_e_rejeitar_o_comprovante_nao_avisam(
@@ -183,8 +185,9 @@ def test_favoritar_avisa_a_dona_da_peca(client, cenario, auth_headers):
         "Saia",
     )
     assert aviso["order_id"] is None
-    # O anunciante sabe que alguém favoritou, não quem.
+    # O anunciante sabe que alguém favoritou, não quem — e o aviso não tem texto.
     assert "actor_id" not in aviso
+    assert aviso["moderation_reason"] is None
 
 
 def test_desfavoritar_nao_avisa_e_favoritar_de_novo_nao_duplica(

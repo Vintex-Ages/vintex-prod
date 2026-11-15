@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import OrderLookSection from '@/components/orders/OrderLookSection';
 import OrderStatusTimeline from '@/components/orders/OrderStatusTimeline';
 import ReportProblemDialog from '@/components/orders/ReportProblemDialog';
 import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
@@ -26,6 +27,11 @@ import { formatCentsToBRL } from '@/utils/format';
  * "Reportar problema" (#410, botão de contorno) aparece quando
  * `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
  * `ReportProblemDialog`; a Reclamação não aparece depois no Pedido (RN-78).
+ *
+ * Abaixo do comprovante, um `OrderLookSection` por peça comprada (FE-US030-2,
+ * #430): as peças que combinam com ela, cada seção com carga própria; sem
+ * combinação ou em erro, a seção some sem afetar o Pedido. Usa o carrinho e o
+ * toast do `App` para o "+ Adicionar".
  *
  * Fica de fora, de propósito: a chave Pix da loja (é da tela de pagamento) e a
  * comissão (`platformFee`, é do vendedor); rastreio (RN-83); "Avaliar loja"
@@ -276,6 +282,10 @@ export default function OrderDetail() {
             <ItemsSection order={order} />
             <AddressSection order={order} />
             <ReceiptSection order={order} />
+            {/* Uma seção por peça; sem combinação, a seção não renderiza nada. */}
+            {order.items.map((item) => (
+              <OrderLookSection key={item.productId} productId={item.productId} name={item.name} />
+            ))}
           </div>
         </div>
       </>

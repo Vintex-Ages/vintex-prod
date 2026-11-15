@@ -28,6 +28,7 @@ class NotificationController:
                     product_id=row["product_id"],
                     product_name=row["product_name"],
                     order_id=row["order_id"],
+                    moderation_reason=row["moderation_reason"],
                     created_at=row["created_at"],
                     is_read=row["read_at"] is not None,
                 )

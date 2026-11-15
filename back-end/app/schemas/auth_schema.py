@@ -7,9 +7,10 @@ compartilhado pelos dois: o usuário devolvido nunca inclui `password_hash`.
 from __future__ import annotations
 
 import re
-from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from app.schemas.datas import DataComFuso
 
 _PASSWORD_MIN_LENGTH = 8
 _NAME_MIN_LENGTH = 2
@@ -99,7 +100,7 @@ class UserIdentity(BaseModel):
 
 
 class UserPublic(UserIdentity):
-    created_at: datetime
+    created_at: DataComFuso
 
 
 class AuthResponse(BaseModel):

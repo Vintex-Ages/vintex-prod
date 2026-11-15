@@ -12,3 +12,7 @@ Controle GitOps e preparação de releases do Vintex.
 Cada manifesto referencia um commit imutável da branch `deploy` do repositório de origem. Este repositório é público: nunca adicione segredos, chaves, tokens ou valores sensíveis de ambiente.
 
 Consulte [CONTRIBUTING.md](CONTRIBUTING.md) antes de abrir um Pull Request.
+
+A documentação viva de GitOps, promoções e governança está em
+[`documentation/`](documentation/README.md), com portal Docusaurus e rascunho
+informativo por PR.

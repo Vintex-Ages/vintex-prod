@@ -8,11 +8,12 @@ pagamento que mudaram. O `adminReceiptService` do front mescla o `payment` no
 item da fila que já tinha.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
+
+from app.schemas.datas import DataComFuso
 
 
 class RejectRequest(BaseModel):
@@ -33,7 +34,7 @@ class ValidatedBy(BaseModel):
 class ReviewedPayment(BaseModel):
     status: str
     validated_by: ValidatedBy
-    validated_at: datetime
+    validated_at: DataComFuso
     # Só no reject; o approve não manda a chave.
     rejection_reason: str | None = Field(default=None)
 
@@ -79,9 +80,9 @@ class QueuePayment(BaseModel):
     # A rota autenticada da administradora, nunca o prefixo público de mídia.
     receipt_url: str
     receipt_type: Literal["image", "pdf"]
-    submitted_at: datetime
+    submitted_at: DataComFuso
     validated_by: ValidatedBy | None
-    validated_at: datetime | None
+    validated_at: DataComFuso | None
     # A rejeição mais recente do pedido, mesmo com um reenvio pendente: a
     # administradora vê o que já foi dito ao comprador (RN-23).
     rejection_reason: str | None
