@@ -25,8 +25,13 @@ class OrderComplaintRepository:
         return complaint
 
     def list_all(self, params: PageParams) -> tuple[list[OrderComplaint], int]:
-        """Todas as reclamações, a mais antiga primeiro, e o total. Só a rota
+        """Todas as reclamações, a mais recente primeiro, e o total. Só a rota
         da administradora chama isto (RN-78).
+
+        Ao contrário da fila de comprovantes (`order_repository.py`), a lista é
+        só de leitura: abre pelo que chegou agora (back-end#353). O `id` desempata
+        reclamações com o mesmo `created_at`, para a paginação não repetir nem
+        pular ninguém entre páginas.
 
         Comprador, pedido, loja e vendedor vêm por join; itens e histórico (de
         onde sai o status derivado) em consulta própria por coleção. A página
@@ -44,7 +49,7 @@ class OrderComplaintRepository:
                 joinedload(OrderComplaint.order).selectinload(Order.items),
                 joinedload(OrderComplaint.order).selectinload(Order.status_history),
             )
-            .order_by(OrderComplaint.created_at.asc(), OrderComplaint.id.asc())
+            .order_by(OrderComplaint.created_at.desc(), OrderComplaint.id.desc())
             .offset(params.offset)
             .limit(params.limit)
         ).all()

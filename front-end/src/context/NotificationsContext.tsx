@@ -21,6 +21,8 @@ function createSession(userId: string | null) {
     individualRequests: new Map<string, Promise<void>>(),
     batchRequest: null as Promise<void> | null,
     confirmedReads: new Set<string>(),
+    /** Já houve uma busca bem-sucedida nesta sessão (mesmo com lista vazia). */
+    loaded: false,
   };
 }
 
@@ -50,52 +52,70 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setMarkingAll(false);
   }
 
-  const load = useCallback(() => {
-    if (!userId || !session.active || session.loadRequest) return;
+  /**
+   * Busca a lista. `silent` (refresh com dados já carregados) não liga o
+   * `loading` nem troca a lista por erro se falhar: o que já está na tela fica.
+   */
+  const fetchList = useCallback(
+    (silent: boolean) => {
+      if (!userId || !session.active || session.loadRequest) return;
 
-    setLoading(true);
-    setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
 
-    session.loadRequest = notificationService
-      .listNotifications(userId)
-      .then((result) => {
-        if (!session.active) return;
+      session.loadRequest = notificationService
+        .listNotifications(userId)
+        .then((result) => {
+          if (!session.active) return;
 
-        setAvailable(true);
-
-        const confirmedOnPage = result.items.filter(
-          (item) => !item.isRead && session.confirmedReads.has(item.id),
-        ).length;
-
-        setItems(
-          result.items
-            .map((item) => ({
-              ...item,
-              isRead: item.isRead || session.confirmedReads.has(item.id),
-            }))
-            .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
-        );
-
-        setUnreadCount(Math.max(0, result.unreadCount - confirmedOnPage));
-      })
-      .catch((loadError: unknown) => {
-        if (!session.active) return;
-
-        if (isIntegrationUnavailable(loadError)) {
-          setAvailable(false);
-          setItems([]);
-          setUnreadCount(0);
+          session.loaded = true;
+          setAvailable(true);
           setError(null);
-          return;
-        }
 
-        setError('Não foi possível carregar as notificações.');
-      })
-      .finally(() => {
-        session.loadRequest = null;
-        if (session.active) setLoading(false);
-      });
-  }, [session, userId]);
+          // Leituras já confirmadas ficam lidas mesmo que a resposta seja
+          // anterior a elas (dado velho de um refresh).
+          const confirmedOnPage = result.items.filter(
+            (item) => !item.isRead && session.confirmedReads.has(item.id),
+          ).length;
+
+          setItems(
+            result.items
+              .map((item) => ({
+                ...item,
+                isRead: item.isRead || session.confirmedReads.has(item.id),
+              }))
+              .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+          );
+
+          setUnreadCount(Math.max(0, result.unreadCount - confirmedOnPage));
+        })
+        .catch((loadError: unknown) => {
+          if (!session.active) return;
+
+          if (isIntegrationUnavailable(loadError)) {
+            setAvailable(false);
+            setItems([]);
+            setUnreadCount(0);
+            setError(null);
+            return;
+          }
+
+          if (!silent) setError('Não foi possível carregar as notificações.');
+        })
+        .finally(() => {
+          session.loadRequest = null;
+          if (session.active && !silent) setLoading(false);
+        });
+    },
+    [session, userId],
+  );
+
+  const load = useCallback(() => fetchList(false), [fetchList]);
+
+  /** Busca de novo; silenciosa se já houve uma carga bem-sucedida, senão é um `load`. */
+  const refresh = useCallback(() => fetchList(session.loaded), [fetchList, session]);
 
   useEffect(() => {
     session.active = true;
@@ -196,6 +216,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         pendingIds,
         markingAll,
         retry: load,
+        refresh,
         markAsRead,
         markAllAsRead,
       }}
