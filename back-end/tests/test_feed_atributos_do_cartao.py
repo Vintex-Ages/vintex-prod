@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.repositories.product_repository import _feed_select
-from app.schemas.product_schema import ProductFeedItemResponse, ProductImageSearchItem
 from tests.test_product_feed import make_product, make_store
 
 _DO_CARTAO = ("category", "size", "condition")
@@ -87,12 +86,20 @@ def test_as_respostas_que_listam_peca_declaram_os_tres(client: TestClient) -> No
             assert campo in propriedades, f"{nome}.{campo}"
 
 
-def test_o_modelo_do_item_declara_os_tres_opcionais() -> None:
-    """Opcionais: peça sem o atributo preenchido não pode falhar a serialização
-    de uma página inteira."""
-    for campo in _DO_CARTAO:
-        assert ProductFeedItemResponse.model_fields[campo].default is None
-        assert campo in ProductImageSearchItem.model_fields
+def test_os_tres_sao_obrigatorios_e_anulaveis_no_contrato(client: TestClient) -> None:
+    """Anuláveis para a peça sem atributo passar, e obrigatórios para quem lê o
+    contrato ter um vazio só: `null`, e não "chave ausente ou nula".
+
+    Com `= None` eles sairiam fora do `required`, ao lado do `cover_image_url`,
+    que é anulável e está lá.
+    """
+    componentes = client.get("/openapi.json").json()["components"]["schemas"]
+
+    for nome in ("ProductFeedItemResponse", "ProductImageSearchItem"):
+        obrigatorios = set(componentes[nome]["required"])
+        assert set(_DO_CARTAO) <= obrigatorios, nome
+        for campo in _DO_CARTAO:
+            assert {"type": "null"} in componentes[nome]["properties"][campo]["anyOf"]
 
 
 def test_o_eco_de_store_id_sai_inteiro(client: TestClient, db_session: Session) -> None:
