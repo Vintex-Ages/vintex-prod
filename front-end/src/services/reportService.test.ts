@@ -119,7 +119,7 @@ describe('reportService (mock)', () => {
 
       for (const id of ['11', '12']) {
         const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
-        expect(error.code).toBe('ORDER_NOT_REPORTABLE');
+        expect(error.code).toBe('COMPLAINT_NOT_ALLOWED');
       }
     });
   });
@@ -168,7 +168,7 @@ describe('reportService (mock)', () => {
   });
 });
 
-describe('reportService (API real) — contrato proposto pelo front (back-end#268)', () => {
+describe('reportService (API real) — contrato que o back entregou (back-end#268)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
@@ -288,14 +288,14 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
 
   it('repassa o código e a mensagem do back quando o Pedido não permite reportar', async () => {
     await stubAdapter(() =>
-      httpError(409, { code: 'ORDER_NOT_REPORTABLE', message: 'Pedido ainda não confirmado.' }),
+      httpError(409, { code: 'COMPLAINT_NOT_ALLOWED', message: 'Pedido ainda não confirmado.' }),
     );
     const { reportOrder } = await import('./reportService');
 
     const error = await failure(reportOrder('10', 'nao_recebido', 'Nada.'));
 
     expect(error).toMatchObject({
-      code: 'ORDER_NOT_REPORTABLE',
+      code: 'COMPLAINT_NOT_ALLOWED',
       message: 'Pedido ainda não confirmado.',
     });
   });
@@ -406,11 +406,11 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
   });
 
   it.each(['example-em-analise', 'example-expirado', 'example-aguardando-comprovante'])(
-    'recusa %s com ORDER_NOT_REPORTABLE',
+    'recusa %s com COMPLAINT_NOT_ALLOWED',
     async (id) => {
       const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
 
-      expect(error).toMatchObject({ name: 'OrderReportError', code: 'ORDER_NOT_REPORTABLE' });
+      expect(error).toMatchObject({ name: 'OrderReportError', code: 'COMPLAINT_NOT_ALLOWED' });
       expect((await reports.listReports()).total).toBe(0);
     },
   );
@@ -437,7 +437,7 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
 
     // Recém-criado: achado no sessionStorage, mas ainda não confirmado.
     expect((await failure(reports.reportOrder(order.id, 'danificado', 'X.'))).code).toBe(
-      'ORDER_NOT_REPORTABLE',
+      'COMPLAINT_NOT_ALLOWED',
     );
 
     await orders.submitReceipt('u_ana', order.id, new File(['pix'], 'pix.pdf'));

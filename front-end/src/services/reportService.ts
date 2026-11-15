@@ -51,7 +51,7 @@ export type OrderReportField = 'reason' | 'description';
 /**
  * Erro de Reclamação com `code` tipado, igual em mock e API real.
  * Códigos: `FORBIDDEN`, `ORDER_NOT_FOUND`, `VALIDATION_ERROR` (com `field`),
- * `ORDER_NOT_REPORTABLE`, `INTERNAL_ERROR`.
+ * `COMPLAINT_NOT_ALLOWED`, `ALREADY_REPORTED`, `INTERNAL_ERROR`.
  */
 export class OrderReportError extends Error {
   constructor(
@@ -75,7 +75,7 @@ const REPORTABLE_STATUSES: readonly OrderStatus[] = [
 /**
  * Se o Pedido aceita Reclamação (RN-77). A mesma regra decide o botão
  * "Reportar problema" no `OrderCard` e no detalhe do Pedido (#410) e a
- * recusa `ORDER_NOT_REPORTABLE` do mock.
+ * recusa `COMPLAINT_NOT_ALLOWED` do mock.
  */
 export function canReportOrder(status: OrderStatus): boolean {
   return REPORTABLE_STATUSES.includes(status);
@@ -151,7 +151,7 @@ function mockReportOrder(
   }
   if (!canReportOrder(found.order.status as OrderStatus)) {
     throw new OrderReportError(
-      'ORDER_NOT_REPORTABLE',
+      'COMPLAINT_NOT_ALLOWED',
       'Só é possível reportar um Pedido depois da confirmação.',
     );
   }
@@ -194,7 +194,7 @@ function mockListReports(params: ListReportsParams): Paginated<AdminOrderReport>
 }
 
 // ---------------------------------------------------------------------------
-// Modo API REAL — proposta do front, não confirmada (ver doc do arquivo).
+// Modo API REAL. Rotas e códigos conferidos no OpenAPI do back.
 // ---------------------------------------------------------------------------
 
 interface ApiReport {

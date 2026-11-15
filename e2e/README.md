@@ -16,6 +16,7 @@ IA usa um provider determinístico do back-end.
 | `compra` | checkout → Pix → comprovante em análise |
 | `pedidos` | lista consolidada e detalhe do pedido |
 | `admin` | aprovar comprovante; rejeitar com motivo e comprador reenviar |
+| `reclamacao` | comprador reporta problema no pedido confirmado, segunda reclamação recusada e a administradora lê na fila |
 | `chat` | pergunta na conversa da Vintex com resposta SSE e peças do catálogo |
 | `busca-imagem` | foto no catálogo vira resultados |
 | `a11y` | axe (WCAG 2 A/AA) sem violações critical/serious nas telas públicas e no pedido em análise/recusado |

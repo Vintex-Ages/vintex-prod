@@ -105,7 +105,7 @@ describe('<ReportProblemDialog />', () => {
   // Teste 4: erro do back.
   it('erro do back mostra a mensagem dele e mantém o formulário', async () => {
     vi.mocked(reportOrder).mockRejectedValue(
-      new OrderReportError('ORDER_NOT_REPORTABLE', 'Pedido ainda não confirmado.'),
+      new OrderReportError('COMPLAINT_NOT_ALLOWED', 'Pedido ainda não confirmado.'),
     );
     renderDialog();
 
