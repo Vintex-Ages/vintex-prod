@@ -7,10 +7,11 @@ O contrato é o da issue: `POST /api/admin/products/{id}/unpublish` com motivo,
 Valores em dinheiro saem como número, nunca string (#212).
 """
 
-from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
+
+from app.schemas.datas import DataComFuso
 
 
 class UnpublishRequest(BaseModel):
@@ -52,7 +53,7 @@ class ModerationResponse(BaseModel):
     product_id: int
     status: str
     moderation_reason: str | None
-    moderated_at: datetime | None
+    moderated_at: DataComFuso | None
 
 
 class ModeratedProductResponse(BaseModel):
@@ -65,7 +66,7 @@ class ModeratedProductResponse(BaseModel):
     status: str
     store: ModerationStore
     moderation_reason: str
-    moderated_at: datetime
+    moderated_at: DataComFuso
     moderated_by: ModerationAuthor | None
 
     @field_serializer("price")

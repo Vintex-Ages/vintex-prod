@@ -29,7 +29,7 @@ type Operation = 'suspend' | 'restore' | 'list';
 
 const PRODUCT_ID = '43201';
 const REASON = 'As fotos não correspondem à peça.';
-const MODERATED_AT = '2026-11-10T12:30:00';
+const MODERATED_AT = '2026-11-10T12:30:00Z';
 const ADMIN: AuthUser = {
   id: '43290',
   name: 'Administradora de teste',

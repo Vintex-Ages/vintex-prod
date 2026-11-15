@@ -7,7 +7,6 @@ Dois conjuntos, de issues diferentes que nasceram juntas:
   da propria loja, com documento e termos.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -22,6 +21,7 @@ from pydantic import (
 )
 
 from app.core.documento import DOCUMENT_DIGITS, is_valid_document, only_digits
+from app.schemas.datas import DataComFuso
 
 
 class StoreAddressResponse(BaseModel):
@@ -46,7 +46,7 @@ class StoreMetricsResponse(BaseModel):
     `rating` é a média das estrelas com uma casa (RN-74, back-end#267), e
     `null` na loja sem avaliação: zero diria que a loja foi mal avaliada."""
 
-    created_at: datetime
+    created_at: DataComFuso
     active_count: int
     products_listed: int
     products_sold: int
@@ -223,5 +223,5 @@ class StoreResponse(BaseModel):
     document_type: str
     document_value: str
     terms_version: str | None
-    terms_accepted_at: datetime | None
+    terms_accepted_at: DataComFuso | None
     address: StoreAddressResponse | None
