@@ -330,3 +330,101 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     expect(error).toMatchObject({ name: 'OrderReportError', code: 'FORBIDDEN' });
   });
 });
+
+// #410: a mesma regra decide o botão "Reportar problema" no cartão e no detalhe.
+describe('canReportOrder', () => {
+  it.each(['confirmado', 'preparando', 'enviado', 'concluido'] as const)(
+    'Pedido %s pode ser reportado',
+    async (status) => {
+      const { canReportOrder } = await import('./reportService');
+      expect(canReportOrder(status)).toBe(true);
+    },
+  );
+
+  it.each(['aguardando_comprovante', 'em_analise', 'expirado'] as const)(
+    'Pedido %s não pode ser reportado',
+    async (status) => {
+      const { canReportOrder } = await import('./reportService');
+      expect(canReportOrder(status)).toBe(false);
+    },
+  );
+});
+
+// Revisão do #410: "Meus pedidos" no mock mostra os Pedidos de exemplo do
+// `orderService`, que não vão para o `sessionStorage`. Reportar tem de achá-los.
+describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => {
+  beforeEach(async () => {
+    window.sessionStorage.clear();
+    vi.resetModules();
+    reports = await import('./reportService');
+  });
+
+  afterEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  it.each([
+    ['example-confirmado', { id: '7', name: 'Ateliê Reviver' }],
+    ['example-concluido', { id: '2', name: 'Garimpo da Redenção' }],
+  ])('reporta %s e a administradora vê a Reclamação com a loja do exemplo', async (id, store) => {
+    const report = await reports.reportOrder(id, 'danificado', 'A manga veio rasgada.');
+
+    expect(report).toMatchObject({ orderId: id, reason: 'danificado' });
+    const { items } = await reports.listReports();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      orderId: id,
+      description: 'A manga veio rasgada.',
+      // Pedido de exemplo não tem dono: comprador fixo e explícito.
+      buyer: { id: 'exemplo', name: 'exemplo' },
+      store,
+    });
+  });
+
+  it.each(['example-em-analise', 'example-expirado', 'example-aguardando-comprovante'])(
+    'recusa %s com ORDER_NOT_REPORTABLE',
+    async (id) => {
+      const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
+
+      expect(error).toMatchObject({ name: 'OrderReportError', code: 'ORDER_NOT_REPORTABLE' });
+      expect((await reports.listReports()).total).toBe(0);
+    },
+  );
+
+  it('id que não existe em nenhum dos dois lugares continua ORDER_NOT_FOUND', async () => {
+    const error = await failure(reports.reportOrder('example-nao-existe', 'danificado', 'X.'));
+
+    expect(error).toMatchObject({ code: 'ORDER_NOT_FOUND' });
+  });
+
+  it('Pedido criado pelo createOrder (sessionStorage) continua com o comprador real', async () => {
+    const orders = await import('./orderService');
+    const order = await orders.createOrder('u_ana', {
+      productIds: ['1'],
+      deliveryAddress: {
+        zipCode: '90010-000',
+        street: 'Rua dos Andradas',
+        number: '500',
+        neighborhood: 'Centro Histórico',
+        city: 'Porto Alegre',
+        state: 'RS',
+      },
+    });
+
+    // Recém-criado: achado no sessionStorage, mas ainda não confirmado.
+    expect((await failure(reports.reportOrder(order.id, 'danificado', 'X.'))).code).toBe(
+      'ORDER_NOT_REPORTABLE',
+    );
+
+    await orders.submitReceipt('u_ana', order.id, new File(['pix'], 'pix.pdf'));
+    await orders.approveReceipt('u_ana', order.id);
+    await reports.reportOrder(order.id, 'nao_recebido', 'Não chegou.');
+
+    const { items } = await reports.listReports();
+    expect(items[0]).toMatchObject({
+      orderId: order.id,
+      buyer: { id: 'u_ana' },
+      store: { id: order.store.id, name: order.store.name },
+    });
+  });
+});
