@@ -21,6 +21,7 @@ import Stores from '@/pages/Stores/Stores';
 import ProfilePreferences from '@/pages/Profile/ProfilePreferences';
 import Favorites from '@/pages/Profile/Favorites';
 import ReceiptQueue from '@/pages/PlatformAdmin/ReceiptQueue';
+import ReportQueue from '@/pages/PlatformAdmin/ReportQueue';
 import AdminPlaceholder from '@/pages/PlatformAdmin/AdminPlaceholder';
 import OrderDetail from '@/pages/Orders/OrderDetail';
 import OrderPayment from '@/pages/Orders/OrderPayment';
@@ -71,6 +72,10 @@ function WithLayout() {
  * (FE-US013-2, #329), pagamento do pedido (FE-US022-2, #320) e brechós
  * (FE-US011-1, #330). Comprovantes exigem papel admin e já têm tela (fila,
  * FE-US032-1), fora do `WithLayout`.
+ *
+ * Na Sprint 4, as rotas administrativas exigem papel admin (`RequireRole`).
+ * Reclamações já tem tela (lista só de leitura, FE-US025-2, #427); Painel
+ * geral e Anúncios suspensos ainda são `AdminPlaceholder`.
  */
 function AppRoutes() {
   return (
@@ -209,7 +214,7 @@ function AppRoutes() {
         path={paths.adminReports}
         element={
           <RequireRole role="admin">
-            <AdminPlaceholder title="Reclamações" />
+            <ReportQueue />
           </RequireRole>
         }
       />
