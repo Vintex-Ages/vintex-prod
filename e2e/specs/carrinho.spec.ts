@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { adoptSession, firstAvailableProduct, registerBuyer } from '../fixtures/api';
+import { adoptSession, registerBuyer } from '../fixtures/api';
+import { createBuyableProduct } from '../fixtures/shop';
 
 /** Carrinho: adicionar pela peça, conferir, remover e seguir ao checkout. */
 test.describe('carrinho', () => {
   test('adiciona peça e segue para o checkout', async ({ page, request }) => {
     const buyer = await registerBuyer(request);
-    const product = await firstAvailableProduct(request);
+    const product = await createBuyableProduct(request);
 
     await adoptSession(page, buyer);
     await page.goto(`/product/${product.id}`);
@@ -23,7 +24,7 @@ test.describe('carrinho', () => {
 
   test('remove a peça e o carrinho fica vazio', async ({ page, request }) => {
     const buyer = await registerBuyer(request);
-    const product = await firstAvailableProduct(request);
+    const product = await createBuyableProduct(request);
 
     await adoptSession(page, buyer);
     await page.goto(`/product/${product.id}`);

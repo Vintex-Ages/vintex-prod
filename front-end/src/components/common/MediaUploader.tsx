@@ -319,7 +319,7 @@ function MediaUploader({
             // O dropzone já é o controle (`role="button"`, Enter/Espaço
             // abrem a seleção). Um botão aqui dentro seria interativo dentro
             // de interativo — o `nested-interactive` que o axe acusa.
-            <p className="mt-1 text-body-sm text-texto-auxiliar">ou toque para selecionar</p>
+            <p className="mt-1 text-body-sm text-texto-auxiliar">ou clique para escolher</p>
           )}
         </div>
       </div>

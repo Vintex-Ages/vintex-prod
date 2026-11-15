@@ -89,9 +89,11 @@ fora do CI). Se os servidores já estiverem no ar, a suíte reaproveita.
 - **Storage**: comprovante e foto exigem bucket; sem `MEDIA_BUCKET` o upload
   responde 503. Local e CI usam um S3 compatível (moto) no `:9001`.
 - **Dados**: cada teste cria a própria conta (`@vintex.example.com`) e, quando
-  precisa de peça, publica a sua (`createBuyableProduct`). Nenhum teste depende
-  do outro nem dos seeds: a peça vira `reservado` ao entrar no checkout, e dois
-  testes em paralelo na mesma peça travavam um deles no carrinho.
+  precisa comprar, publica a própria peça (`createBuyableProduct`): a peça vira
+  `reservado` ao entrar no checkout, e dois testes em paralelo na mesma peça
+  travavam um deles no carrinho. Nenhum teste lê o resultado de outro, mas
+  `smoke`, `vitrine` e `favoritos` leem o catálogo semeado, e sem ele o
+  `firstAvailableProduct` aborta pedindo `python -m app.seeds.pecas`.
 - **ViaCEP**: interceptado com `page.route` para não depender de rede externa.
 
 ## Limitações conhecidas
