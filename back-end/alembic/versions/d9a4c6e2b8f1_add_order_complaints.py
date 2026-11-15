@@ -1,7 +1,7 @@
 """add order_complaints (#268)
 
 Revision ID: d9a4c6e2b8f1
-Revises: c8f3b1e5d2a4
+Revises: d4a7c1e9b2f6
 Create Date: 2026-11-12
 
 Reclamação do comprador sobre um pedido, por não recebimento ou dano (RN-77).
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d9a4c6e2b8f1"
-down_revision: Union[str, None] = "c8f3b1e5d2a4"
+down_revision: Union[str, None] = "d4a7c1e9b2f6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
