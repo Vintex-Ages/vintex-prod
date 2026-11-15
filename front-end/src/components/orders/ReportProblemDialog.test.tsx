@@ -83,7 +83,8 @@ describe('<ReportProblemDialog />', () => {
 
     expect(reportOrder).not.toHaveBeenCalled();
     expect(descricao()).toHaveAttribute('aria-invalid', 'true');
-    expect(descricao()).toHaveAccessibleDescription('Descreva o problema.');
+    // O contador do teto (#441) entra na descrição acessível, depois do erro.
+    expect(descricao()).toHaveAccessibleDescription('Descreva o problema. 3/1000');
     // Uma região `alert` só: a do resumo, não a do campo.
     const alertas = screen.getAllByRole('alert');
     expect(alertas).toHaveLength(1);
@@ -130,7 +131,7 @@ describe('<ReportProblemDialog />', () => {
     enviar();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Confira 1 campo');
-    expect(descricao()).toHaveAccessibleDescription('Descrição muito curta.');
+    expect(descricao()).toHaveAccessibleDescription('Descrição muito curta. 2/1000');
     expect(descricao()).toHaveFocus();
   });
 
@@ -159,5 +160,61 @@ describe('<ReportProblemDialog />', () => {
   it('não usa nenhuma cor em hex cru', () => {
     renderDialog();
     expect(document.body.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+
+  // #441: o back recusa descrição acima de 1000 caracteres.
+  it('a descrição para em 1000 caracteres, com contador', () => {
+    renderDialog();
+
+    expect(descricao()).toHaveAttribute('maxLength', '1000');
+    expect(descricao()).toHaveAccessibleDescription('0/1000');
+
+    fireEvent.change(descricao(), { target: { value: 'a'.repeat(1000) } });
+
+    expect(screen.getByText('1000/1000')).toBeInTheDocument();
+    expect(descricao()).toHaveAccessibleDescription('1000/1000');
+  });
+
+  // #441: a segunda Reclamação no mesmo Pedido volta 409 e a mensagem do back chega à tela.
+  it('409 ALREADY_REPORTED mostra a mensagem do back e mantém o formulário', async () => {
+    vi.mocked(reportOrder).mockRejectedValue(
+      new OrderReportError('ALREADY_REPORTED', 'Este pedido já tem um problema reportado.'),
+    );
+    renderDialog();
+
+    fireEvent.change(motivo(), { target: { value: 'danificado' } });
+    fireEvent.change(descricao(), { target: { value: 'De novo.' } });
+    enviar();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Este pedido já tem um problema reportado.',
+    );
+    expect(descricao()).toHaveValue('De novo.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('no modo mock, reportar de novo o mesmo Pedido mostra a recusa do service', async () => {
+    const actual = await vi.importActual<typeof import('@/services/reportService')>(
+      '@/services/reportService',
+    );
+    window.sessionStorage.setItem(
+      'orders:u_ana',
+      JSON.stringify([{ id: 'ped-1', status: 'confirmado', store: { id: 's_1', name: 'Bia' } }]),
+    );
+    vi.mocked(reportOrder).mockImplementation(actual.reportOrder);
+    try {
+      await actual.reportOrder('ped-1', 'danificado', 'Primeira.');
+      renderDialog();
+
+      fireEvent.change(motivo(), { target: { value: 'nao_recebido' } });
+      fireEvent.change(descricao(), { target: { value: 'Segunda.' } });
+      enviar();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Este pedido já tem um problema reportado.',
+      );
+    } finally {
+      window.sessionStorage.clear();
+    }
   });
 });

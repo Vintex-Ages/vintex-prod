@@ -5,7 +5,11 @@ import FormErrorSummary from '@/components/common/FormErrorSummary';
 import Select from '@/components/common/Select';
 import TextArea from '@/components/common/TextArea';
 import { OrderReportError, reportOrder, type OrderReportField } from '@/services/reportService';
-import { ORDER_REPORT_REASONS, type OrderReportReason } from '@/types/report';
+import {
+  ORDER_REPORT_DESCRIPTION_MAX_LENGTH,
+  ORDER_REPORT_REASONS,
+  type OrderReportReason,
+} from '@/types/report';
 
 /**
  * "Reportar problema" num Pedido (FE-US025-1, #410; RN-77/RN-78). Formulário
@@ -17,6 +21,10 @@ import { ORDER_REPORT_REASONS, type OrderReportReason } from '@/types/report';
  * inválido a cada envio recusado (inclusive o `422` do back com `field`). Erro
  * do back que não é de campo ganha `role="alert"` próprio, com a mensagem do
  * `OrderReportError`, e o formulário continua preenchido.
+ *
+ * A descrição para em 1000 caracteres, com contador (#441): é o teto do back.
+ * A segunda Reclamação no mesmo Pedido volta `ALREADY_REPORTED` e a mensagem
+ * do back aparece no `role="alert"` acima.
  *
  * Depois do envio, só a confirmação de que a Reclamação foi à administradora:
  * nada do que foi escrito volta para a tela (RN-78). Quem decide quando o
@@ -186,6 +194,7 @@ function ReportProblemDialog({ open, orderId, onClose }: ReportProblemDialogProp
           value={description}
           onChange={setDescription}
           rows={5}
+          maxLength={ORDER_REPORT_DESCRIPTION_MAX_LENGTH}
           placeholder="Conte o que aconteceu com o pedido."
           error={fieldErrors.description}
           disabled={submitting}
