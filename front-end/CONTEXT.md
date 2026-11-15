@@ -29,3 +29,9 @@ Peça no carrinho que não pode ser comprada agora — está Vendida ou Pausada.
 _Avoid_: Unavailable, vendida (quando o motivo é outro)
 
 Uma peça Indisponível por estar **Vendida** sai do carrinho com aviso; uma Indisponível por estar **Pausada** permanece nele e volta a contar se for republicada.
+
+### Pedido
+
+**Reclamação**:
+Relato que o comprador envia sobre um Pedido já confirmado, com um dos dois motivos (não recebido ou danificado) e um texto livre que é o conteúdo dela. Não é pública: só a administradora a lê, e não há chat direto com a loja (ela intermedeia). Diferente da Avaliação, que não tem texto.
+_Avoid_: Denúncia, report, disputa

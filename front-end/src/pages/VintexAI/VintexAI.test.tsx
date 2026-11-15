@@ -577,4 +577,108 @@ describe('VintexAI page', () => {
       expect(screen.queryByText('Não achei peças para isso agora.')).toBeNull();
     });
   });
+
+  // --- #438 (FE-FIG-4): alinhamento ao frame "Tela com IA - Ajustada" ---
+
+  describe('visual do frame', () => {
+    async function renderComConversa() {
+      fakeChat([{ type: 'text', delta: 'Resposta pronta.' }, { type: 'done' }]);
+      const view = renderPage([{ pathname: '/vintex', state: { message: 'look de inverno' } }]);
+      await waitFor(() => {
+        expect(screen.getByText('Resposta pronta.')).toBeInTheDocument();
+      });
+      return view;
+    }
+
+    it('introdução com o texto novo, título h4 e "+" girado', () => {
+      fakeChat([{ type: 'done' }]);
+      const { container } = renderPage();
+
+      expect(
+        screen.getByText(
+          'Quando a peça exata não existe, a Vintex explica e aproxima a busca pelo que mais combina com seu pedido.',
+        ),
+      ).toBeInTheDocument();
+
+      const titulo = screen.getByRole('heading', { name: 'Sempre há um próximo garimpo' });
+      expect(titulo).toHaveClass('text-h4');
+      expect(titulo).not.toHaveClass('text-h3');
+
+      expect(container.querySelector('.-rotate-\\[8deg\\] svg')).toBeInTheDocument();
+    });
+
+    it('com mensagens, não há <hr> e o bloco fica a 16px da introdução', async () => {
+      const { container } = await renderComConversa();
+
+      expect(container.querySelector('hr')).toBeNull();
+
+      const bloco = screen.getByText('look de inverno').closest('.space-y-4');
+      expect(bloco).toHaveClass('pt-4', 'space-y-4');
+      expect(bloco).not.toHaveClass('pt-6');
+    });
+
+    it('cabeçalho: título em display h4 sem semibold e ponto dourado decorativo', () => {
+      fakeChat([{ type: 'done' }]);
+      renderPage();
+
+      const titulo = screen.getByRole('heading', { level: 1, name: 'Conversa com a Vintex' });
+      expect(titulo).toHaveClass('font-display', 'text-h4', 'tracking-tight');
+      expect(titulo).not.toHaveClass('font-semibold');
+      expect(titulo).not.toHaveClass('text-body');
+
+      const subtitulo = screen.getByText('Curadoria de brechós');
+      expect(subtitulo).toHaveTextContent(/^Curadoria de brechós$/);
+
+      const ponto = screen.getByTestId('vintex-header-dot');
+      expect(ponto).toHaveAttribute('aria-hidden', 'true');
+      expect(ponto).toHaveClass(
+        'h-[7px]',
+        'w-[7px]',
+        'rounded-full',
+        'bg-dourado',
+        'ring-[3px]',
+        'ring-dourado/15',
+      );
+      // À esquerda do subtítulo: vem antes do texto, dentro do mesmo parágrafo.
+      expect(subtitulo).toContainElement(ponto);
+      expect(subtitulo.firstElementChild).toBe(ponto);
+    });
+
+    it('rodapé: nota do catálogo com mt-8 e o mesmo texto', () => {
+      fakeChat([{ type: 'done' }]);
+      renderPage();
+
+      const nota = screen.getByText('As sugestões consideram as peças disponíveis no catálogo.');
+      expect(nota).toHaveClass('mt-8');
+      expect(nota).not.toHaveClass('mt-2');
+    });
+
+    it('nenhum texto exclusivo do frame aparece, mesmo com alternativas na tela', async () => {
+      fakeChat([
+        { type: 'text', delta: 'Separei alternativas.' },
+        { type: 'products', products: mockProducts.slice(0, 3), matchType: 'fallback' },
+        { type: 'done' },
+      ]);
+      const { container } = renderPage([
+        { pathname: '/vintex', state: { message: 'look de inverno' } },
+      ]);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('chat-product-seal')).toBeInTheDocument();
+      });
+
+      const texto = (container.textContent ?? '').toLowerCase();
+      [
+        'Demonstração local',
+        'simuladas',
+        'demonstrativos',
+        'Ajustar busca',
+        'Ver alternativas',
+        'rascunho de curadoria',
+        'Três peças disponíveis',
+      ].forEach((proibido) => {
+        expect(texto).not.toContain(proibido.toLowerCase());
+      });
+    });
+  });
 });

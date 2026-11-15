@@ -1,15 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ToastProvider } from '@/context/ToastContext';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import { paths, productDetail, storeProfile } from '@/routes/paths';
+import { CombinationError, getCombinations } from '@/services/combinationService';
 import { getOrder, OrderError } from '@/services/orderService';
+import type { LookSuggestion } from '@/types/look';
 import type { Order, OrderStatus } from '@/types/order';
 import OrderDetail from './OrderDetail';
 
 vi.mock('@/services/orderService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/orderService')>()),
   getOrder: vi.fn(),
+}));
+
+/** Looks do Pedido (#430): a rota de combinações é sempre mockada aqui. */
+vi.mock('@/services/combinationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/combinationService')>()),
+  getCombinations: vi.fn(),
 }));
 
 /**
@@ -65,18 +75,65 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
   };
 }
 
-function renderDetail() {
+function cartValue(overrides: Partial<CartContextValue> = {}): CartContextValue {
+  return {
+    cart: { groups: [] },
+    count: 0,
+    loading: false,
+    error: null,
+    add: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+/** Carrinho e toast vêm do `App`; aqui, para o "+ Adicionar" dos looks (#430). */
+function renderDetail(cart: CartContextValue = cartValue()) {
   return render(
     <MemoryRouter initialEntries={['/profile/orders/ped-1']}>
       <AuthContext.Provider value={AUTH}>
-        <Routes>
-          <Route path={paths.orderDetail} element={<OrderDetail />} />
-          <Route path={paths.orderPayment} element={<h1>Pagamento do pedido</h1>} />
-          <Route path={paths.orders} element={<h1>Meus pedidos</h1>} />
-        </Routes>
+        <CartContext.Provider value={cart}>
+          <ToastProvider>
+            <Routes>
+              <Route path={paths.orderDetail} element={<OrderDetail />} />
+              <Route path={paths.orderPayment} element={<h1>Pagamento do pedido</h1>} />
+              <Route path={paths.orders} element={<h1>Meus pedidos</h1>} />
+            </Routes>
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
+}
+
+const EMPTY_LOOK: LookSuggestion = { pieces: [], matchType: 'exact', totalAmount: 0 };
+
+function lookCom(id: string, name: string, matchType: LookSuggestion['matchType'] = 'exact') {
+  return {
+    pieces: [
+      {
+        id,
+        name,
+        price: 90,
+        category: 'Acessórios',
+        coverImageUrl: null,
+        store: { id: '2', name: 'Brechó da Redenção' },
+      },
+    ],
+    matchType,
+    totalAmount: 90,
+  } satisfies LookSuggestion;
+}
+
+const tituloLook = (peca: string) => `Combine com ${peca} e monte o look`;
+
+/** A seção de look pela peça de origem (o título é o `h3` do `LookSuggestions`). */
+async function secaoLook(peca: string) {
+  const heading = await screen.findByRole('heading', { name: tituloLook(peca) });
+  const section = heading.closest('section');
+  if (!section) throw new Error(`seção do look de ${peca} não encontrada`);
+  return within(section);
 }
 
 async function pronto() {
@@ -91,6 +148,8 @@ function etapas() {
 
 beforeEach(() => {
   vi.mocked(getOrder).mockReset();
+  // Padrão: sem combinações, nenhuma seção de look aparece nos demais testes.
+  vi.mocked(getCombinations).mockReset().mockResolvedValue(EMPTY_LOOK);
 });
 
 afterEach(cleanup);
@@ -330,5 +389,146 @@ describe('<OrderDetail />', () => {
     await pronto();
 
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+
+  describe('looks por peça comprada (FE-US030-2, #430)', () => {
+    // Teste 1.
+    it('uma seção por peça, com o nome da peça de origem no título', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        Promise.resolve(
+          productId === '5'
+            ? lookCom('7', 'Bolsa baú de couro caramelo')
+            : lookCom('9', 'Lenço de seda estampado'),
+        ),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Calça jeans reta')).getByText('Bolsa baú de couro caramelo'),
+      ).toBeInTheDocument();
+      expect(
+        (await secaoLook('Blusa de linho')).getByText('Lenço de seda estampado'),
+      ).toBeInTheDocument();
+      expect(getCombinations).toHaveBeenCalledTimes(2);
+      expect(getCombinations).toHaveBeenCalledWith('5');
+      expect(getCombinations).toHaveBeenCalledWith('8');
+    });
+
+    // Teste 2.
+    it('com combinação, vazia e falha: só a seção com peças aparece e o Pedido fica inteiro', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) => {
+        if (productId === '5') return Promise.resolve(lookCom('7', 'Bolsa baú de couro caramelo'));
+        if (productId === '8') return Promise.resolve(EMPTY_LOOK);
+        return Promise.reject(new CombinationError('INTERNAL_ERROR', 'falhou'));
+      });
+      vi.mocked(getOrder).mockResolvedValue(
+        makeOrder({
+          items: [
+            { productId: '5', name: 'Calça jeans reta', price: 119.9, coverImageUrl: null },
+            { productId: '8', name: 'Blusa de linho', price: 40.1, coverImageUrl: null },
+            { productId: '9', name: 'Saia midi plissada', price: 60, coverImageUrl: null },
+          ],
+        }),
+      );
+      renderDetail();
+
+      await secaoLook('Calça jeans reta');
+      await waitFor(() => expect(getCombinations).toHaveBeenCalledTimes(3));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(screen.queryByRole('heading', { name: tituloLook('Blusa de linho') })).toBeNull();
+      expect(screen.queryByRole('heading', { name: tituloLook('Saia midi plissada') })).toBeNull();
+      expect(screen.getAllByText('Curadoria da IA Vintex')).toHaveLength(1);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      for (const regiao of ['Andamento do pedido', 'Peças', 'Endereço de entrega', 'Comprovante']) {
+        expect(screen.getByRole('region', { name: regiao })).toBeInTheDocument();
+      }
+      expect(screen.getByRole('link', { name: 'Saia midi plissada' })).toBeInTheDocument();
+    });
+
+    // Teste 3.
+    it('uma seção lenta não bloqueia a outra', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        productId === '5'
+          ? new Promise(() => {})
+          : Promise.resolve(lookCom('9', 'Lenço de seda estampado')),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Blusa de linho')).getByText('Lenço de seda estampado'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: tituloLook('Calça jeans reta') })).toBeNull();
+    });
+
+    // Teste 4: no Pedido, a peça de origem já foi reservada ou vendida.
+    it.each(['confirmado', 'concluido'] as const)(
+      'Pedido %s (peças reservadas/vendidas) mostra a seção',
+      async (status) => {
+        vi.mocked(getCombinations).mockResolvedValue(lookCom('7', 'Bolsa baú de couro caramelo'));
+        vi.mocked(getOrder).mockResolvedValue(
+          makeOrder({ status, payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+        );
+        renderDetail();
+
+        expect(await secaoLook('Calça jeans reta')).toBeTruthy();
+      },
+    );
+
+    // Teste 5.
+    it('fallback mostra a linha de alternativa', async () => {
+      vi.mocked(getCombinations).mockResolvedValue(
+        lookCom('7', 'Bolsa baú de couro caramelo', 'fallback'),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Calça jeans reta')).getByText(/estas são alternativas próximas/),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 6 (integração; os casos de sacola estão no teste do OrderLookSection).
+    it('"+ Adicionar" põe a peça sugerida na sacola e mostra o toast', async () => {
+      const add = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        Promise.resolve(
+          productId === '5' ? lookCom('7', 'Bolsa baú de couro caramelo') : EMPTY_LOOK,
+        ),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail(cartValue({ add }));
+
+      fireEvent.click(
+        (await secaoLook('Calça jeans reta')).getByRole('button', {
+          name: /Adicionar Bolsa baú de couro caramelo à sacola/,
+        }),
+      );
+
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      expect(add).toHaveBeenCalledWith('7');
+    });
+
+    // Teste 7.
+    it('Pedido carregando não chama getCombinations', () => {
+      vi.mocked(getOrder).mockReturnValue(new Promise(() => {}));
+      renderDetail();
+
+      expect(screen.getByRole('status')).toHaveTextContent('Carregando o pedido...');
+      expect(getCombinations).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['não encontrado', new OrderError('ORDER_NOT_FOUND', 'não encontrado')],
+      ['com erro', new Error('rede')],
+    ])('Pedido %s não chama getCombinations', async (_caso, erro) => {
+      vi.mocked(getOrder).mockRejectedValue(erro);
+      renderDetail();
+
+      await screen.findByRole('alert');
+      expect(getCombinations).not.toHaveBeenCalled();
+    });
   });
 });

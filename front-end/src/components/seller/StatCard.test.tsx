@@ -47,4 +47,36 @@ describe('<StatCard />', () => {
 
     expect(root.className).not.toMatch(/\bw-\d/);
   });
+
+  describe('emphasized (painel do vendedor, frame ajustado do Figma)', () => {
+    it('deixa o rótulo em caixa alta e negrito e o valor em negrito', () => {
+      render(<StatCard label="Faturamento bruto no mês" value="R$ 200,00" emphasized />);
+
+      expect(screen.getByText('Faturamento bruto no mês').className).toContain('uppercase');
+      expect(screen.getByText('Faturamento bruto no mês').className).toContain('font-bold');
+      expect(screen.getByText('R$ 200,00').className).toContain('font-bold');
+    });
+
+    it('sem emphasized o cartão continua como era (PriceBreakdown não muda)', () => {
+      render(<StatCard label="Você recebe" value="R$ 91,00" />);
+
+      expect(screen.getByText('Você recebe').className).not.toContain('uppercase');
+      expect(screen.getByText('R$ 91,00').className).not.toContain('font-bold');
+    });
+
+    it('continua aceitando highlight e hint', () => {
+      render(
+        <StatCard
+          label="Faturamento"
+          value="R$ 200,00"
+          hint="2 peças vendidas no mês"
+          highlight
+          emphasized
+        />,
+      );
+
+      expect(screen.getByText('R$ 200,00').className).toContain('text-verde-rs');
+      expect(screen.getByText('2 peças vendidas no mês')).toBeInTheDocument();
+    });
+  });
 });

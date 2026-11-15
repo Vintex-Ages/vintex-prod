@@ -1,0 +1,44 @@
+# Normaliza fins de linha: repositório sempre com LF, checkout conforme o SO.
+* text=auto eol=lf
+
+# Arquivos de texto do projeto (garante LF mesmo em Windows)
+*.py     text eol=lf
+*.pyi    text eol=lf
+*.md     text eol=lf
+*.txt    text eol=lf
+*.cfg    text eol=lf
+*.ini    text eol=lf
+*.toml   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.json   text eol=lf
+*.mjs    text eol=lf
+*.js     text eol=lf
+*.sh     text eol=lf
+*.env    text eol=lf
+.env.example text eol=lf
+Dockerfile   text eol=lf
+.dockerignore text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# Binários: nunca aplicar conversão de fim de linha
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.db   binary
+*.sqlite  binary
+*.sqlite3 binary
+
+# Frontend (TypeScript/React)
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+*.svg    text eol=lf
+*.webp   binary
+*.woff   binary
+*.woff2  binary

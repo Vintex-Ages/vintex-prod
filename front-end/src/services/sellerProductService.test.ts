@@ -242,6 +242,66 @@ describe('sellerProductService', () => {
     expect(listed).toBeDefined();
     expect(listed).not.toHaveProperty('composition');
   });
+
+  // #434 (back-end#333): `videoUrl` ausente mantém, URL cria/troca, `null` remove (RN-52).
+  describe('video_url da peça (#434)', () => {
+    const VIDEO = 'https://api.test/media/clip.mp4';
+    const OTHER_VIDEO = 'https://api.test/media/outro.mp4';
+
+    it('criar com vídeo guarda a URL, e ler a peça devolve videoUrl', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      expect(draft.videoUrl).toBe(VIDEO);
+      expect((await getById(draft.id)).videoUrl).toBe(VIDEO);
+    });
+
+    it('peça sem vídeo devolve videoUrl null, inclusive as de exemplo do mock', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9 });
+
+      expect(draft.videoUrl).toBeNull();
+      expect((await getById(draft.id)).videoUrl).toBeNull();
+      expect((await getById(ACTIVE)).videoUrl).toBeNull();
+    });
+
+    it('editar sem tocar no vídeo mantém o que a peça já tem', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      const updated = await update(draft.id, { price: 79.9 });
+
+      expect(updated.videoUrl).toBe(VIDEO);
+      expect((await getById(draft.id)).videoUrl).toBe(VIDEO);
+    });
+
+    it('editar com outra URL troca o vídeo', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      const updated = await update(draft.id, { videoUrl: OTHER_VIDEO });
+
+      expect(updated.videoUrl).toBe(OTHER_VIDEO);
+      expect((await getById(draft.id)).videoUrl).toBe(OTHER_VIDEO);
+    });
+
+    it('editar com null remove o vídeo', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      const updated = await update(draft.id, { videoUrl: null });
+
+      expect(updated.videoUrl).toBeNull();
+      expect((await getById(draft.id)).videoUrl).toBeNull();
+    });
+
+    it('o vídeo não substitui a foto: publicar sem foto continua devolvendo NO_IMAGE (RN-47)', async () => {
+      const draft = await createDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      await expectErrorCode(publish(draft.id), 'NO_IMAGE');
+    });
+
+    it('uploadMedia aceita kind video e devolve a URL do mesmo jeito', async () => {
+      const urls = await uploadMedia([new File(['v'], 'clip.mp4', { type: 'video/mp4' })], 'video');
+
+      expect(urls).toHaveLength(1);
+    });
+  });
 });
 
 /**
@@ -517,6 +577,184 @@ describe('sellerProductService com a API real', () => {
     expect(await apiUploadMedia([file])).toEqual(['https://api.test/m/1.jpg']);
     expect(await apiUploadMedia([file], 'label')).toEqual(['https://api.test/m/1.jpg']);
     expect(kinds).toEqual(['photo', 'label']);
+  });
+
+  // #434 (back-end#333): contrato do `video_url` na API real.
+  describe('video_url da peça (#434)', () => {
+    const VIDEO = 'https://api.test/media/clip.mp4';
+
+    interface Chamada {
+      method?: string;
+      url?: string;
+      body: unknown;
+    }
+
+    /** Responde `resposta` a toda chamada e guarda método, rota e corpo JSON enviados. */
+    async function stubAdapter(resposta: unknown) {
+      const { httpClient } = await import('@/services/httpClient');
+      const chamadas: Chamada[] = [];
+      httpClient.defaults.adapter = (config) => {
+        chamadas.push({
+          method: config.method,
+          url: config.url,
+          body: typeof config.data === 'string' ? JSON.parse(config.data) : config.data,
+        });
+        return Promise.resolve({
+          data: resposta,
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+        });
+      };
+      return chamadas;
+    }
+
+    /** Rejeita como o axios, com o envelope de erro do back. */
+    async function stubErro(status: number, error: Record<string, unknown>) {
+      const { httpClient } = await import('@/services/httpClient');
+      httpClient.defaults.adapter = () =>
+        Promise.reject(
+          Object.assign(new Error(`HTTP ${status}`), { response: { status, data: { error } } }),
+        );
+    }
+
+    it('criar com vídeo manda video_url no corpo', async () => {
+      const chamadas = await stubAdapter({ ...draftResponse('100% linho'), video_url: VIDEO });
+      const { createDraft: apiCreateDraft } = await import('./sellerProductService');
+
+      const created = await apiCreateDraft({ name: 'Camisa', price: 89.9, videoUrl: VIDEO });
+
+      expect(chamadas[0]).toMatchObject({ method: 'post', url: '/users/me/products' });
+      expect(chamadas[0].body).toEqual({
+        name: 'Camisa',
+        price: 89.9,
+        video_url: VIDEO,
+        ai_corrections: [],
+      });
+      expect(created.videoUrl).toBe(VIDEO);
+    });
+
+    it('criar sem vídeo não manda o campo', async () => {
+      const chamadas = await stubAdapter(draftResponse('100% linho'));
+      const { createDraft: apiCreateDraft } = await import('./sellerProductService');
+
+      await apiCreateDraft({ name: 'Camisa', price: 89.9 });
+
+      expect(chamadas[0].body).not.toHaveProperty('video_url');
+      expect(chamadas[0].body).not.toHaveProperty('videoUrl');
+    });
+
+    it('editar sem tocar no vídeo não manda o campo', async () => {
+      const chamadas = await stubAdapter({ ...draftResponse('100% linho'), video_url: VIDEO });
+      const { update: apiUpdate } = await import('./sellerProductService');
+
+      await apiUpdate('9', { price: 79.9 });
+
+      expect(chamadas[0]).toMatchObject({ method: 'patch', url: '/users/me/products/9' });
+      expect(chamadas[0].body).toEqual({ price: 79.9, ai_corrections: [] });
+    });
+
+    it('editar com outra URL manda video_url para trocar', async () => {
+      const outro = 'https://api.test/media/outro.mp4';
+      const chamadas = await stubAdapter({ ...draftResponse('100% linho'), video_url: outro });
+      const { update: apiUpdate } = await import('./sellerProductService');
+
+      const updated = await apiUpdate('9', { videoUrl: outro });
+
+      expect(chamadas[0].body).toEqual({ video_url: outro, ai_corrections: [] });
+      expect(updated.videoUrl).toBe(outro);
+    });
+
+    it('remover manda video_url null', async () => {
+      const chamadas = await stubAdapter({ ...draftResponse('100% linho'), video_url: null });
+      const { update: apiUpdate } = await import('./sellerProductService');
+
+      const updated = await apiUpdate('9', { videoUrl: null });
+
+      expect(chamadas[0].body).toEqual({ video_url: null, ai_corrections: [] });
+      expect(updated.videoUrl).toBeNull();
+    });
+
+    it('ler a peça devolve videoUrl: a URL, null e null quando o back não manda o campo', async () => {
+      const { getById: apiGetById } = await import('./sellerProductService');
+
+      await stubAdapter({ ...draftResponse('100% linho'), video_url: VIDEO });
+      expect((await apiGetById('9')).videoUrl).toBe(VIDEO);
+
+      await stubAdapter({ ...draftResponse('100% linho'), video_url: null });
+      expect((await apiGetById('9')).videoUrl).toBeNull();
+
+      await stubAdapter(draftResponse('100% linho'));
+      expect((await apiGetById('9')).videoUrl).toBeNull();
+    });
+
+    it('422 em fields.video_url volta com a mensagem do back e o campo', async () => {
+      await stubErro(422, {
+        code: 'VALIDATION_ERROR',
+        message: 'Dados inválidos.',
+        fields: { video_url: 'A URL não é de um vídeo.' },
+      });
+      const { createDraft: apiCreateDraft } = await import('./sellerProductService');
+
+      const error = await apiCreateDraft({
+        name: 'Camisa',
+        price: 89.9,
+        videoUrl: 'https://api.test/media/foto.jpg',
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({
+        name: 'SellerProductError',
+        code: 'VALIDATION_ERROR',
+        message: 'A URL não é de um vídeo.',
+        field: 'video_url',
+      });
+    });
+
+    it('422 de duração no upload volta com a mensagem do back', async () => {
+      await stubErro(422, {
+        code: 'VALIDATION_ERROR',
+        message: 'clip.mp4 tem 6,0s: o vídeo deve ter de 3 a 5 segundos.',
+      });
+      const { uploadMedia: apiUploadMedia } = await import('./sellerProductService');
+
+      const error = await apiUploadMedia(
+        [new File(['v'], 'clip.mp4', { type: 'video/mp4' })],
+        'video',
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({
+        name: 'SellerProductError',
+        code: 'VALIDATION_ERROR',
+        message: 'clip.mp4 tem 6,0s: o vídeo deve ter de 3 a 5 segundos.',
+      });
+    });
+
+    it('uploadMedia manda kind video', async () => {
+      const kinds: unknown[] = [];
+      const { httpClient } = await import('@/services/httpClient');
+      httpClient.defaults.adapter = (config) => {
+        kinds.push((config.data as FormData).get('kind'));
+        return Promise.resolve({
+          data: {
+            items: [{ key: 'k', url: VIDEO, content_type: 'video/mp4', size: 1 }],
+          },
+          status: 201,
+          statusText: 'Created',
+          headers: {},
+          config,
+        });
+      };
+      const { uploadMedia: apiUploadMedia } = await import('./sellerProductService');
+
+      const urls = await apiUploadMedia(
+        [new File(['v'], 'clip.mp4', { type: 'video/mp4' })],
+        'video',
+      );
+
+      expect(kinds).toEqual(['video']);
+      expect(urls).toEqual([VIDEO]);
+    });
   });
 
   // #339: o detalhe do vendedor usa exclusivamente a rota autenticada.
