@@ -69,11 +69,13 @@ _LIMITE_DO_ATRIBUTO = 80
 _LIMITE_DA_PERGUNTA = 500
 
 _NUMERO = re.compile(r"\d")
-# "R$", "reais" e a gíria de dinheiro que aparece por aqui, "pila"
-# inclusive. Número por extenso continua passando, e está declarado no
-# topo: palavra de número sozinha ("duzentos") não entra na regra, porque
-# "um casaco" e "dois bolsos" derrubariam a fala toda.
-_MOEDA = re.compile(r"r\$|\b(reais|pratas?|contos?|pilas?|mangos?)\b", re.IGNORECASE)
+# "R$", "reais" e a gíria de dinheiro que aparece por aqui, "pila" inclusive.
+# "pratas" só no plural: "anel de prata" é acessório, e a Vintex vende
+# acessório. "manga" não entra, só "mango". Número por extenso continua
+# passando, e está declarado no topo: palavra de número sozinha ("duzentos")
+# não entra na regra, porque "um casaco" e "dois bolsos" derrubariam a fala
+# toda.
+_MOEDA = re.compile(r"r\$|\b(reais|pratas|contos?|pilas?|mangos?)\b", re.IGNORECASE)
 _ESPACO = re.compile(r"\s+")
 
 _SITUACAO_EXATA = (

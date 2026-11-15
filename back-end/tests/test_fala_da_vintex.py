@@ -181,6 +181,24 @@ def test_giria_de_dinheiro_cai_na_frase_pronta(comentario: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "comentario",
+    [
+        "esse anel de prata combina com tudo",
+        "manga curta, cai bem no calor",
+        "o contorno do decote é o charme da peça",
+        "tem pegada de aula de pilates",
+    ],
+)
+def test_palavra_parecida_com_dinheiro_nao_derruba_a_fala(comentario: str) -> None:
+    """A Vintex vende acessório: "anel de prata" não é preço. Falso positivo
+    aqui custa a resposta escrita inteira, não só uma frase."""
+    texto = fala_conferida(_fala((7, comentario)), abertura="", pecas=_PECAS)
+
+    assert texto is not None
+    assert texto.startswith("Jaqueta jeans oversized, R$ 189,90.")
+
+
 def test_fala_comenta_no_maximo_tres_pecas() -> None:
     """Cinco comentários numa bolha de chat é parede de texto."""
     pecas = {i: PecaNaFala(nome=f"Peça {i}", preco="R$ 100,00") for i in range(5)}
