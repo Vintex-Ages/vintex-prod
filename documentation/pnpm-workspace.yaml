@@ -1,0 +1,7 @@
+packages:
+  - .
+
+# core-js só imprime um aviso de financiamento no postinstall; o build do
+# Docusaurus não depende dele. Declarar evita ERR_PNPM_IGNORED_BUILDS no CI.
+allowBuilds:
+  core-js: false
