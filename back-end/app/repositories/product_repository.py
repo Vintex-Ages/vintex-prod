@@ -46,6 +46,8 @@ class ProductFeedRow(TypedDict):
     name: str
     price: Decimal
     category: str | None
+    size: str | None
+    condition: str | None
     cover_image_url: str | None
     status: str
     store_id: int
@@ -102,6 +104,11 @@ def _feed_select() -> Select[tuple[object, ...]]:
         Product.name,
         Product.price,
         Product.category,
+        # Tamanho e conservação são o que o cartão do catálogo mostra ao lado da
+        # categoria, e sem eles o front buscava o detalhe de cada peça da página
+        # (back-end#352).
+        Product.size,
+        Product.condition,
         _cover_image_url().label("cover_image_url"),
         Product.status,
         Store.id.label("store_id"),
@@ -168,7 +175,8 @@ class ProductRepository:
     def _condicoes_do_catalogo(
         self, filters: ProductFilters
     ) -> list[ColumnElement[bool]]:
-        """Peça ativa mais os filtros do catálogo, somados por E lógico.
+        """Peça ativa mais os filtros do catálogo: filtros diferentes somam
+        por E lógico, e os valores de um mesmo filtro por OU.
 
         Compartilhado pelo feed e pela busca por semelhança (back-end#246),
         para os dois filtrarem do mesmo jeito. Quem chama junta `Store` e,
@@ -186,8 +194,18 @@ class ProductRepository:
         }
         for field_name, column in filter_columns.items():
             value = getattr(filters, field_name)
-            if value is not None:
-                conditions.append(self._normalizado(column) == self._normalizado(value))
+            if value is None:
+                continue
+            # Tamanho, marca, conservação e cor chegam como lista: a tela deixa
+            # marcar mais de um valor, e os valores do mesmo filtro somam
+            # (back-end#351). Filtros diferentes seguem combinando por E, como
+            # a #87 estabeleceu.
+            valores = value if isinstance(value, list) else [value]
+            conditions.append(
+                self._normalizado(column).in_(
+                    [self._normalizado(valor) for valor in valores]
+                )
+            )
         if filters.price_min is not None:
             conditions.append(Product.price >= filters.price_min)
         if filters.price_max is not None:
@@ -358,11 +376,16 @@ class ProductRepository:
     def atributos_das_pecas(self, ids: Sequence[int]) -> list[ProductAtributosRow]:
         """Os atributos da RN-49 das peças indicadas, na ordem em que vieram.
 
-        A linha do feed carrega nome, preço, categoria e loja; cor, tamanho,
-        marca, conservação, cidade e descrição não. A fala da assistente
+        A linha do feed carrega nome, preço, categoria, tamanho, conservação e
+        loja; cor, marca, cidade e descrição não. A fala da assistente
         (back-end#329) comenta justamente esses, então uma consulta a mais, com
         os ids que a busca já escolheu — não um `_feed_select()` mais gordo,
         que pesaria em toda listagem do catálogo por causa de uma.
+
+        Tamanho e conservação entraram na linha do feed depois, pela #352, para
+        tirar as 20 requisições de detalhe que a home fazia por página. Esta
+        consulta continua pedindo os dois, porque a fala monta a frase de uma
+        linha só.
 
         O preço não entra: na fala quem escreve preço é o servidor, a partir da
         linha da busca, que já o tem.
