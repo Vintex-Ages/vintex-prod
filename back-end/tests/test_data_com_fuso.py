@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 import app.schemas
 from app.core.clock import utcnow_naive
+from app.models.user import User
 from app.schemas.datas import DataComFuso, com_fuso
 from app.views import api_router
 
@@ -99,8 +100,14 @@ def _tem_data_nua(anotacao: Any) -> bool:
 
 def _schemas() -> list[tuple[str, type[BaseModel]]]:
     """Os schemas do pacote, subpacote incluído (`walk_packages`)."""
+
+    def _levanta(nome: str) -> None:
+        raise ImportError(f"não foi possível importar {nome}")
+
     classes: dict[str, type[BaseModel]] = {}
-    for modulo in pkgutil.walk_packages(app.schemas.__path__, "app.schemas."):
+    for modulo in pkgutil.walk_packages(
+        app.schemas.__path__, "app.schemas.", onerror=_levanta
+    ):
         importado = importlib.import_module(modulo.name)
         curto = modulo.name.removeprefix("app.schemas.")
         for nome, objeto in vars(importado).items():
@@ -116,13 +123,24 @@ def _schemas() -> list[tuple[str, type[BaseModel]]]:
 
 def _descer(anotacao: Any, achados: set[type[BaseModel]]) -> None:
     """Todo modelo alcançável a partir de uma anotação, descendo em campo,
-    união e genérico (`Page[X]`)."""
+    união e genérico (`Page[X]`).
+
+    A descida lê as duas fontes de anotação de propósito. `get_type_hints`
+    carrega o `Annotated`, que é o que o teste de nudez precisa, mas num
+    genérico parametrizado ele devolve o `TypeVar` sem resolver: em
+    `Page[CartStoreResponse]` o campo `items` vem como `list[~T]`, e a
+    caminhada morre ali. O `model_fields` tem o tipo já substituído e serve
+    para andar. Sem as duas, os 17 modelos que só são alcançáveis dentro de um
+    `Page[...]` ficam invisíveis.
+    """
     if isinstance(anotacao, type) and issubclass(anotacao, BaseModel):
         if anotacao in achados:
             return
         achados.add(anotacao)
         for dica in get_type_hints(anotacao, include_extras=True).values():
             _descer(dica, achados)
+        for campo in anotacao.model_fields.values():
+            _descer(campo.annotation, achados)
         return
     for argumento in get_args(anotacao):
         _descer(argumento, achados)
@@ -232,5 +250,30 @@ def test_a_varredura_das_rotas_enxerga_a_api_inteira() -> None:
     """
     nomes = [nome for nome, _ in _modelos_de_resposta()]
 
-    assert len(nomes) > 40
+    assert len(nomes) > 70
     assert "app.services.ai.base.ImageAnalysisResult" in nomes
+    # Alcançável só dentro de um `Page[...]`: o canário da descida em genérico.
+    assert "app.schemas.notification_schema.NotificationResponse" in nomes
+
+
+@pytest.mark.postgres
+def test_a_coluna_com_default_do_banco_grava_utc(pg_session: Session) -> None:
+    """O teste acima mede o relógio da sessão; este mede o que a coluna guarda.
+
+    `created_at` tem `server_default=func.now()`, e entre o `now()` e a coluna
+    `timestamp` sem fuso há a conversão que o `TimeZone` da sessão governa. As
+    migrations não são uniformes (`sa.text("now()")` em algumas,
+    `sa.text("(CURRENT_TIMESTAMP)")` em outras), e nenhuma das duas expressões
+    é conferida por este arquivo em lugar nenhum: o que se cobra aqui é o valor
+    que sobra depois do INSERT, que é o que a API devolve.
+    """
+    usuario = User(
+        name="Teste do fuso",
+        email="fuso@example.com",
+        password_hash="nao-importa",
+    )
+    pg_session.add(usuario)
+    pg_session.flush()
+    pg_session.refresh(usuario)
+
+    assert abs(usuario.created_at - utcnow_naive()) < timedelta(minutes=1)
