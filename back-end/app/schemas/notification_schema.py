@@ -20,6 +20,9 @@ class NotificationResponse(BaseModel):
     product_name: str
     # Só na venda: o pedido aprovado.
     order_id: int | None
+    # Só na suspensão: por que a administradora tirou a peça do ar (RN-80).
+    # Nulo nos outros tipos e na venda, que não têm texto.
+    moderation_reason: str | None = None
     created_at: datetime
     is_read: bool
 
