@@ -170,6 +170,10 @@ def fala_conferida(
 
     Peça repetida é o caso que não derruba: a segunda menção é descartada e o
     resto do texto segue valendo.
+
+    O corte em `COMENTARIOS_NA_FALA` vem antes da conferência: comentário que
+    não vai para a tela não derruba a fala. O que passa do teto não é lido, e
+    recusar por causa dele seria recusar por texto que ninguém veria.
     """
     frases: list[str] = []
     vistos: set[int] = set()

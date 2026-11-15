@@ -374,15 +374,37 @@ def test_preco_escrito_pelo_modelo_cai_na_frase_pronta() -> None:
     assert "189" not in texto.replace("R$", "")
 
 
-def test_falha_do_provedor_nao_derruba_a_resposta() -> None:
-    """As peças já foram para a tela quando a fala é gerada: falha aqui é
-    degradação, não erro."""
-    provedor = _ProvedorQueFala(AIProviderError("modelo fora do ar"))
+@pytest.mark.parametrize(
+    "falha",
+    [AIProviderError("modelo fora do ar"), RuntimeError("o SDK levantou outra coisa")],
+    ids=["erro-de-provedor", "erro-inesperado"],
+)
+def test_falha_da_fala_nao_derruba_a_resposta(falha: Exception) -> None:
+    """As peças já foram para a tela quando a fala é gerada. Exceção que subisse
+    encerraria o SSE sem o `done`, e a bolha ficaria em "escrevendo" para
+    sempre: nem a falha que não é do provedor vale isso."""
+    provedor = _ProvedorQueFala(falha)
     achado = Achado(_LINHAS, "exact", abertura_do_exato(1))
 
     assert _controller(_ATRIBUTOS)._falar(
         provedor, "jaqueta", achado
     ) == abertura_do_exato(1)
+
+
+def test_falha_ao_ler_os_atributos_nao_derruba_a_resposta() -> None:
+    """O banco também está no caminho da fala, e também não pode derrubá-la."""
+
+    class _RepositorioQueCai:
+        def atributos_das_pecas(self, ids):  # noqa: ANN001, ANN201
+            raise RuntimeError("banco fora do ar")
+
+    controller = AssistantController.__new__(AssistantController)
+    controller.repository = _RepositorioQueCai()  # type: ignore[assignment]
+    achado = Achado(_LINHAS, "fallback", _FORA_DO_ESCOPO)
+
+    texto = controller._falar(_ProvedorQueFala(_fala((7, "x"))), "x", achado)
+
+    assert texto == _FORA_DO_ESCOPO
 
 
 def test_sem_peca_nenhuma_o_back_nao_escreve_texto() -> None:

@@ -284,39 +284,42 @@ class AssistantController:
         if not achado.rows:
             return ""
 
-        pecas = [
-            PecaParaComentar(
-                product_id=atributos["id"],
-                name=atributos["name"],
-                description=atributos["description"],
-                category=atributos["category"],
-                color=atributos["color"],
-                size=atributos["size"],
-                brand=atributos["brand"],
-                condition=atributos["condition"],
-                city=atributos["city"],
-            )
-            for atributos in self.repository.atributos_das_pecas(
-                [row["id"] for row in achado.rows]
-            )
-        ]
         try:
-            fala = provider.comentar_pecas(
-                query, pecas, alternativas=achado.match_type == "fallback"
+            pecas = [
+                PecaParaComentar(
+                    product_id=atributos["id"],
+                    name=atributos["name"],
+                    description=atributos["description"],
+                    category=atributos["category"],
+                    color=atributos["color"],
+                    size=atributos["size"],
+                    brand=atributos["brand"],
+                    condition=atributos["condition"],
+                    city=atributos["city"],
+                )
+                for atributos in self.repository.atributos_das_pecas(
+                    [row["id"] for row in achado.rows]
+                )
+            ]
+            conferida = fala_conferida(
+                provider.comentar_pecas(
+                    query, pecas, alternativas=achado.match_type == "fallback"
+                ),
+                abertura=achado.abertura,
+                pecas={
+                    row["id"]: PecaNaFala(nome=row["name"], preco=_reais(row["price"]))
+                    for row in achado.rows
+                },
             )
-        except AIProviderError:
-            # Degradação, não erro: as peças já foram para a tela.
+        except Exception:  # noqa: BLE001 - as peças já foram para a tela
+            # Degradação, não erro, e por isso o `except` é largo: aqui a lista
+            # já está na tela, e uma exceção que subisse encerraria o SSE sem o
+            # `done` que o front espera, deixando a bolha em "escrevendo" para
+            # sempre. Nenhuma falha da fala vale isso, nem a que não é do
+            # provedor (a consulta dos atributos, por exemplo).
             logger.warning("Fala da assistente não foi gerada", exc_info=True)
             return achado.abertura
 
-        conferida = fala_conferida(
-            fala,
-            abertura=achado.abertura,
-            pecas={
-                row["id"]: PecaNaFala(nome=row["name"], preco=_reais(row["price"]))
-                for row in achado.rows
-            },
-        )
         return conferida or achado.abertura
 
 
