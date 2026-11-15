@@ -4,13 +4,13 @@ O motivo é um dos dois da RN-77. O texto é o conteúdo da reclamação, e não
 um comentário de avaliação (RN-75): obrigatório, sem espaços nas pontas.
 """
 
-from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from app.schemas.admin_payment_schema import QueueBuyer, QueueItem, QueueStore
+from app.schemas.datas import DataComFuso
 
 ComplaintReasonName = Literal["nao_recebido", "danificado"]
 
@@ -32,7 +32,7 @@ class OrderComplaintResponse(BaseModel):
     order_id: int
     reason: ComplaintReasonName
     description: str
-    created_at: datetime
+    created_at: DataComFuso
 
 
 class ComplaintOrder(BaseModel):
@@ -57,6 +57,6 @@ class AdminComplaintEntry(BaseModel):
     id: int
     reason: ComplaintReasonName
     description: str
-    created_at: datetime
+    created_at: DataComFuso
     buyer: QueueBuyer
     order: ComplaintOrder
