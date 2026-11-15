@@ -168,7 +168,8 @@ class ProductRepository:
     def _condicoes_do_catalogo(
         self, filters: ProductFilters
     ) -> list[ColumnElement[bool]]:
-        """Peça ativa mais os filtros do catálogo, somados por E lógico.
+        """Peça ativa mais os filtros do catálogo: filtros diferentes somam
+        por E lógico, e os valores de um mesmo filtro por OU.
 
         Compartilhado pelo feed e pela busca por semelhança (back-end#246),
         para os dois filtrarem do mesmo jeito. Quem chama junta `Store` e,
@@ -186,8 +187,18 @@ class ProductRepository:
         }
         for field_name, column in filter_columns.items():
             value = getattr(filters, field_name)
-            if value is not None:
-                conditions.append(self._normalizado(column) == self._normalizado(value))
+            if value is None:
+                continue
+            # Tamanho, marca, conservação e cor chegam como lista: a tela deixa
+            # marcar mais de um valor, e os valores do mesmo filtro somam
+            # (back-end#351). Filtros diferentes seguem combinando por E, como
+            # a #87 estabeleceu.
+            valores = value if isinstance(value, list) else [value]
+            conditions.append(
+                self._normalizado(column).in_(
+                    [self._normalizado(valor) for valor in valores]
+                )
+            )
         if filters.price_min is not None:
             conditions.append(Product.price >= filters.price_min)
         if filters.price_max is not None:

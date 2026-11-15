@@ -428,18 +428,30 @@ def _tem_o_tipo(rows: Sequence[ProductSimilarRow], tipo: str | None) -> bool:
     return tipo is None or any(nome_e_do_tipo(row["name"], tipo) for row in rows)
 
 
+def _ou(valores: list[str] | None) -> str | None:
+    """Os valores de um filtro de múltipla escolha, como entram na frase.
+
+    Quem pediu tamanho M e G não encontrou peça em M **ou** G, e a frase da
+    RN-61 nomeia os dois (back-end#351)."""
+    if not valores:
+        return None
+    return " ou ".join(valores)
+
+
 def _aviso_de_alternativas(filtros: ProductFilters, tipo: str | None = None) -> str:
     """O que faltou, na ordem em que se lê um pedido: "Não encontrei peças
     com Sapatos, Verde e até R$ 400,00. Estas são alternativas..."
 
     Com tipo pedido, o tipo diz mais que a categoria e fica no lugar dela:
     "Não encontrei vestido com Preto." """
+    tamanhos = _ou(filtros.size)
+    marcas = _ou(filtros.brand)
     partes = [
         None if tipo else filtros.category,
-        filtros.color,
-        filtros.size and f"tamanho {filtros.size}",
-        filtros.condition,
-        filtros.brand and f"marca {filtros.brand}",
+        _ou(filtros.color),
+        tamanhos and f"tamanho {tamanhos}",
+        _ou(filtros.condition),
+        marcas and f"marca {marcas}",
     ]
     if filtros.price_min is not None and filtros.price_max is not None:
         partes.append(f"de {_reais(filtros.price_min)} a {_reais(filtros.price_max)}")
