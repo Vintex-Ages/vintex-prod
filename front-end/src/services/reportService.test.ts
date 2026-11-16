@@ -57,14 +57,45 @@ describe('reportService (mock)', () => {
     });
 
     it('aceita os dois motivos', async () => {
+      // Pedidos diferentes: o mesmo Pedido só aceita uma Reclamação (#441).
       seedOrder('u_ana', '10');
+      seedOrder('u_ana', '13');
 
       await expect(
         reports.reportOrder('10', 'nao_recebido', 'Nunca chegou.'),
       ).resolves.toMatchObject({ reason: 'nao_recebido' });
       await expect(
-        reports.reportOrder('10', 'danificado', 'Chegou rasgada.'),
+        reports.reportOrder('13', 'danificado', 'Chegou rasgada.'),
       ).resolves.toMatchObject({ reason: 'danificado' });
+    });
+
+    // #441: como o back, a segunda Reclamação no mesmo Pedido é recusada (409).
+    it('recusa a segunda Reclamação no mesmo Pedido com ALREADY_REPORTED, sem gravar', async () => {
+      seedOrder('u_ana', '10');
+      await reports.reportOrder('10', 'danificado', 'Primeira.');
+
+      const error = await failure(reports.reportOrder('10', 'nao_recebido', 'Segunda.'));
+
+      expect(error).toMatchObject({
+        name: 'OrderReportError',
+        code: 'ALREADY_REPORTED',
+        message: 'Este pedido já tem um problema reportado.',
+      });
+      expect((await reports.listReports()).total).toBe(1);
+    });
+
+    // #441: o back recusa descrição acima de 1000 caracteres (depois do trim).
+    it('aceita 1000 caracteres e recusa 1001 com field=description', async () => {
+      seedOrder('u_ana', '10');
+      seedOrder('u_ana', '13');
+
+      await expect(
+        reports.reportOrder('10', 'danificado', `  ${'a'.repeat(1000)}  `),
+      ).resolves.toMatchObject({ description: 'a'.repeat(1000) });
+      const error = await failure(reports.reportOrder('13', 'danificado', 'a'.repeat(1001)));
+
+      expect(error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'description' });
+      expect((await reports.listReports()).total).toBe(1);
     });
 
     it('404 quando o Pedido não existe', async () => {
@@ -107,7 +138,7 @@ describe('reportService (mock)', () => {
 
       for (const id of ['11', '12']) {
         const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
-        expect(error.code).toBe('ORDER_NOT_REPORTABLE');
+        expect(error.code).toBe('COMPLAINT_NOT_ALLOWED');
       }
     });
   });
@@ -131,15 +162,16 @@ describe('reportService (mock)', () => {
       expect(items[0]).toMatchObject({
         orderId: '20',
         reason: 'nao_recebido',
-        buyer: { id: 'u_bia' },
         store: { id: 's_1', name: 'Brechó Mercado Público' },
       });
+      // Como o back: comprador sem id, com o contato (RN-79).
+      expect(items[0].buyer).toEqual({ name: 'u_bia', email: 'u_bia@mock.vintex' });
     });
 
     it('pagina por page e pageSize', async () => {
-      seedOrder('u_ana', '10');
       for (let i = 1; i <= 5; i += 1) {
-        await reports.reportOrder('10', 'danificado', `Reclamação ${i}`);
+        seedOrder('u_ana', `1${i}`);
+        await reports.reportOrder(`1${i}`, 'danificado', `Reclamação ${i}`);
         await new Promise((resolve) => setTimeout(resolve, 2));
       }
 
@@ -155,7 +187,7 @@ describe('reportService (mock)', () => {
   });
 });
 
-describe('reportService (API real) — contrato proposto pelo front (back-end#268)', () => {
+describe('reportService (API real) — rotas de Reclamação do back (#441)', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubEnv('VITE_USE_MOCKS', 'false');
@@ -205,14 +237,14 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     });
   }
 
-  it('reportOrder chama POST /users/me/orders/{id}/reports e converte o 201', async () => {
+  it('reportOrder chama POST /users/me/orders/{id}/complaints e converte o 201', async () => {
     const calls = await stubAdapter(() => API_REPORT);
     const { reportOrder } = await import('./reportService');
 
     const report = await reportOrder('10', 'danificado', '  A manga veio rasgada. ');
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ url: '/users/me/orders/10/reports', method: 'post' });
+    expect(calls[0]).toMatchObject({ url: '/users/me/orders/10/complaints', method: 'post' });
     expect(JSON.parse(calls[0].data as string)).toEqual({
       reason: 'danificado',
       description: 'A manga veio rasgada.',
@@ -275,26 +307,45 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
 
   it('repassa o código e a mensagem do back quando o Pedido não permite reportar', async () => {
     await stubAdapter(() =>
-      httpError(409, { code: 'ORDER_NOT_REPORTABLE', message: 'Pedido ainda não confirmado.' }),
+      httpError(409, {
+        code: 'COMPLAINT_NOT_ALLOWED',
+        message: 'Só dá para reportar um problema depois que o pedido é confirmado.',
+      }),
     );
     const { reportOrder } = await import('./reportService');
 
     const error = await failure(reportOrder('10', 'nao_recebido', 'Nada.'));
 
     expect(error).toMatchObject({
-      code: 'ORDER_NOT_REPORTABLE',
-      message: 'Pedido ainda não confirmado.',
+      code: 'COMPLAINT_NOT_ALLOWED',
+      message: 'Só dá para reportar um problema depois que o pedido é confirmado.',
     });
   });
 
-  it('listReports chama GET /admin/reports paginado e converte o envelope', async () => {
+  /**
+   * Um item como o back manda (`AdminComplaintEntry`): sem `order_id` no topo,
+   * o Pedido em `order` com a loja em `order.store`, comprador sem id.
+   */
+  const API_ADMIN_COMPLAINT = {
+    id: 5,
+    reason: 'danificado',
+    description: 'A manga veio rasgada.',
+    created_at: '2026-10-29T12:00:00Z',
+    buyer: { name: 'Ana', email: 'ana@exemplo.com', phone: '51999990000' },
+    order: {
+      id: 10,
+      status: 'enviado',
+      store: { id: 9, name: 'Roupa Rodada', seller_name: 'Rita', pix_key: 'rita@pix.com' },
+      items: [{ product_id: 3, name: 'Blusa', price: 40.1, cover_image_url: null }],
+      total_amount: 40.1,
+    },
+  };
+
+  it('listReports chama GET /admin/complaints paginado e converte o formato do back', async () => {
     const calls = await stubAdapter(() => ({
       items: [
-        {
-          ...API_REPORT,
-          buyer: { id: 3, name: 'Ana' },
-          store: { id: 9, name: 'Roupa Rodada' },
-        },
+        API_ADMIN_COMPLAINT,
+        { ...API_ADMIN_COMPLAINT, id: 6, buyer: { ...API_ADMIN_COMPLAINT.buyer, phone: null } },
       ],
       page: 2,
       page_size: 5,
@@ -305,7 +356,7 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
     const page = await listReports({ page: 2, pageSize: 5 });
 
     expect(calls[0]).toMatchObject({
-      url: '/admin/reports',
+      url: '/admin/complaints',
       method: 'get',
       params: { page: 2, page_size: 5 },
     });
@@ -316,13 +367,46 @@ describe('reportService (API real) — contrato proposto pelo front (back-end#26
       reason: 'danificado',
       description: 'A manga veio rasgada.',
       createdAt: '2026-10-29T12:00:00Z',
-      buyer: { id: '3', name: 'Ana' },
+      buyer: { name: 'Ana', email: 'ana@exemplo.com', phone: '51999990000' },
       store: { id: '9', name: 'Roupa Rodada' },
+    });
+    // `phone: null` do back não vira texto: fica de fora.
+    expect(page.items[1].buyer).toEqual({ name: 'Ana', email: 'ana@exemplo.com' });
+  });
+
+  it('409 ALREADY_REPORTED repassa o código e a mensagem do back', async () => {
+    await stubAdapter(() =>
+      httpError(409, {
+        code: 'ALREADY_REPORTED',
+        message: 'Este pedido já tem um problema reportado.',
+      }),
+    );
+    const { reportOrder } = await import('./reportService');
+
+    const error = await failure(reportOrder('10', 'nao_recebido', 'De novo.'));
+
+    expect(error).toMatchObject({
+      name: 'OrderReportError',
+      code: 'ALREADY_REPORTED',
+      message: 'Este pedido já tem um problema reportado.',
     });
   });
 
+  it('descrição acima de 1000 caracteres não gera requisição', async () => {
+    const calls = await stubAdapter(() => API_REPORT);
+    const { reportOrder } = await import('./reportService');
+
+    const error = await failure(reportOrder('10', 'danificado', 'a'.repeat(1001)));
+
+    expect(error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'description' });
+    expect(calls).toHaveLength(0);
+  });
+
   it('403 na rota da administradora vira FORBIDDEN', async () => {
-    await stubAdapter(() => httpError(403));
+    // Corpo de verdade: o 403 dessa rota vem com `ADMIN_REQUIRED` (`core/security.py:167`).
+    await stubAdapter(() =>
+      httpError(403, { code: 'ADMIN_REQUIRED', message: 'Ação restrita a administradores.' }),
+    );
     const { listReports } = await import('./reportService');
 
     const error = await failure(listReports());
@@ -375,18 +459,18 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
     expect(items[0]).toMatchObject({
       orderId: id,
       description: 'A manga veio rasgada.',
-      // Pedido de exemplo não tem dono: comprador fixo e explícito.
-      buyer: { id: 'exemplo', name: 'exemplo' },
       store,
     });
+    // Pedido de exemplo não tem dono: comprador fixo e explícito, sem id.
+    expect(items[0].buyer).toEqual({ name: 'exemplo', email: 'exemplo@mock.vintex' });
   });
 
   it.each(['example-em-analise', 'example-expirado', 'example-aguardando-comprovante'])(
-    'recusa %s com ORDER_NOT_REPORTABLE',
+    'recusa %s com COMPLAINT_NOT_ALLOWED',
     async (id) => {
       const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
 
-      expect(error).toMatchObject({ name: 'OrderReportError', code: 'ORDER_NOT_REPORTABLE' });
+      expect(error).toMatchObject({ name: 'OrderReportError', code: 'COMPLAINT_NOT_ALLOWED' });
       expect((await reports.listReports()).total).toBe(0);
     },
   );
@@ -413,7 +497,7 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
 
     // Recém-criado: achado no sessionStorage, mas ainda não confirmado.
     expect((await failure(reports.reportOrder(order.id, 'danificado', 'X.'))).code).toBe(
-      'ORDER_NOT_REPORTABLE',
+      'COMPLAINT_NOT_ALLOWED',
     );
 
     await orders.submitReceipt('u_ana', order.id, new File(['pix'], 'pix.pdf'));
@@ -423,8 +507,9 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
     const { items } = await reports.listReports();
     expect(items[0]).toMatchObject({
       orderId: order.id,
-      buyer: { id: 'u_ana' },
+      buyer: { name: 'u_ana', email: 'u_ana@mock.vintex' },
       store: { id: order.store.id, name: order.store.name },
     });
+    expect(items[0].buyer).not.toHaveProperty('id');
   });
 });
