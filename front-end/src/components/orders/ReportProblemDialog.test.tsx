@@ -106,7 +106,10 @@ describe('<ReportProblemDialog />', () => {
   // Teste 4: erro do back.
   it('erro do back mostra a mensagem dele e mantém o formulário', async () => {
     vi.mocked(reportOrder).mockRejectedValue(
-      new OrderReportError('ORDER_NOT_REPORTABLE', 'Pedido ainda não confirmado.'),
+      new OrderReportError(
+        'COMPLAINT_NOT_ALLOWED',
+        'Só dá para reportar um problema depois que o pedido é confirmado.',
+      ),
     );
     renderDialog();
 
@@ -114,7 +117,9 @@ describe('<ReportProblemDialog />', () => {
     fireEvent.change(descricao(), { target: { value: 'Não chegou.' } });
     enviar();
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Pedido ainda não confirmado.');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Só dá para reportar um problema depois que o pedido é confirmado.',
+    );
     expect(descricao()).toHaveValue('Não chegou.');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enviar reclamação' })).toBeEnabled();

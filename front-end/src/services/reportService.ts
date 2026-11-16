@@ -55,7 +55,7 @@ export type OrderReportField = 'reason' | 'description';
 /**
  * Erro de Reclamação com `code` tipado, igual em mock e API real.
  * Códigos: `FORBIDDEN`, `ORDER_NOT_FOUND`, `VALIDATION_ERROR` (com `field`),
- * `ORDER_NOT_REPORTABLE`, `ALREADY_REPORTED`, `INTERNAL_ERROR`; da API real,
+ * `COMPLAINT_NOT_ALLOWED`, `ALREADY_REPORTED`, `INTERNAL_ERROR`; da API real,
  * qualquer outro código do back chega como veio.
  */
 export class OrderReportError extends Error {
@@ -80,7 +80,7 @@ const REPORTABLE_STATUSES: readonly OrderStatus[] = [
 /**
  * Se o Pedido aceita Reclamação (RN-77). A mesma regra decide o botão
  * "Reportar problema" no `OrderCard` e no detalhe do Pedido (#410) e a
- * recusa `ORDER_NOT_REPORTABLE` do mock.
+ * recusa `COMPLAINT_NOT_ALLOWED` do mock.
  */
 export function canReportOrder(status: OrderStatus): boolean {
   return REPORTABLE_STATUSES.includes(status);
@@ -90,6 +90,9 @@ const REASON_ERROR = 'Escolha um dos motivos: não recebido ou danificado.';
 const DESCRIPTION_ERROR = 'Descreva o problema.';
 const DESCRIPTION_TOO_LONG = `A descrição pode ter até ${ORDER_REPORT_DESCRIPTION_MAX_LENGTH} caracteres.`;
 const ALREADY_REPORTED_MESSAGE = 'Este pedido já tem um problema reportado.';
+/** Mesma recusa do back (`order_complaint_controller.py:49`). */
+const COMPLAINT_NOT_ALLOWED_MESSAGE =
+  'Só dá para reportar um problema depois que o pedido é confirmado.';
 
 /**
  * Valida antes de qualquer chamada (mock ou API), como o back: tira os espaços
@@ -163,10 +166,7 @@ function mockReportOrder(
     throw new OrderReportError('ORDER_NOT_FOUND', `Pedido ${orderId} não encontrado.`);
   }
   if (!canReportOrder(found.order.status as OrderStatus)) {
-    throw new OrderReportError(
-      'ORDER_NOT_REPORTABLE',
-      'Só é possível reportar um Pedido depois da confirmação.',
-    );
+    throw new OrderReportError('COMPLAINT_NOT_ALLOWED', COMPLAINT_NOT_ALLOWED_MESSAGE);
   }
 
   const reports = readReports();

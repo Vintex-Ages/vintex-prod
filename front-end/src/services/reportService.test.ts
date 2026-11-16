@@ -138,7 +138,7 @@ describe('reportService (mock)', () => {
 
       for (const id of ['11', '12']) {
         const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
-        expect(error.code).toBe('ORDER_NOT_REPORTABLE');
+        expect(error.code).toBe('COMPLAINT_NOT_ALLOWED');
       }
     });
   });
@@ -307,15 +307,18 @@ describe('reportService (API real) — rotas de Reclamação do back (#441)', ()
 
   it('repassa o código e a mensagem do back quando o Pedido não permite reportar', async () => {
     await stubAdapter(() =>
-      httpError(409, { code: 'ORDER_NOT_REPORTABLE', message: 'Pedido ainda não confirmado.' }),
+      httpError(409, {
+        code: 'COMPLAINT_NOT_ALLOWED',
+        message: 'Só dá para reportar um problema depois que o pedido é confirmado.',
+      }),
     );
     const { reportOrder } = await import('./reportService');
 
     const error = await failure(reportOrder('10', 'nao_recebido', 'Nada.'));
 
     expect(error).toMatchObject({
-      code: 'ORDER_NOT_REPORTABLE',
-      message: 'Pedido ainda não confirmado.',
+      code: 'COMPLAINT_NOT_ALLOWED',
+      message: 'Só dá para reportar um problema depois que o pedido é confirmado.',
     });
   });
 
@@ -327,7 +330,7 @@ describe('reportService (API real) — rotas de Reclamação do back (#441)', ()
     id: 5,
     reason: 'danificado',
     description: 'A manga veio rasgada.',
-    created_at: '2026-10-29T12:00:00-03:00',
+    created_at: '2026-10-29T12:00:00Z',
     buyer: { name: 'Ana', email: 'ana@exemplo.com', phone: '51999990000' },
     order: {
       id: 10,
@@ -363,7 +366,7 @@ describe('reportService (API real) — rotas de Reclamação do back (#441)', ()
       orderId: '10',
       reason: 'danificado',
       description: 'A manga veio rasgada.',
-      createdAt: '2026-10-29T12:00:00-03:00',
+      createdAt: '2026-10-29T12:00:00Z',
       buyer: { name: 'Ana', email: 'ana@exemplo.com', phone: '51999990000' },
       store: { id: '9', name: 'Roupa Rodada' },
     });
@@ -400,7 +403,10 @@ describe('reportService (API real) — rotas de Reclamação do back (#441)', ()
   });
 
   it('403 na rota da administradora vira FORBIDDEN', async () => {
-    await stubAdapter(() => httpError(403));
+    // Corpo de verdade: o 403 dessa rota vem com `ADMIN_REQUIRED` (`core/security.py:167`).
+    await stubAdapter(() =>
+      httpError(403, { code: 'ADMIN_REQUIRED', message: 'Ação restrita a administradores.' }),
+    );
     const { listReports } = await import('./reportService');
 
     const error = await failure(listReports());
@@ -460,11 +466,11 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
   });
 
   it.each(['example-em-analise', 'example-expirado', 'example-aguardando-comprovante'])(
-    'recusa %s com ORDER_NOT_REPORTABLE',
+    'recusa %s com COMPLAINT_NOT_ALLOWED',
     async (id) => {
       const error = await failure(reports.reportOrder(id, 'nao_recebido', 'Nada.'));
 
-      expect(error).toMatchObject({ name: 'OrderReportError', code: 'ORDER_NOT_REPORTABLE' });
+      expect(error).toMatchObject({ name: 'OrderReportError', code: 'COMPLAINT_NOT_ALLOWED' });
       expect((await reports.listReports()).total).toBe(0);
     },
   );
@@ -491,7 +497,7 @@ describe('reportService (mock) — Pedidos de exemplo de "Meus pedidos"', () => 
 
     // Recém-criado: achado no sessionStorage, mas ainda não confirmado.
     expect((await failure(reports.reportOrder(order.id, 'danificado', 'X.'))).code).toBe(
-      'ORDER_NOT_REPORTABLE',
+      'COMPLAINT_NOT_ALLOWED',
     );
 
     await orders.submitReceipt('u_ana', order.id, new File(['pix'], 'pix.pdf'));
