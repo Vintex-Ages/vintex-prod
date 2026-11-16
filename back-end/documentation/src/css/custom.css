@@ -22,3 +22,18 @@
   --ifm-color-primary-lighter: #ff8e90;
   --ifm-color-primary-lightest: #ffc0c1;
 }
+
+/*
+ * Marcador de divergência: o texto descreve o que o código faz, mas ele
+ * difere do que a task (issue) pedia. Quem implementou a feature confirma e,
+ * resolvido, o asterisco sai. Convenção em docs/intro.md.
+ */
+.verificar {
+  color: #d32f2f;
+  font-weight: 700;
+  cursor: help;
+}
+
+[data-theme="dark"] .verificar {
+  color: #ff6b6b;
+}
