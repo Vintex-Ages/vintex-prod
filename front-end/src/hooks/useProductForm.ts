@@ -58,6 +58,14 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * etiqueta ilegível não preenche nenhuma das duas (RN-59) e o motivo chega nas
  * notas do service, mostradas como vieram.
  *
+ * **Vídeo curto (#415).** Fica em `values.video` (0 ou 1), fora de `media`:
+ * não conta para o RN-47 e não vai para a IA. Sobe na hora pelo `uploadMedia`
+ * com `kind: 'video'`; recusado pelo back, volta ao anterior com a mensagem em
+ * `videoUploadError` (só no campo). O 422 de `fields.video_url` ao salvar vai
+ * para `errors.video`, que entra no resumo de erros do envio. `videoUrl` só vai no `ProductInput` quando mudou em relação ao
+ * que o back tem gravado (`videoSalvo`): editar sem tocar não manda o campo,
+ * remover manda `null` e criar sem vídeo não manda nada.
+ *
  * **Salvar e publicar são dois passos (#218).** Antes, um `submit()` só
  * gravava e publicava de uma vez. A revisão explícita (RN-50) pede que o
  * formulário apenas grave o rascunho e que só a revisão publique, então
@@ -99,6 +107,11 @@ export interface ProductFormValues {
   /** Centavos, como o `PriceInput` entrega. */
   priceCents: number | null;
   media: MediaItem[];
+  /**
+   * Vídeo curto (0 ou 1), de 3 a 5 segundos (RN-48; #415). Fora de `media`: não
+   * conta como foto para o RN-47 e não vai para a IA.
+   */
+  video: MediaItem[];
 }
 
 export type FieldErrors = Partial<Record<keyof ProductFormValues, string>>;
@@ -114,6 +127,7 @@ const VALORES_INICIAIS: ProductFormValues = {
   description: '',
   priceCents: null,
   media: [],
+  video: [],
 };
 
 /** Campos do formulário que a IA sabe preencher, no nome que ela usa. */
@@ -172,7 +186,7 @@ export const ETAPAS_CADASTRO = [
 export const ETAPA_REVISAO = 2;
 
 /** Blocos do formulário que a revisão sabe abrir (vão no hash da URL). */
-export type SecaoCadastro = 'fotos' | 'dados' | 'descricao' | 'preco';
+export type SecaoCadastro = 'fotos' | 'video' | 'dados' | 'descricao' | 'preco';
 
 /** Seção do formulário de cada etapa concluída do `Stepper`. */
 export const SECAO_POR_ETAPA: Record<number, SecaoCadastro> = { 0: 'fotos', 1: 'dados' };
@@ -232,11 +246,25 @@ function paraValores(peca: SellerProductDetail): ProductFormValues {
       type: 'image' as const,
       position: indice,
     })),
+    video: peca.videoUrl ? [{ id: 'video', url: peca.videoUrl, type: 'video', position: 0 }] : [],
   };
 }
 
-function paraInput(values: ProductFormValues): Partial<ProductInput> {
+/** URL do vídeo já enviado, ou `null` sem vídeo (um arquivo ainda subindo não conta). */
+function urlDoVideo(values: ProductFormValues): string | null {
+  const item = values.video[0];
+  return item && !item.file ? item.url : null;
+}
+
+/**
+ * `videoSalvo` é o vídeo que o back tem gravado (`null` sem vídeo ou peça nova).
+ * `videoUrl` só vai quando mudou: ausente mantém, URL troca, `null` remove
+ * (ver `ProductInput.videoUrl`). Criar sem vídeo, portanto, não manda nada.
+ */
+function paraInput(values: ProductFormValues, videoSalvo: string | null): Partial<ProductInput> {
+  const videoAtual = urlDoVideo(values);
   return {
+    ...(videoAtual !== videoSalvo && { videoUrl: videoAtual }),
     name: values.name.trim(),
     category: values.category ?? undefined,
     size: values.size ?? undefined,
@@ -308,6 +336,17 @@ export interface UseProductFormResult {
   productStatus: ProductStatus | undefined;
   setField: <K extends keyof ProductFormValues>(campo: K, valor: ProductFormValues[K]) => void;
   setMedia: (items: MediaItem[]) => void;
+  /**
+   * Troca ou remove o vídeo curto (#415). Arquivo novo sobe na hora com
+   * `kind: 'video'`; recusado (ex.: duração fora de 3 a 5 s), volta ao vídeo
+   * anterior e a mensagem do back fica em `videoUploadError`.
+   */
+  setVideo: (items: MediaItem[]) => void;
+  /**
+   * Mensagem do back quando o upload do vídeo foi recusado, ou `null`. Vai só
+   * para o campo; o 422 de `video_url` ao salvar fica em `errors.video`.
+   */
+  videoUploadError: string | null;
   /** Troca ou remove a foto da etiqueta; com fotos da peça já enviadas, refaz a análise. */
   setLabelMedia: (items: MediaItem[]) => void;
   /** Grava o rascunho sem publicar. Devolve o id, ou `null` se não passou. */
@@ -337,6 +376,11 @@ export function useProductForm(productId?: string): UseProductFormResult {
   const [semFotoNoBack, setSemFotoNoBack] = useState(false);
   const [draftId, setDraftId] = useState<string | undefined>(productId);
   const [productStatus, setProductStatus] = useState<ProductStatus | undefined>(undefined);
+  // Vídeo que o back tem gravado: `paraInput` só manda `videoUrl` quando mudou.
+  const [videoSalvo, setVideoSalvo] = useState<string | null>(null);
+  const [enviandoVideo, setEnviandoVideo] = useState(false);
+  // Recusa no upload: fica só no campo, fora do resumo de erros do envio.
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null);
   const precoSugerido = usePriceSuggestion();
   const resetPriceSuggestion = precoSugerido.reset;
 
@@ -374,6 +418,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
       setSemFotoNoBack(false);
       setDraftId(undefined);
       setProductStatus(undefined);
+      setVideoSalvo(null);
+      setVideoUploadError(null);
       resetPriceSuggestion();
       return;
     }
@@ -389,6 +435,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
         setDraftId(peca.id);
         setProductStatus(peca.status);
         setValues(paraValores(peca));
+        setVideoSalvo(peca.videoUrl ?? null);
+        setVideoUploadError(null);
         // Outra peça: marcas e correções da anterior não valem para ela.
         setSuggested(new Set());
         setCorrections([]);
@@ -560,6 +608,41 @@ export function useProductForm(productId?: string): UseProductFormResult {
   );
 
   /**
+   * O vídeo sobe pelo mesmo `uploadMedia` das fotos, com `kind: 'video'`, mas
+   * não vai para a IA nem para `images`: ele não substitui a foto (RN-47).
+   */
+  const setVideo = useCallback(async (items: MediaItem[]) => {
+    const anterior = valuesRef.current.video;
+    setValues((atual) => ({ ...atual, video: items }));
+    setErrors((atual) => ({ ...atual, video: undefined }));
+    setVideoUploadError(null);
+
+    const novo = items[0];
+    if (!novo?.file) return;
+
+    // Só escreve se o item ainda é o mesmo: uma troca no meio do envio vence.
+    const aindaEhEste = (atual: ProductFormValues) => atual.video[0]?.id === novo.id;
+
+    setEnviandoVideo(true);
+    try {
+      const [url] = await uploadMedia([novo.file], 'video');
+      setValues((atual) =>
+        aindaEhEste(atual) ? { ...atual, video: [{ ...novo, url, file: undefined }] } : atual,
+      );
+    } catch (error) {
+      // Recusado (ex.: 422 de duração): volta ao vídeo de antes, com a mensagem do back.
+      setValues((atual) => (aindaEhEste(atual) ? { ...atual, video: anterior } : atual));
+      const mensagem =
+        error instanceof SellerProductError && error.code !== 'INTERNAL_ERROR'
+          ? error.message
+          : 'Não foi possível enviar o vídeo. Tente de novo.';
+      setVideoUploadError(mensagem);
+    } finally {
+      setEnviandoVideo(false);
+    }
+  }, []);
+
+  /**
    * A etiqueta não sobe aqui: o service sobe, marcada como etiqueta. Sem foto
    * da peça já enviada, ela só fica guardada para a próxima análise.
    */
@@ -594,7 +677,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     setSaving(true);
     setFormError(null);
     try {
-      const input = paraInput(values);
+      const input = paraInput(values, videoSalvo);
       // Sem correções de propósito: elas vão uma vez só, no `publishDraft`.
       const peca = draftId ? await update(draftId, input, []) : await createDraft(input, []);
 
@@ -603,9 +686,15 @@ export function useProductForm(productId?: string): UseProductFormResult {
       setProductStatus(peca.status);
       // A revisão mostra o que o back gravou, não o que a tela achava que mandou.
       setValues(paraValores(peca));
+      setVideoSalvo(peca.videoUrl ?? null);
       setSemFotoNoBack(false);
       return peca.id;
     } catch (error) {
+      // 422 de `fields.video_url`: a mensagem do back vai para o campo de vídeo.
+      if (error instanceof SellerProductError && error.field === 'video_url') {
+        setErrors((atual) => ({ ...atual, video: error.message }));
+        return null;
+      }
       const mensagem =
         error instanceof Error ? error.message : 'Não foi possível salvar o rascunho.';
       setFormError(mensagem);
@@ -613,7 +702,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     } finally {
       setSaving(false);
     }
-  }, [values, draftId]);
+  }, [values, draftId, videoSalvo]);
 
   const faltaFoto = values.media.length === 0 || semFotoNoBack;
   const faltaDado = Object.keys(validar(values)).some((campo) => campo !== 'media');
@@ -624,7 +713,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
 
     setSaving(true);
     try {
-      await update(draftId, paraInput(values), corrections);
+      await update(draftId, paraInput(values, videoSalvo), corrections);
       // Já foram: o back acumula, e mandar de novo duplicaria a medida.
       setCorrections([]);
       // Editar não muda a situação da peça: `publish` é só para rascunho. Numa
@@ -650,7 +739,7 @@ export function useProductForm(productId?: string): UseProductFormResult {
     } finally {
       setSaving(false);
     }
-  }, [draftId, publishBlocked, values, corrections, productStatus]);
+  }, [draftId, publishBlocked, values, videoSalvo, corrections, productStatus]);
 
   const requestPriceSuggestion = () => {
     void precoSugerido.request({
@@ -683,7 +772,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
     formError,
     priceReais,
     formStep: values.media.length === 0 ? 0 : 1,
-    canContinue: values.media.length > 0 && !saving && !analyzing,
+    // Com o vídeo ainda subindo, o rascunho iria sem ele.
+    canContinue: values.media.length > 0 && !saving && !analyzing && !enviandoVideo,
     publishBlocked,
     priceSuggestion: precoSugerido.state,
     priceAlert: priceOutOfRange(precoSugerido.state, priceReais),
@@ -692,6 +782,8 @@ export function useProductForm(productId?: string): UseProductFormResult {
     productStatus,
     setField,
     setMedia,
+    setVideo,
+    videoUploadError,
     setLabelMedia,
     saveDraft,
     publishDraft,

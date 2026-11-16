@@ -24,6 +24,14 @@ Por isso o embedding **não tem fallback de modelo**, diferente da visão (`GOOG
 
 A mesma cadeia serve à interpretação da pergunta do chat (`stream_interpret_search`, [#260](https://github.com/Vintex-Ages/back-end/issues/260)): uma chamada com saída estruturada (`InterpretacaoDaPergunta`), que o controller transforma em filtro do catálogo. Lá, a falha não vira erro: a busca segue só por similaridade ([Conversa com a Vintex](../dominio/conversa-com-a-vintex#filtro-e-similaridade)).
 
+**Quando a cadeia inteira dá 503, ela é repetida** ([#264](https://github.com/Vintex-Ages/back-end/issues/264)). `_gerar_com_fallback` faz até três rodadas (`_RODADAS`), com espera de 2 s antes da segunda e de 4 s antes da terceira (`_ESPERA_ENTRE_RODADAS_S`). O caso que motivou: na preparação da apresentação de 05/10, os três modelos de `GOOGLE_VISION_MODEL` responderam `503` ao mesmo tempo, a cadeia inteira falhou em menos de um segundo, e as três tentativas seguintes, feitas à mão, deram `200` em 9,5 s, 5,2 s e 3,9 s. O congestionamento durou menos de dois minutos. A #209 cobria um modelo fora; esta cobre todos fora por um instante, e só esperar resolve.
+
+- **A repetição vale para o que `_e_indisponibilidade` reconhece**: o 503 e, desde a [#258](https://github.com/Vintex-Ages/back-end/issues/258), o 429 <span className="verificar" title="A issue #264 e o PR #266 dizem 'só para 503'; o código também repete no 429. Confirmar com quem implementou.">*</span>. Erro nosso (404, 400) levanta na primeira ocorrência, sem espera.
+- O log diz quando entra numa rodada nova, para a falha não ficar invisível. Quando todas as rodadas falham, a mensagem é a mesma de antes.
+- A espera entra no tempo de resposta. Os testes ficam em `tests/test_ai_retry_503.py`.
+
+> <span className="verificar">*</span> **Verificar com quem implementou a #264.** (1) A issue pede a repetição "só para 503", e o PR repete o mesmo. Hoje `_gerar_com_fallback` decide pela mesma `_e_indisponibilidade`, que desde a #258 inclui o 429 (`RESOURCE_EXHAUSTED`, cota esgotada). Cota esgotada dificilmente volta em 2 s ou 4 s, então a repetição no 429 só soma 6 s de espera antes do mesmo erro; falta confirmar se é intencional. (2) O critério "o total cabe folgado em 30 segundos" vale quando o 503 responde rápido, como no caso medido. Não há prazo total: cada chamada tem o timeout de 30 s do SDK (`_GOOGLE_TIMEOUT_MS`), então um provedor lento, e não indisponível, pode passar do limite do API Gateway.
+
 Os demais (404 de nome que não existe, 400 de entrada recusada) são erro nosso e falham no primeiro modelo: tentar outro esconderia a causa. A cota do chat, que evita chegar no 429, está em [Conversa com a Vintex](../dominio/conversa-com-a-vintex#cota-do-dia).
 
 ## Onde isso importa

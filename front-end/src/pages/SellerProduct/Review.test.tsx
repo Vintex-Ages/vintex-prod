@@ -548,3 +548,71 @@ describe('Review', () => {
     );
   });
 });
+
+describe('Revisão — vídeo curto (FE-US020-1, #415)', () => {
+  const VIDEO_URL = 'https://api.test/api/media/products/videos/v1';
+
+  it('mostra o vídeo antes de publicar, com rótulo acessível', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({ ...PECA, videoUrl: VIDEO_URL });
+    renderFluxo('/seller/products/7/review');
+
+    const secao = await screen.findByRole('region', { name: 'Vídeo curto' });
+    const player = within(secao).getByLabelText('Vídeo curto da peça Jaqueta de couro');
+    expect(player.tagName).toBe('VIDEO');
+    expect(player).toHaveAttribute('src', VIDEO_URL);
+    expect(player).toHaveAttribute('controls');
+  });
+
+  it('"Editar vídeo" volta ao formulário no campo de vídeo', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({ ...PECA, videoUrl: VIDEO_URL });
+    renderFluxo('/seller/products/7/review');
+    await screen.findByRole('region', { name: 'Vídeo curto' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar vídeo' }));
+
+    expect(await screen.findByLabelText('Vídeo curto (opcional)')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.getElementById('secao-video')?.contains(document.activeElement)).toBe(true),
+    );
+  });
+
+  it('sem vídeo, não mostra bloco de vídeo', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({ ...PECA, videoUrl: null });
+    renderFluxo('/seller/products/7/review');
+    await screen.findByRole('heading', { name: 'Revise sua peça antes de publicar' });
+    await screen.findByRole('region', { name: '1. Fotos e etiqueta analisadas pela IA' });
+
+    expect(screen.queryByRole('region', { name: 'Vídeo curto' })).not.toBeInTheDocument();
+    expect(document.querySelector('video')).toBeNull();
+  });
+
+  // RN-47: o vídeo não substitui a foto.
+  it('peça só com vídeo e sem foto não publica', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({
+      ...PECA,
+      images: [],
+      videoUrl: VIDEO_URL,
+    });
+    renderFluxo('/seller/products/7/review');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Adicione ao menos uma foto antes de publicar.',
+    );
+    const publicar = screen.getByRole('button', { name: 'Confirmar e publicar peça →' });
+    expect(publicar).toBeDisabled();
+    fireEvent.click(publicar);
+    expect(sellerProductService.publish).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Vídeo curto' })).toBeInTheDocument();
+  });
+
+  it('publicar com vídeo não manda videoUrl se ele não mudou', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue({ ...PECA, videoUrl: VIDEO_URL });
+    renderFluxo('/seller/products/7/review');
+    await screen.findByRole('region', { name: 'Vídeo curto' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e publicar peça →' }));
+
+    await waitFor(() => expect(sellerProductService.publish).toHaveBeenCalledWith('7'));
+    expect(vi.mocked(sellerProductService.update).mock.calls[0][1]).not.toHaveProperty('videoUrl');
+  });
+});

@@ -23,7 +23,7 @@ test.describe('pedidos', () => {
     await page.getByLabel('Número').fill('123');
     await page.getByLabel('Bairro').fill('Cidade Baixa');
     await page.getByLabel('Cidade').fill('Porto Alegre');
-    await page.getByLabel('UF').selectOption('RS');
+    await page.getByLabel('UF', { exact: true }).selectOption('RS');
     await page.getByRole('button', { name: 'Confirmar pedido' }).click();
 
     await expect(page).toHaveURL(/\/profile\/orders\/\d+\/payment$/);

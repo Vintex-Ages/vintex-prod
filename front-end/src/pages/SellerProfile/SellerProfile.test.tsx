@@ -182,6 +182,40 @@ describe('SellerProfile', () => {
     });
   });
 
+  // FE-US026-2 — média com uma casa e a quantidade (RN-74, RN-75).
+  it('loja com três avaliações mostra a média com uma casa e a quantidade', async () => {
+    vi.mocked(getStore).mockResolvedValue({
+      ...mockStore,
+      metrics: { ...mockStore.metrics!, rating: 4.3, ratingCount: 3 },
+    });
+    vi.mocked(getStoreProducts).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('img', { name: 'Média 4,3 de 5 estrelas, 3 avaliações' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('4,3')).toBeInTheDocument();
+    expect(screen.getByText('3 avaliações')).toBeInTheDocument();
+    // Só a taxa de envio continua sem dado.
+    expect(screen.getAllByText('Em breve')).toHaveLength(1);
+  });
+
+  it('loja sem avaliação (rating null, como o back devolve) mostra "Em breve", nunca zero', async () => {
+    vi.mocked(getStore).mockResolvedValue({
+      ...mockStore,
+      metrics: { ...mockStore.metrics!, rating: null, ratingCount: 0 },
+    });
+    vi.mocked(getStoreProducts).mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+
+    renderPage();
+
+    const avaliacao = (await screen.findByText('Avaliação')).parentElement!;
+    expect(avaliacao).toHaveTextContent('Em breve');
+    expect(avaliacao).not.toHaveTextContent('0');
+    expect(screen.queryByRole('img', { name: /Média/ })).not.toBeInTheDocument();
+  });
+
   it('carrega mais produtos ao clicar em "Carregar mais"', async () => {
     vi.mocked(getStore).mockResolvedValue(mockStore);
     vi.mocked(getStoreProducts)

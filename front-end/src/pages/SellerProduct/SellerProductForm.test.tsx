@@ -701,3 +701,237 @@ describe('SellerProductForm', () => {
     });
   });
 });
+
+describe('SellerProductForm — vídeo curto (FE-US020-1, #415)', () => {
+  const ROTULO_VIDEO = 'Vídeo curto (opcional)';
+  const VIDEO_URL = 'https://api.test/api/media/products/videos/v1';
+  const VIDEO_NOVO_URL = 'https://api.test/api/media/products/videos/v2';
+  const FOTO_URL = 'https://api.test/api/media/products/photos/abc';
+  const MSG_DURACAO = 'clip.mp4 tem 6,0s; o vídeo precisa ter de 3 a 5 segundos.';
+
+  function video(nome = 'clip.mp4', tipo = 'video/mp4') {
+    return new File(['video'], nome, { type: tipo });
+  }
+
+  function campoVideo() {
+    const campo = document.getElementById('secao-video');
+    if (!campo) throw new Error('campo de vídeo não encontrado');
+    return within(campo);
+  }
+
+  function subirVideo(nome = 'clip.mp4') {
+    fireEvent.change(screen.getByLabelText(ROTULO_VIDEO), { target: { files: [video(nome)] } });
+  }
+
+  /** Upload por `kind`: fotos e vídeo voltam URLs diferentes, como no back. */
+  function uploadPorTipo(videoUrl = VIDEO_URL) {
+    vi.mocked(sellerProductService.uploadMedia).mockImplementation(async (_files, kind) =>
+      kind === 'video' ? [videoUrl] : [FOTO_URL],
+    );
+  }
+
+  /** Último `input` mandado ao `createDraft` ou ao `update`. */
+  function ultimoInput(fn: 'createDraft' | 'update') {
+    const chamadas =
+      fn === 'createDraft'
+        ? vi.mocked(sellerProductService.createDraft).mock.calls
+        : vi.mocked(sellerProductService.update).mock.calls;
+    const ultima = chamadas[chamadas.length - 1];
+    if (!ultima) throw new Error(`${fn} não foi chamado`);
+    return fn === 'createDraft' ? ultima[0] : ultima[1];
+  }
+
+  const COM_VIDEO: SellerProductDetail = { ...PECA, videoUrl: VIDEO_URL };
+
+  async function continuar() {
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+    expect(await screen.findByRole('heading', { name: 'Revisão da peça' })).toBeInTheDocument();
+  }
+
+  it('o campo aceita só mp4 e quicktime e explica a duração', () => {
+    renderForm();
+
+    const input = screen.getByLabelText(ROTULO_VIDEO);
+    expect(input).toHaveAttribute('type', 'file');
+    expect(input).toHaveAttribute('accept', 'video/mp4,video/quicktime');
+    expect(input).not.toHaveAttribute('multiple');
+    expect(campoVideo().getByText(/de 3 a 5 segundos/)).toBeInTheDocument();
+  });
+
+  it('anúncio com vídeo: sobe com kind video e manda o video_url ao criar', async () => {
+    uploadPorTipo();
+    renderForm();
+    await subirFoto();
+    preencherObrigatorios();
+
+    subirVideo();
+
+    await waitFor(() =>
+      expect(vi.mocked(sellerProductService.uploadMedia)).toHaveBeenCalledWith(
+        [expect.objectContaining({ name: 'clip.mp4' })],
+        'video',
+      ),
+    );
+    await continuar();
+    expect(ultimoInput('createDraft')).toMatchObject({ videoUrl: VIDEO_URL, images: [FOTO_URL] });
+  });
+
+  it('o vídeo não vai para a análise da IA nem para as fotos', async () => {
+    uploadPorTipo();
+    renderForm();
+    await subirFoto();
+    await waitFor(() => expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenCalledTimes(1));
+
+    subirVideo();
+    await waitFor(() =>
+      expect(vi.mocked(sellerProductService.uploadMedia)).toHaveBeenCalledWith(
+        expect.anything(),
+        'video',
+      ),
+    );
+
+    expect(vi.mocked(vintexAiService.suggestListing)).toHaveBeenCalledTimes(1);
+  });
+
+  it('criar sem vídeo não manda o campo', async () => {
+    renderForm();
+    await subirFoto();
+    preencherObrigatorios();
+
+    await continuar();
+
+    expect(ultimoInput('createDraft')).not.toHaveProperty('videoUrl');
+  });
+
+  it('ao editar, mostra o vídeo existente; sem tocar nele, não manda videoUrl', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue(COM_VIDEO);
+    vi.mocked(sellerProductService.update).mockResolvedValue(COM_VIDEO);
+    renderForm('/seller/products/7');
+
+    const previa = await screen.findByLabelText('Pré-visualização do vídeo 1');
+    expect(previa.tagName).toBe('VIDEO');
+    expect(previa).toHaveAttribute('src', VIDEO_URL);
+
+    fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Jaqueta nova' } });
+    await continuar();
+
+    expect(ultimoInput('update')).not.toHaveProperty('videoUrl');
+  });
+
+  it('remover na edição manda videoUrl: null', async () => {
+    vi.mocked(sellerProductService.getById).mockResolvedValue(COM_VIDEO);
+    renderForm('/seller/products/7');
+    await screen.findByLabelText('Pré-visualização do vídeo 1');
+
+    fireEvent.click(campoVideo().getByRole('button', { name: 'Remover mídia 1' }));
+
+    expect(campoVideo().queryByLabelText('Pré-visualização do vídeo 1')).not.toBeInTheDocument();
+    await continuar();
+    expect(ultimoInput('update')).toMatchObject({ videoUrl: null });
+  });
+
+  it('trocar substitui o vídeo anterior e manda a URL nova', async () => {
+    uploadPorTipo(VIDEO_NOVO_URL);
+    vi.mocked(sellerProductService.getById).mockResolvedValue(COM_VIDEO);
+    renderForm('/seller/products/7');
+    await screen.findByLabelText('Pré-visualização do vídeo 1');
+
+    subirVideo('outro.mp4');
+
+    await waitFor(() =>
+      expect(campoVideo().getByLabelText('Pré-visualização do vídeo 1')).toHaveAttribute(
+        'src',
+        VIDEO_NOVO_URL,
+      ),
+    );
+    expect(campoVideo().queryByLabelText('Pré-visualização do vídeo 2')).not.toBeInTheDocument();
+    await continuar();
+    expect(ultimoInput('update')).toMatchObject({ videoUrl: VIDEO_NOVO_URL });
+  });
+
+  it('recusa por duração: a mensagem do back aparece no campo de vídeo e o resto fica', async () => {
+    vi.mocked(sellerProductService.uploadMedia).mockImplementation(async (_files, kind) => {
+      if (kind === 'video') {
+        throw new sellerProductService.SellerProductError('VALIDATION_ERROR', MSG_DURACAO);
+      }
+      return [FOTO_URL];
+    });
+    renderForm();
+    await subirFoto();
+    preencherObrigatorios();
+
+    subirVideo('longo.mp4');
+
+    expect(await campoVideo().findByText(MSG_DURACAO)).toBeInTheDocument();
+    expect(screen.getByLabelText(ROTULO_VIDEO)).toHaveAccessibleDescription(MSG_DURACAO);
+    expect(campoVideo().queryByLabelText('Pré-visualização do vídeo 1')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Título')).toHaveValue('Jaqueta');
+    expect(screen.getByLabelText('Cor')).toHaveValue('Preto');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // Sem vídeo recusado no rascunho: segue sem o campo.
+    await continuar();
+    expect(ultimoInput('createDraft')).not.toHaveProperty('videoUrl');
+  });
+
+  it('422 de fields.video_url ao salvar: a mensagem do back vai para o campo de vídeo', async () => {
+    const mensagem = 'A URL informada não é de um vídeo.';
+    uploadPorTipo();
+    vi.mocked(sellerProductService.createDraft).mockRejectedValueOnce(
+      new sellerProductService.SellerProductError('VALIDATION_ERROR', mensagem, 'video_url'),
+    );
+    renderForm();
+    await subirFoto();
+    preencherObrigatorios();
+    subirVideo();
+    await waitFor(() =>
+      expect(campoVideo().getByLabelText('Pré-visualização do vídeo 1')).toHaveAttribute(
+        'src',
+        VIDEO_URL,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar para revisão' }));
+
+    expect(await campoVideo().findByText(mensagem)).toBeInTheDocument();
+    expect(screen.getByLabelText(ROTULO_VIDEO)).toHaveAccessibleDescription(mensagem);
+    expect(screen.getByLabelText('Título')).toHaveValue('Jaqueta');
+    expect(screen.queryByRole('heading', { name: 'Revisão da peça' })).not.toBeInTheDocument();
+  });
+
+  // RN-47: o vídeo não substitui a foto.
+  it('só com vídeo e sem foto não segue: o erro aparece no campo das fotos', async () => {
+    uploadPorTipo();
+    renderForm();
+    preencherObrigatorios();
+    subirVideo();
+    await waitFor(() =>
+      expect(campoVideo().getByLabelText('Pré-visualização do vídeo 1')).toHaveAttribute(
+        'src',
+        VIDEO_URL,
+      ),
+    );
+
+    expect(screen.getByRole('button', { name: 'Continuar para revisão' })).toBeDisabled();
+    // Enter no formulário também passa pela validação.
+    fireEvent.submit(screen.getByLabelText('Título').closest('form') as HTMLFormElement);
+
+    const campoFotos = within(document.getElementById('secao-fotos') as HTMLElement);
+    expect(await campoFotos.findByText('Adicione ao menos uma foto.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fotos da peça')).toHaveAccessibleDescription(
+      'Adicione ao menos uma foto.',
+    );
+    expect(vi.mocked(sellerProductService.createDraft)).not.toHaveBeenCalled();
+  });
+
+  it('"Editar" do vídeo na revisão foca o campo de vídeo', async () => {
+    renderForm('/seller/products/7#video');
+
+    await screen.findByLabelText(ROTULO_VIDEO);
+    await waitFor(() => {
+      const campo = document.getElementById('secao-video');
+      expect(campo?.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).toHaveAttribute('tabindex', '0');
+    });
+  });
+});

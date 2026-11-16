@@ -6,6 +6,7 @@ import ErrorState from '@/components/common/ErrorState';
 import Stepper from '@/components/common/Stepper';
 import Container from '@/components/layout/Container';
 import PriceBreakdown from '@/components/seller/PriceBreakdown';
+import VideoPlayer from '@/components/product/VideoPlayer';
 import { CATEGORIES } from '@/components/catalog/categories';
 import { useToast } from '@/context/useToast';
 import {
@@ -31,6 +32,10 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * `AISuggestedTag` (RN-56), inclusive a composição lida da etiqueta (#331),
  * logo depois de Marca. A foto da etiqueta não aparece aqui: ela não faz parte
  * da galeria do anúncio.
+ *
+ * Com vídeo curto (FE-US020-1, #415), ele aparece logo depois das fotos, no
+ * `VideoPlayer` do detalhe público, com "Editar vídeo" levando ao campo. Sem
+ * vídeo, nenhum bloco. Ele não libera publicar sem foto (RN-47).
  *
  * Visual alinhado ao frame ajustado do Figma (T14, FE-FIG-2, #436): selo
  * "Etapa 2 de 2 • Revisão obrigatória", fotos em quadros, campos em caixas, bloco
@@ -197,6 +202,7 @@ export default function Review() {
   ];
 
   const totalFotos = values.media.length;
+  const video = values.video[0];
   // A composição só vem da IA quando a foto da etiqueta foi lida.
   const etiquetaProcessada = suggested.has('composition');
 
@@ -263,6 +269,21 @@ export default function Review() {
               </li>
             </ol>
           </Secao>
+
+          {/* Vídeo curto (#415): sem vídeo, nenhum bloco. */}
+          {video ? (
+            <Secao
+              id="video"
+              titulo="Vídeo curto"
+              tituloClasse="text-texto-auxiliar"
+              rotuloEditar="Editar vídeo"
+              onEditar={() => editar('video')}
+            >
+              <div className="aspect-video w-full max-w-md overflow-hidden border border-linha bg-papel-profundo">
+                <VideoPlayer src={video.url} label={`Vídeo curto da peça ${values.name}`} />
+              </div>
+            </Secao>
+          ) : null}
 
           {etiquetaProcessada ? (
             <p className="border border-verde-rs/35 bg-papel px-[0.85rem] py-3 text-label text-verde-rs">
