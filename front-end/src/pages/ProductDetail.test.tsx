@@ -1493,3 +1493,35 @@ describe('#414 — suspensão administrativa no detalhe público', () => {
     );
   });
 });
+
+// #415: o vídeo cadastrado pelo vendedor chega ao detalhe pelo `Gallery`, sem mudar a galeria.
+describe('#415 — vídeo curto no detalhe público', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a peça com vídeo mostra o player do Gallery com o vídeo da peça', async () => {
+    const real = await catalogService.getProduct('1');
+    const fotos = real.media.filter((item) => item.type === 'image');
+    vi.spyOn(catalogService, 'getProduct').mockResolvedValue({
+      ...real,
+      media: [
+        ...fotos,
+        {
+          type: 'video',
+          url: 'https://api.test/api/media/products/videos/v1',
+          position: fotos.length,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt('/product/1');
+
+    const total = fotos.length + 1;
+    await user.click(await screen.findByRole('button', { name: `Ver vídeo ${total} de ${total}` }));
+
+    const player = screen.getByLabelText(`${real.name} — vídeo ${total} de ${total}`);
+    expect(player.tagName).toBe('VIDEO');
+    expect(player).toHaveAttribute('src', 'https://api.test/api/media/products/videos/v1');
+  });
+});
