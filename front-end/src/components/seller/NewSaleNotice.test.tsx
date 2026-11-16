@@ -33,6 +33,7 @@ function contexto(overrides: Partial<NotificationsContextValue> = {}): Notificat
     pendingIds: [],
     markingAll: false,
     retry: vi.fn(),
+    refresh: vi.fn(),
     markAsRead: vi.fn().mockResolvedValue(undefined),
     markAllAsRead: vi.fn().mockResolvedValue(undefined),
     ...overrides,
