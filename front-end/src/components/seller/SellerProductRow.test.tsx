@@ -337,4 +337,54 @@ describe('<SellerProductRow />', () => {
       });
     });
   });
+
+  describe('peça Suspensa pela moderação (#433)', () => {
+    const SUSPENSA: SellerProduct = {
+      ...baseProduct,
+      status: 'despublicado',
+      moderationReason: 'Fotos não correspondem à peça.',
+      moderatedAt: '2026-11-14T15:00:00.000Z',
+    };
+
+    it('mostra o selo "Suspensa" (texto, não só cor) e o motivo da administradora', () => {
+      renderRow({ product: SUSPENSA });
+
+      const linha = screen.getByRole('article');
+      expect(within(linha).getByText('Suspensa')).toBeInTheDocument();
+      expect(within(linha).queryByText('Pausada')).toBeNull();
+      expect(within(linha).getByText('Fotos não correspondem à peça.')).toBeInTheDocument();
+      expect(within(linha).getByText(/Motivo da administradora/)).toBeInTheDocument();
+    });
+
+    it('o motivo fica associado à peça (aria-describedby da linha aponta para ele)', () => {
+      renderRow({ product: SUSPENSA });
+
+      const linha = screen.getByRole('article');
+      const motivo = document.getElementById(linha.getAttribute('aria-describedby') ?? '');
+      expect(motivo).not.toBeNull();
+      expect(linha).toContainElement(motivo);
+      expect(motivo).toHaveTextContent('Motivo da administradora: Fotos não correspondem à peça.');
+    });
+
+    it('a Pausada pelo vendedor continua com o selo "Pausada" e sem motivo', () => {
+      renderRow({
+        product: { ...baseProduct, status: 'despublicado', moderationReason: null },
+      });
+
+      const linha = screen.getByRole('article');
+      expect(within(linha).getByText('Pausada')).toBeInTheDocument();
+      expect(within(linha).queryByText('Suspensa')).toBeNull();
+      expect(within(linha).queryByText(/Motivo/)).toBeNull();
+      expect(linha).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('motivo só com espaços não vira Suspensa', () => {
+      renderRow({
+        product: { ...baseProduct, status: 'despublicado', moderationReason: '   ' },
+      });
+
+      expect(screen.getByText('Pausada')).toBeInTheDocument();
+      expect(screen.queryByText('Suspensa')).toBeNull();
+    });
+  });
 });

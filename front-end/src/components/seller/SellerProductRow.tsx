@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import Button from '@/components/common/Button';
 import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
 import StatusBadge from '@/components/product/StatusBadge';
+import { isSuspended } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 
 export type RowAction = {
@@ -35,11 +36,19 @@ const priceFormatter = new Intl.NumberFormat('pt-BR', {
  * Linha responsiva de uma peça do vendedor. Exibe somente os dados e ações
  * recebidos; a página consumidora continua responsável pelas regras de negócio.
  *
+ * Peça Suspensa pela administradora (`isSuspended`, #433) ganha o selo
+ * "Suspensa" no lugar de "Pausada" e o motivo da moderação abaixo do preço,
+ * ligado à linha por `aria-describedby`. Quais ações ela tem continua sendo
+ * decisão da página.
+ *
  * Usage:
  *   <SellerProductRow product={product} actions={[{ label: 'Editar', onSelect: edit }]} />
  */
 function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
   const reasonIdPrefix = useId();
+  // Suspensa pela administradora (#433): selo próprio e o motivo, ligado à linha.
+  const suspended = isSuspended(product);
+  const moderationId = `${reasonIdPrefix}-moderation`;
   // "Tamanho M • Marca • Preço: R$ 198,00" (frame ajustado do Figma, T15): só entra o que a peça tem.
   const attributes = [
     product.size ? `Tamanho ${product.size}` : null,
@@ -50,7 +59,10 @@ function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
   const hasPrimaryAction = actions.some((action) => action.variant === 'secondary');
 
   return (
-    <article className="flex w-full flex-col gap-4 border border-linha bg-branco-quente p-4 web:flex-row web:items-center">
+    <article
+      aria-describedby={suspended ? moderationId : undefined}
+      className="flex w-full flex-col gap-4 border border-linha bg-branco-quente p-4 web:flex-row web:items-center"
+    >
       <div className="flex min-w-0 items-center gap-4 web:flex-1">
         <div className="h-[75px] w-[65px] shrink-0 overflow-hidden border border-linha bg-papel-profundo">
           {product.coverImageUrl ? (
@@ -91,11 +103,29 @@ function SellerProductRow({ product, actions, onOpen }: SellerProductRowProps) {
               Preço: <span className="font-bold">{priceFormatter.format(product.price)}</span>
             </span>
           </p>
+
+          {suspended ? (
+            <p
+              id={moderationId}
+              className="whitespace-pre-line break-words font-ui text-body-sm text-texto-auxiliar"
+            >
+              <span className="font-semibold text-tinta">Motivo da administradora: </span>
+              {product.moderationReason}
+              <span className="block">
+                Você pode corrigir o anúncio; só a administradora devolve a peça à vitrine.
+              </span>
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div className="self-start web:self-auto">
-        <StatusBadge status={product.status} />
+        {/* Selo com texto próprio: a Suspensa não se distingue da Pausada só pela cor. */}
+        {suspended ? (
+          <StatusBadge status="despublicado" label="Suspensa" />
+        ) : (
+          <StatusBadge status={product.status} />
+        )}
       </div>
 
       {actions.length > 0 ? (
