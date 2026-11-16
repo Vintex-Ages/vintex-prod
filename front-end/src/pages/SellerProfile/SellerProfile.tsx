@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
+import StarRating from '@/components/common/StarRating';
 import VerifiedBadge from '@/components/common/VerifiedBadge';
 import Container from '@/components/layout/Container';
 import { ProductGrid } from '@/components/product/ProductGrid';
@@ -22,7 +24,7 @@ const percentFormatter = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 0,
 });
 
-function StoreMetric({ label, value }: { label: string; value: string }) {
+function StoreMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 border border-linha bg-branco-quente p-4">
       <span className="text-label text-texto-auxiliar">{label}</span>
@@ -35,7 +37,8 @@ function StoreMetric({ label, value }: { label: string; value: string }) {
  * Perfil público da loja (FE-US007-2). Busca via `storeService.getStore(id)` +
  * `getStoreProducts(id)`; não exige login (rota pública em `AppRoutes.tsx`).
  * Métricas indisponíveis (avaliação, taxa de envio) mostram "Em breve" — nunca
- * um zero falso (RN-74).
+ * um zero falso (RN-74). A avaliação, quando existe, sai como média de estrelas
+ * com uma casa e a quantidade (FE-US026-2, RN-75).
  *
  * Usage:
  *   <Route path={paths.store} element={<SellerProfile />} />
@@ -162,7 +165,15 @@ function SellerProfile() {
           <StoreMetric
             label="Avaliação"
             value={
-              store.metrics.rating !== undefined ? store.metrics.rating.toFixed(1) : 'Em breve'
+              store.metrics.rating != null ? (
+                <StarRating
+                  mode="display"
+                  average={store.metrics.rating}
+                  count={store.metrics.ratingCount}
+                />
+              ) : (
+                'Em breve'
+              )
             }
           />
         </section>

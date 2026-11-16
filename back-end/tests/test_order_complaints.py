@@ -297,6 +297,92 @@ def test_lista_vazia_sem_reclamacao(client, cenario):
     assert resposta.json()["items"] == []
 
 
+def make_complaint(
+    db: Session, author: User, store: Store, *, criada_em
+) -> OrderComplaint:
+    """Reclamação gravada direto, com `created_at` escolhido: pela rota, todas
+    sairiam no mesmo instante e a ordem não teria o que provar."""
+    complaint = OrderComplaint(
+        order_id=make_order(db, author, store).id,
+        author_id=author.id,
+        reason="danificado",
+        description=TEXTO,
+        created_at=criada_em,
+    )
+    db.add(complaint)
+    db.commit()
+    return complaint
+
+
+def ids_da_lista(client, headers, **params) -> list[int]:
+    resposta = client.get(ADMIN_URL, headers=headers, params=params)
+    assert resposta.status_code == 200
+    return [entrada["order"]["id"] for entrada in resposta.json()["items"]]
+
+
+def test_lista_abre_pela_reclamacao_mais_recente(client, db_session, cenario):
+    """A recente é gravada primeiro, com `id` menor: quem decide é a data."""
+    agora = utcnow_naive()
+    recente = make_complaint(
+        db_session, cenario["compradora"], cenario["loja"], criada_em=agora
+    )
+    antiga = make_complaint(
+        db_session,
+        cenario["compradora"],
+        cenario["loja"],
+        criada_em=agora - timedelta(days=2),
+    )
+
+    assert ids_da_lista(client, cenario["como_admin"]) == [
+        recente.order_id,
+        antiga.order_id,
+    ]
+
+
+def test_paginas_seguem_da_mais_recente_para_a_mais_antiga(client, db_session, cenario):
+    agora = utcnow_naive()
+    antiga, meio, recente = (
+        make_complaint(
+            db_session,
+            cenario["compradora"],
+            cenario["loja"],
+            criada_em=agora - timedelta(days=dias),
+        )
+        for dias in (3, 2, 1)
+    )
+    como_admin = cenario["como_admin"]
+
+    assert ids_da_lista(client, como_admin, page=1, page_size=2) == [
+        recente.order_id,
+        meio.order_id,
+    ]
+    assert ids_da_lista(client, como_admin, page=2, page_size=2) == [antiga.order_id]
+
+
+def test_mesma_data_sai_em_ordem_estavel(client, db_session, cenario):
+    """Empate em `created_at` desempata pelo `id`, a maior primeiro: a ordem
+    não muda entre leituras e a paginação não repete nem pula ninguém."""
+    mesmo_instante = utcnow_naive()
+    primeira, segunda, terceira = (
+        make_complaint(
+            db_session,
+            cenario["compradora"],
+            cenario["loja"],
+            criada_em=mesmo_instante,
+        )
+        for _ in range(3)
+    )
+    como_admin = cenario["como_admin"]
+    esperado = [terceira.order_id, segunda.order_id, primeira.order_id]
+
+    assert ids_da_lista(client, como_admin) == esperado
+    assert ids_da_lista(client, como_admin) == esperado
+    paginado = ids_da_lista(client, como_admin, page=1, page_size=2) + ids_da_lista(
+        client, como_admin, page=2, page_size=2
+    )
+    assert paginado == esperado
+
+
 @pytest.mark.parametrize("quem", ["como_compradora", None])
 def test_so_a_administradora_lista(client, cenario, quem):
     headers = cenario[quem] if quem else {}

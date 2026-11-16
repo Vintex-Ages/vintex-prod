@@ -336,6 +336,29 @@ describe('orderService (mock)', () => {
     });
   });
 
+  // #410: o `reportService` acha o Pedido de exemplo sem ler o array inteiro.
+  describe('findExampleOrder', () => {
+    it('devolve o Pedido de exemplo pelo id', () => {
+      const example = orderService.findExampleOrder('example-confirmado');
+
+      expect(example).toMatchObject({
+        id: 'example-confirmado',
+        status: 'confirmado',
+        store: { id: '7', name: 'Ateliê Reviver' },
+      });
+    });
+
+    it('devolve undefined para id desconhecido ou de Pedido real', async () => {
+      const real = await orderService.createOrder(USER_ID, {
+        productIds: ['1'],
+        deliveryAddress: ADDRESS,
+      });
+
+      expect(orderService.findExampleOrder('nao-existe')).toBeUndefined();
+      expect(orderService.findExampleOrder(real.id)).toBeUndefined();
+    });
+  });
+
   describe('getDeliveryAddressDefault', () => {
     it('sem pedido nenhum, devolve null', async () => {
       const address = await orderService.getDeliveryAddressDefault(USER_ID);

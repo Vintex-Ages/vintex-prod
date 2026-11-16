@@ -12,6 +12,7 @@ import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { listReceipts } from '@/services/adminReceiptService';
 import { listReports } from '@/services/reportService';
+import { listSuspended } from '@/services/adminModerationService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -40,6 +41,11 @@ vi.mock('@/services/reportService', async (importOriginal) => ({
   listReports: vi.fn(),
 }));
 
+vi.mock('@/services/adminModerationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminModerationService')>()),
+  listSuspended: vi.fn(),
+}));
+
 const STORE: StoreProfile = {
   id: 'store-1',
   name: 'Brechó da Ana',
@@ -58,6 +64,9 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
   vi.mocked(listReports)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+  vi.mocked(listSuspended)
     .mockReset()
     .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
 });
@@ -131,8 +140,8 @@ const NEW_ADMIN_ROUTES = [
   { key: 'adminReports', path: '/admin/reports', label: 'Reclamações' },
 ] as const;
 
-/** As que ainda são placeholder: Reclamações já tem tela (FE-US025-2, #427). */
-const PLACEHOLDER_ADMIN_ROUTES = NEW_ADMIN_ROUTES.filter(({ key }) => key !== 'adminReports');
+/** #414: só Dashboard permanece placeholder; preserva seu teste integral. */
+const PLACEHOLDER_ADMIN_ROUTES = NEW_ADMIN_ROUTES.filter(({ key }) => key === 'adminDashboard');
 
 function LocationProbe() {
   const location = useLocation();
@@ -214,6 +223,61 @@ describe('<AppRoutes />', () => {
       },
     );
 
+    it('#414: admin abre a lista de Suspensas no lugar do placeholder', async () => {
+      renderAtWithAuth(
+        paths.adminModeration,
+        makeAuthValue({ isAuthenticated: true, user: ADMIN }),
+      );
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Anúncios suspensos' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/ainda não (?:foi|está) implementad[ao]/i)).not.toBeInTheDocument();
+      expect(await screen.findByText(/nenhum anúncio suspenso/i)).toBeInTheDocument();
+      expect(screen.getByTestId('route-path')).toHaveTextContent(paths.adminModeration);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+      const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+      expect(nav.getAllByRole('link')).toHaveLength(4);
+      expect(nav.getAllByRole('link', { current: 'page' })).toHaveLength(1);
+      expect(nav.getByRole('link', { name: 'Anúncios suspensos' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(listSuspended).toHaveBeenCalledExactlyOnceWith({ page: 1, pageSize: 20 });
+      expect(listReceipts).not.toHaveBeenCalled();
+      expect(listReports).not.toHaveBeenCalled();
+    });
+
+    it('#414: rota consome os dados de listSuspended sem consultar outras filas', async () => {
+      vi.mocked(listSuspended).mockResolvedValue({
+        items: [
+          {
+            id: '41401',
+            name: 'Jaqueta suspensa do teste',
+            price: 90,
+            status: 'despublicado',
+            coverImageUrl: null,
+            store: { id: '414-store', name: 'Brechó Aurora' },
+            moderationReason: 'Fotos divergentes.',
+            moderatedAt: '2026-11-14T12:00:00Z',
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+      });
+      renderAtWithAuth(
+        paths.adminModeration,
+        makeAuthValue({ isAuthenticated: true, user: ADMIN }),
+      );
+      expect(await screen.findByText('Jaqueta suspensa do teste')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Restaurar anúncio' })).toBeEnabled();
+      expect(listSuspended).toHaveBeenCalledTimes(1);
+      expect(listReceipts).not.toHaveBeenCalled();
+      expect(listReports).not.toHaveBeenCalled();
+    });
+
     // #427: Reclamações deixou de ser placeholder.
     it('admin em /admin/reports vê a lista de Reclamações, com cabeçalho próprio e sem rodapé', async () => {
       renderAtWithAuth(paths.adminReports, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
@@ -250,6 +314,7 @@ describe('<AppRoutes />', () => {
       expect(listReceipts).not.toHaveBeenCalled();
       // RN-78: quem não é admin nem dispara a consulta das Reclamações.
       expect(listReports).not.toHaveBeenCalled();
+      expect(listSuspended).not.toHaveBeenCalled();
     });
 
     it.each(NEW_ADMIN_ROUTES)(
@@ -266,6 +331,7 @@ describe('<AppRoutes />', () => {
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
         expect(listReports).not.toHaveBeenCalled();
+        expect(listSuspended).not.toHaveBeenCalled();
       },
     );
 
@@ -285,6 +351,7 @@ describe('<AppRoutes />', () => {
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
         expect(listReports).not.toHaveBeenCalled();
+        expect(listSuspended).not.toHaveBeenCalled();
       },
     );
 
@@ -310,6 +377,11 @@ describe('<AppRoutes />', () => {
           'page',
         );
         expect(listReceipts).toHaveBeenCalledTimes(receiptCalls);
+        if (path === paths.adminModeration) {
+          await waitFor(() =>
+            expect(listSuspended).toHaveBeenCalledWith({ page: 1, pageSize: 20 }),
+          );
+        }
       }
 
       await user.click(

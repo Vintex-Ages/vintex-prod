@@ -21,6 +21,7 @@ type HeaderNotificationsValue = {
   pendingIds: string[];
   markingAll: boolean;
   retry: () => void;
+  refresh: () => void;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 };
@@ -40,6 +41,7 @@ const notificationSource = vi.hoisted(() => {
     pendingIds: [],
     markingAll: false,
     retry: vi.fn(),
+    refresh: vi.fn(),
     markAsRead,
     markAllAsRead,
   };
