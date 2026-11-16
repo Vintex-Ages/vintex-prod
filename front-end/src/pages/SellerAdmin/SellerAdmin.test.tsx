@@ -827,4 +827,119 @@ describe('<SellerAdmin />', () => {
       expect(card.getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
     });
   });
+
+  describe('peça Suspensa pela moderação (FE-US034-2, #433)', () => {
+    const MOTIVO = 'Fotos não correspondem à peça.';
+    const MSG_SUSPENSA =
+      'A peça foi suspensa pela moderação e só a administradora pode devolvê-la à vitrine.';
+    const ATIVA = peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' });
+    const PAUSADA = peca({ id: '2', name: 'Bolsa palha', status: 'despublicado' });
+    const SUSPENSA = peca({
+      id: '5',
+      name: 'Camisa xadrez',
+      status: 'despublicado',
+      moderationReason: MOTIVO,
+      moderatedAt: '2026-11-14T15:00:00.000Z',
+    });
+
+    function linha(nome: string) {
+      return screen.getByText(nome).closest('article') as HTMLElement;
+    }
+
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina([ATIVA, PAUSADA, SUSPENSA]));
+      vi.mocked(publish).mockResolvedValue({} as never);
+      vi.mocked(unpublish).mockResolvedValue({} as never);
+    });
+
+    it('na aba Pausadas, a Suspensa tem selo e motivo, sem Republicar; a Pausada republica', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Camisa xadrez');
+
+      // A contagem dos chips não muda: as duas são `despublicado`.
+      await user.click(screen.getByRole('button', { name: 'Pausadas (2)' }));
+
+      const suspensa = within(linha('Camisa xadrez'));
+      expect(suspensa.getByText('Suspensa')).toBeInTheDocument();
+      expect(suspensa.queryByText('Pausada')).toBeNull();
+      expect(suspensa.getByText(MOTIVO)).toBeInTheDocument();
+      expect(suspensa.queryByRole('button', { name: 'Republicar' })).toBeNull();
+      expect(suspensa.queryByRole('button', { name: /publicar/i })).toBeNull();
+
+      const pausada = within(linha('Bolsa palha'));
+      expect(pausada.getByText('Pausada')).toBeInTheDocument();
+      expect(pausada.queryByText('Suspensa')).toBeNull();
+      expect(pausada.getByRole('button', { name: 'Republicar' })).toBeInTheDocument();
+    });
+
+    it('a Suspensa mantém "Editar anúncio", que leva ao formulário', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Camisa xadrez');
+
+      const editar = within(linha('Camisa xadrez')).getByRole('button', { name: 'Editar anúncio' });
+      expect(editar).toBeEnabled();
+      await user.click(editar);
+
+      expect(
+        await screen.findByRole('heading', { name: 'Formulário da peça' }),
+      ).toBeInTheDocument();
+    });
+
+    it('a Pausada pelo vendedor continua republicando normalmente', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(publish).toHaveBeenCalledWith('2');
+      expect(await screen.findByText('Anúncio publicado de novo')).toBeInTheDocument();
+      expect(within(linha('Bolsa palha')).getByText('Anunciada')).toBeInTheDocument();
+    });
+
+    it('se o back recusa publicar (PRODUCT_SUSPENDED), a tela mostra a mensagem dele', async () => {
+      const user = userEvent.setup();
+      // A peça parecia Pausada na lista, mas a administradora suspendeu antes do clique.
+      vi.mocked(publish).mockRejectedValue(
+        new SellerProductError('PRODUCT_SUSPENDED', MSG_SUSPENSA),
+      );
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(await screen.findByText(MSG_SUSPENSA)).toBeInTheDocument();
+      expect(within(linha('Bolsa palha')).getByText('Pausada')).toBeInTheDocument();
+      expect(screen.queryByText('Anúncio publicado de novo')).toBeNull();
+    });
+
+    it('outro erro do back ao republicar também mostra a mensagem dele', async () => {
+      const user = userEvent.setup();
+      vi.mocked(publish).mockRejectedValue(
+        new SellerProductError('PRODUCT_NOT_EDITABLE', 'Peça num pedido aberto não pode voltar.'),
+      );
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(
+        await screen.findByText('Peça num pedido aberto não pode voltar.'),
+      ).toBeInTheDocument();
+    });
+
+    it('"Pausar" continua igual na peça anunciada', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Jaqueta jeans');
+
+      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Pausar' }));
+
+      expect(unpublish).toHaveBeenCalledWith('1');
+      expect(await screen.findByText('Anúncio pausado')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pausadas (3)' })).toBeInTheDocument();
+    });
+  });
 });
