@@ -16,7 +16,7 @@ Uma peça é única (RN-46): `quantity` é sempre 1, e a situação diz se ela e
 | `ativo` | publicada e à venda | todo mundo: feed, busca, detalhe, carrinho |
 | `reservado` | num pedido aberto, esperando o comprovante ([#243](https://github.com/Vintex-Ages/back-end/issues/243)) | detalhe público, sinalizada (RN-44); fora do feed e da busca |
 | `vendido` | pedido confirmado pela administradora | detalhe público, com selo de vendida; fora do feed e da busca |
-| `despublicado` | tirada da vitrine pelo vendedor (RN-52) | só o vendedor; o detalhe público responde 404 |
+| `despublicado` | tirada da vitrine pelo vendedor, a **Pausada** (RN-52), ou pela administradora, a **Suspensa** ([Moderação de anúncios](./moderacao-de-anuncios)) | o vendedor (e a administradora, na lista de Suspensas); o detalhe público responde 404 |
 
 A busca do catálogo e a [busca por semelhança](./busca-por-semelhanca) (chat, recomendação, foto) mostram só peça `ativo`, montadas pelas mesmas condições (`_condicoes_do_catalogo`).
 
@@ -30,6 +30,8 @@ O detalhe público (`GET /api/products/{id}`) declara o que é público, e não 
 | `rascunho → apagado` | vendedor descarta: `DELETE /users/me/products/{id}`, que apaga a peça e as fotos dela ([#271](https://github.com/Vintex-Ages/back-end/issues/271)) |
 | `despublicado → ativo` | vendedor republica, pela mesma rota |
 | `ativo → despublicado` | vendedor despublica: `POST /users/me/products/{id}/unpublish` |
+| `ativo → despublicado` (Suspensa) | a administradora suspende, com motivo: `POST /admin/products/{id}/unpublish` ([Moderação de anúncios](./moderacao-de-anuncios)) |
+| `despublicado` (Suspensa) → `ativo` ou `despublicado` | a administradora devolve: `POST /admin/products/{id}/publish`, ao estado de onde a suspensão a tirou |
 | `ativo → reservado` | comprador cria o pedido ([#247](https://github.com/Vintex-Ages/back-end/issues/247)) |
 | `reservado → ativo` | o pedido expira sem comprovante **enviado** ([#280](https://github.com/Vintex-Ages/back-end/issues/280)) |
 | `reservado → vendido` | a administradora aprova o comprovante, e grava `sold_at` ([#251](https://github.com/Vintex-Ages/back-end/issues/251)); ver [Validação do comprovante](./validacao-de-comprovante) |
@@ -39,6 +41,8 @@ O detalhe público (`GET /api/products/{id}`) declara o que é público, e não 
 - **Descartar rascunho é apagar** ([#271](https://github.com/Vintex-Ages/back-end/issues/271)): a peça e as fotos saem do banco. A RN-52, que manda despublicar sem apagar o histórico, vale para o anúncio que já esteve no ar — rascunho nunca foi público e não tem histórico a preservar. Peça em outra situação responde `409 PRODUCT_NOT_EDITABLE` (`PRODUCT_SOLD`, se vendida).
 - As três transições do pedido (`reserve`, `release_for_orders`, `sell_for_order` no repository) são `UPDATE` condicionais: conferem a situação de origem no próprio `WHERE`. Duas compras da mesma peça ao mesmo tempo, só a primeira encontra `ativo`.
 - O resumo financeiro do vendedor conta as peças `vendido` pelo `sold_at` (RN-95). É a aprovação do comprovante, e não o checkout, que faz a peça entrar nele.
+
+- **Pausada e Suspensa são o mesmo status e coisas diferentes.** As duas são `despublicado`, mas a Suspensa tem `moderation_reason` preenchido. O vendedor republica a Pausada pelo `publish`; a Suspensa responde `409 PRODUCT_SUSPENDED` até a administradora devolver ([RN-80](./moderacao-de-anuncios)).
 
 ## A capa na lista do vendedor
 
@@ -58,3 +62,21 @@ O feed público (`GET /api/products`) filtra por `store_id`, `city` e `state`, a
 - **Loja inexistente responde `404 STORE_NOT_FOUND`**, e não cai nas alternativas: é referência errada, não busca sem resultado. `store_id` precisa ser maior que zero.
 - Antes, o front já mandava cidade e estado e a API descartava os dois sem reclamar, então filtrar por Porto Alegre devolvia o catálogo inteiro.
 - A busca por foto aceita `city` e `state`, mas não `store_id` ([Busca por foto](./busca-por-foto)).
+
+## Filtros com mais de um valor
+
+Tamanho, marca, conservação e cor aceitam mais de um valor ([#351](https://github.com/Vintex-Ages/back-end/issues/351)): `GET /api/products?size=M&size=G` devolve as peças M **ou** G. Antes, o back declarava os quatro como texto único, e com o parâmetro repetido o FastAPI entregava só o último: o front marcava dois tamanhos e a tela mostrava apenas G, sem aviso.
+
+- **Valores do mesmo filtro somam por OU; filtros diferentes combinam por E.** Tamanho M ou G, e marca X, é `(M ou G) e X`. A comparação é `IN`, com a mesma normalização de caixa e acento de antes, aplicada a cada valor da lista (RN-41).
+- **Vale nas duas entradas que montam `ProductFilters`**: a query do feed e o formulário da [busca por foto](./busca-por-foto), que repete o campo no `multipart`.
+- **Dentro do modelo o valor é sempre lista** (`FiltroMultivalor`). Valor único continua entrando como texto, que é o caminho da [sugestão de preço](./sugestao-de-preco), e `applied_filters` ecoa texto quando o valor é um só e lista quando são vários: quem manda `size=M` recebe a mesma resposta de antes.
+- **Só a leitura do catálogo aceita lista.** A leitura da pergunta do chat (`InterpretacaoDaPergunta`) tipa cada atributo como texto único, então nenhuma requisição de chat produz lista hoje. A frase de alternativa do chat ([RN-61](./conversa-com-a-vintex)) junta valores com "ou" só para o modelo compartilhado não imprimir `tamanho ['M', 'G']`.
+
+## O que a peça traz na listagem
+
+Todo item de listagem (`ProductFeedItemResponse`) devolve `id`, `name`, `price`, `category`, `size`, `condition`, `cover_image_url`, `store` e `status` ([#352](https://github.com/Vintex-Ages/back-end/issues/352)). Categoria, tamanho e conservação entraram porque o cartão do catálogo os desenha: sem eles, o front buscava o detalhe de cada peça da página para completar, e abrir a home eram 1 + 20 requisições, o N+1 recriado no cliente.
+
+- **A projeção e a resposta são as mesmas de toda listagem de peça** (`_feed_select`, `ProductFeedRow`), então os três campos saem no feed, nos favoritos, na recomendação, na busca por foto e nas peças que o chat devolve, **sem consulta nova e sem junção nova**.
+- **São anuláveis e sem valor padrão**, como `cover_image_url`: entram no `required` do contrato, e quem lê a resposta tem um vazio só, o `null`, em vez de "chave ausente ou nula".
+- A RN-39 declara o feed com foto, título, preço e loja, e a VS-008 não pede mais que isso. Os três campos são atributos da peça pela RN-49, e estão na resposta porque o cartão os desenha.
+- **`applied_filters.store_id` sai inteiro** (`7`, e não `7.0`): o `int` caía no `float` da união do dicionário. Foi um conserto anterior a esta mudança, no mesmo arquivo.

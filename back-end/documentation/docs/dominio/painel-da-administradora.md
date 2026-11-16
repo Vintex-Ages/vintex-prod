@@ -53,4 +53,4 @@ Uma rota só, sob a guarda de papel que o router de `/api/admin` aplica a todas 
 
 O caminho e os nomes dos campos são os que o front propôs ([`front-end#431`](https://github.com/Vintex-Ages/front-end/issues/431)). A #269 fixou a origem de cada número, não o formato da resposta; o service do front foi escrito contra este formato (`front-end/src/services/dashboardService.ts`) e é este schema que o fixa.
 
-Ver também [Validação do comprovante](./validacao-de-comprovante), que grava o `confirmado` de onde os números saem.
+Ver também [Validação do comprovante](./validacao-de-comprovante), que grava o `confirmado` de onde os números saem. As outras áreas da administradora são a [Moderação de anúncios](./moderacao-de-anuncios) (tirar do ar e devolver à vitrine) e a lista de [Reclamações do pedido](./reclamacao-do-pedido).

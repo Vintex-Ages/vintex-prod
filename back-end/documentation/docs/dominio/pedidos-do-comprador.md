@@ -52,3 +52,7 @@ Depois de `confirmado`, **as etapas seguintes são derivadas na leitura**. Não 
 | `concluido` | aprovação + 3 dias |
 
 O `status` da lista e do detalhe é a última etapa já atingida, e o `history` do detalhe inclui as derivadas com a data. Os intervalos ficam em `_ETAPAS_SIMULADAS`, no `order_controller`. Um dia entre etapas é o mesmo ritmo do mock do front; o texto da RN-81 e da RN-83 não fixa o intervalo, e trocá-lo é mudar só essa tupla.
+
+## Problema com o pedido
+
+Depois da confirmação, o comprador pode reportar que o pedido não chegou ou chegou danificado: `POST /api/users/me/orders/{id}/complaints`. A reclamação vai só para a administradora (RN-78). Ver [Reclamação do pedido](./reclamacao-do-pedido).

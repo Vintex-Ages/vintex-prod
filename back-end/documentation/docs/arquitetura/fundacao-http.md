@@ -40,7 +40,7 @@ Fonte de verdade: [`ADR 0002`](https://github.com/Vintex-Ages/back-end/blob/deve
 | `optional_user` | todo mundo; devolve `None` para visitante | — | — |
 
 - **O papel vem do banco, nunca da claim do token.** O `is_admin` do JWT é informativo: um token emitido antes de o papel ser retirado não continua valendo como admin.
-- **Rotas de administração ficam em `app/views/admin_routes.py`, sob `/api/admin`, com a guarda no próprio router.** Rota nova ali nasce exigindo o papel; esquecer o `Depends` não abre a rota. `tests/test_admin_guard.py` confere no app real que toda rota sob `/api/admin` responde 401 sem sessão e 403 para comprador.
+- **Rotas de administração ficam em `app/views/admin_routes.py` e, a moderação de anúncios, em `app/views/admin_moderation_routes.py`, sob `/api/admin`, com a guarda no próprio router.** Rota nova ali nasce exigindo o papel; esquecer o `Depends` não abre a rota. `tests/test_admin_guard.py` confere no app real que toda rota sob `/api/admin` responde 401 sem sessão e 403 para comprador.
 - **`ADMIN_REQUIRED` é código próprio**, e não o `FORBIDDEN` genérico, para o front distinguir "sem papel de administradora" de "sem acesso a este recurso" ([#61](https://github.com/Vintex-Ages/back-end/issues/61)).
 
 A conta da administradora vem do seed (`python -m app.seeds.admin`): ver a seção *Conta da administradora* do README. Em produção a senha vem de `SEED_ADMIN_PASSWORD`, e o seed recusa rodar sem ela.
