@@ -15,7 +15,7 @@ import {
 } from '@/hooks/useSellerProducts';
 import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
 import { paths, sellerProductPath } from '@/routes/paths';
-import { SellerProductError } from '@/services/sellerProductService';
+import { isSuspended, SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 import FinancialSummary from './FinancialSummary';
 import SellerDrafts from './SellerDrafts';
@@ -47,7 +47,9 @@ function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
  *
  * Ações por linha (FE-US019-2, #221), decididas pelo valor do status:
  * - `ativo` → Editar anúncio · Pausar (sai da vitrine, fica no histórico — RN-52)
- * - `despublicado` → Editar anúncio · Republicar (`publish`)
+ * - `despublicado` → Editar anúncio · Republicar (`publish`); a Suspensa pela
+ *   administradora (#433, `isSuspended`) só tem Editar anúncio, com selo e motivo
+ *   na linha, e um republicar recusado mostra a mensagem do back
  * - `vendido` → Editar anúncio desabilitado com o motivo (RN-53), sem pausar
  *
  * Pausar confirma com um Toast que oferece "Desfazer" (republica). A linha muda
@@ -71,6 +73,21 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Republicar recusado pelo back (ex.: `PRODUCT_SUSPENDED`, #433): mostra a
+ * mensagem dele. `INTERNAL_ERROR` é o código do service sem envelope do back,
+ * com mensagem técnica, e fica com o texto genérico.
+ */
+function republishErrorMessage(error: unknown): string {
+  if (error instanceof SellerProductError && error.code === 'PRODUCT_SOLD') {
+    return errorMessage(error, '');
+  }
+  if (error instanceof SellerProductError && error.code !== 'INTERNAL_ERROR') {
+    return error.message;
+  }
+  return 'Não foi possível republicar a peça agora.';
+}
+
 function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource }) {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -87,7 +104,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
       await republishProduct(product.id);
       toast('Anúncio publicado de novo', { kind: 'success' });
     } catch (error) {
-      toast(errorMessage(error, 'Não foi possível republicar a peça agora.'), { kind: 'error' });
+      toast(republishErrorMessage(error), { kind: 'error' });
     }
   }
 
@@ -122,6 +139,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
           },
         ];
       case 'despublicado':
+        // Suspensa (#433): corrigir não devolve à vitrine; só a administradora devolve.
+        if (isSuspended(product)) return [editar];
         return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
       case 'vendido':
         return [{ ...editar, disabled: true, disabledReason: SOLD_REASON }];

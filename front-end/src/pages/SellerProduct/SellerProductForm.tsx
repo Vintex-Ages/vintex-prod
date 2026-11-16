@@ -40,6 +40,11 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
  * com o aviso de etiqueta processada; ilegível, nenhum dos dois é preenchido e
  * o motivo aparece junto dos outros avisos da IA (RN-59).
  *
+ * Abaixo da etiqueta fica o "Vídeo curto (opcional)" (FE-US020-1, #415): um
+ * vídeo de 3 a 5 segundos, em MP4 ou MOV, que sobe na hora com `kind: 'video'`.
+ * Recusado pelo back, a mensagem dele aparece no próprio campo. Ele não
+ * substitui a foto (RN-47) e não vai para a IA.
+ *
  * Junto do preço fica o "Sugerir preço" (FE-US018-1, #326): a faixa só é
  * pedida no clique (RN-67), "Usar R$ X" preenche o preço e o alerta de preço
  * fora da faixa não bloqueia nada (RN-68). O estado vem do hook, porque a
@@ -59,6 +64,7 @@ import type { ListingSuggestionField } from '@/types/vintex-ai';
 /** Elemento que recebe o foco em cada seção, pelo `id` que o formulário usa. */
 const ALVO_POR_SECAO: Record<SecaoCadastro, string> = {
   fotos: 'secao-fotos',
+  video: 'secao-video',
   dados: 'titulo',
   descricao: 'descricao',
   preco: 'preco',
@@ -100,6 +106,8 @@ export default function SellerProductForm() {
     applyPriceSuggestion,
     setField,
     setMedia,
+    setVideo,
+    videoUploadError,
     setLabelMedia,
     saveDraft,
   } = useProductFlow();
@@ -173,17 +181,34 @@ export default function SellerProductForm() {
             />
           </div>
 
-          {/* Fora da galeria pública: a etiqueta só alimenta a IA (#331). */}
-          <MediaUploader
-            id="etiqueta"
-            label="Foto da etiqueta (opcional)"
-            value={labelMedia}
-            onChange={setLabelMedia}
-            single
-            accept="image/jpeg,image/png,image/webp,image/heic"
-            helperText="Não aparece no anúncio. A Vintex lê marca e composição."
-            disabled={saving}
-          />
+          <div className="flex flex-col gap-6">
+            {/* Fora da galeria pública: a etiqueta só alimenta a IA (#331). */}
+            <MediaUploader
+              id="etiqueta"
+              label="Foto da etiqueta (opcional)"
+              value={labelMedia}
+              onChange={setLabelMedia}
+              single
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              helperText="Não aparece no anúncio. A Vintex lê marca e composição."
+              disabled={saving}
+            />
+
+            {/* Vídeo curto (#415): opcional e não substitui a foto (RN-47). */}
+            <div id="secao-video">
+              <MediaUploader
+                id="video"
+                label="Vídeo curto (opcional)"
+                value={values.video}
+                onChange={setVideo}
+                single
+                accept="video/mp4,video/quicktime"
+                helperText="Um vídeo de 3 a 5 segundos, em MP4 ou MOV. Não substitui as fotos."
+                error={errors.video ?? videoUploadError ?? undefined}
+                disabled={saving}
+              />
+            </div>
+          </div>
         </div>
 
         {labelRead ? (
@@ -358,6 +383,7 @@ export default function SellerProductForm() {
           submitCount={tentativas}
           items={[
             { id: 'secao-fotos', message: errors.media },
+            { id: 'secao-video', message: errors.video },
             { id: 'titulo', message: errors.name },
             { id: 'categoria', message: errors.category },
             { id: 'tamanho', message: errors.size },

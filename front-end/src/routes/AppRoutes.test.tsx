@@ -12,6 +12,8 @@ import { CartContext, type CartContextValue } from '@/context/useCart';
 import { getPreferences, getStyles, savePreferences } from '@/services/preferenceService';
 import { listReceipts } from '@/services/adminReceiptService';
 import { listReports } from '@/services/reportService';
+import { listSuspended } from '@/services/adminModerationService';
+import { getDashboard } from '@/services/dashboardService';
 import { getMyStore } from '@/services/storeService';
 import type { AuthUser } from '@/types/auth';
 import type { StoreProfile } from '@/types/store';
@@ -40,6 +42,16 @@ vi.mock('@/services/reportService', async (importOriginal) => ({
   listReports: vi.fn(),
 }));
 
+vi.mock('@/services/adminModerationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminModerationService')>()),
+  listSuspended: vi.fn(),
+}));
+
+vi.mock('@/services/dashboardService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/dashboardService')>()),
+  getDashboard: vi.fn(),
+}));
+
 const STORE: StoreProfile = {
   id: 'store-1',
   name: 'Brechó da Ana',
@@ -60,6 +72,17 @@ beforeEach(() => {
   vi.mocked(listReports)
     .mockReset()
     .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+  vi.mocked(listSuspended)
+    .mockReset()
+    .mockResolvedValue({ items: [], page: 1, pageSize: 20, total: 0 });
+  vi.mocked(getDashboard).mockReset().mockResolvedValue({
+    storesCount: 0,
+    usersCount: 0,
+    activeProductsCount: 0,
+    salesVolume: 0,
+    commissionTotal: 0,
+    salesByStore: [],
+  });
 });
 
 afterEach(cleanup);
@@ -131,9 +154,6 @@ const NEW_ADMIN_ROUTES = [
   { key: 'adminReports', path: '/admin/reports', label: 'Reclamações' },
 ] as const;
 
-/** As que ainda são placeholder: Reclamações já tem tela (FE-US025-2, #427). */
-const PLACEHOLDER_ADMIN_ROUTES = NEW_ADMIN_ROUTES.filter(({ key }) => key !== 'adminReports');
-
 function LocationProbe() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
@@ -186,33 +206,113 @@ describe('<AppRoutes />', () => {
       expect((paths as Readonly<Record<string, string>>)[key]).toBe(path);
     });
 
-    it.each(PLACEHOLDER_ADMIN_ROUTES)(
-      'admin acessa $path com placeholder, navegação e apenas um Header',
-      async ({ path, label }) => {
-        renderAtWithAuth(path, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+    // #413: o Painel geral deixou de ser placeholder.
+    it('admin em /admin/dashboard vê o painel geral, com navegação e apenas um Header', async () => {
+      renderAtWithAuth(paths.adminDashboard, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
 
-        expect(await screen.findByRole('heading', { level: 1, name: label })).toBeInTheDocument();
-        expect(
-          screen.getByText(/ainda não (?:foi|está) implementad[ao]|será implementad[ao]/i),
-        ).toBeInTheDocument();
-        expect(screen.getByTestId('route-path')).toHaveTextContent(path);
-        expect(screen.getAllByRole('banner')).toHaveLength(1);
-        expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
-        expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Painel geral' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/ainda não (?:foi|está) implementad[ao]/i)).not.toBeInTheDocument();
+      expect(
+        await screen.findByRole('region', { name: 'Números da plataforma' }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Vendas por loja' })).toBeInTheDocument();
+      expect(screen.getByTestId('route-path')).toHaveTextContent(paths.adminDashboard);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
 
-        const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
-        expect(nav.getAllByRole('link')).toHaveLength(4);
-        expect(nav.getByRole('link', { name: 'Comprovantes' })).toHaveAttribute(
-          'href',
-          paths.adminReceipts,
-        );
-        for (const route of NEW_ADMIN_ROUTES) {
-          expect(nav.getByRole('link', { name: route.label })).toHaveAttribute('href', route.path);
-        }
-        expect(listReceipts).not.toHaveBeenCalled();
-        expect(listReports).not.toHaveBeenCalled();
-      },
-    );
+      const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+      expect(nav.getAllByRole('link')).toHaveLength(4);
+      expect(nav.getByRole('link', { name: 'Comprovantes' })).toHaveAttribute(
+        'href',
+        paths.adminReceipts,
+      );
+      for (const route of NEW_ADMIN_ROUTES) {
+        expect(nav.getByRole('link', { name: route.label })).toHaveAttribute('href', route.path);
+      }
+      expect(nav.getByRole('link', { name: 'Painel geral' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(getDashboard).toHaveBeenCalledTimes(1);
+      expect(listReceipts).not.toHaveBeenCalled();
+      expect(listReports).not.toHaveBeenCalled();
+    });
+
+    it('#413: o link "Painel geral" da navegação admin leva a /admin/dashboard', async () => {
+      const user = userEvent.setup();
+      renderAtWithAuth(paths.adminReports, makeAuthValue({ isAuthenticated: true, user: ADMIN }));
+      await screen.findByRole('heading', { level: 1, name: 'Reclamações' });
+
+      await user.click(
+        within(screen.getByRole('navigation', { name: 'Área administrativa' })).getByRole('link', {
+          name: 'Painel geral',
+        }),
+      );
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Painel geral' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('route-path').textContent).toBe(paths.adminDashboard);
+      await waitFor(() => expect(getDashboard).toHaveBeenCalledTimes(1));
+    });
+
+    it('#414: admin abre a lista de Suspensas no lugar do placeholder', async () => {
+      renderAtWithAuth(
+        paths.adminModeration,
+        makeAuthValue({ isAuthenticated: true, user: ADMIN }),
+      );
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Anúncios suspensos' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/ainda não (?:foi|está) implementad[ao]/i)).not.toBeInTheDocument();
+      expect(await screen.findByText(/nenhum anúncio suspenso/i)).toBeInTheDocument();
+      expect(screen.getByTestId('route-path')).toHaveTextContent(paths.adminModeration);
+      expect(screen.getAllByRole('banner')).toHaveLength(1);
+      expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+      expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+      const nav = within(screen.getByRole('navigation', { name: 'Área administrativa' }));
+      expect(nav.getAllByRole('link')).toHaveLength(4);
+      expect(nav.getAllByRole('link', { current: 'page' })).toHaveLength(1);
+      expect(nav.getByRole('link', { name: 'Anúncios suspensos' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      expect(listSuspended).toHaveBeenCalledExactlyOnceWith({ page: 1, pageSize: 20 });
+      expect(listReceipts).not.toHaveBeenCalled();
+      expect(listReports).not.toHaveBeenCalled();
+    });
+
+    it('#414: rota consome os dados de listSuspended sem consultar outras filas', async () => {
+      vi.mocked(listSuspended).mockResolvedValue({
+        items: [
+          {
+            id: '41401',
+            name: 'Jaqueta suspensa do teste',
+            price: 90,
+            status: 'despublicado',
+            coverImageUrl: null,
+            store: { id: '414-store', name: 'Brechó Aurora' },
+            moderationReason: 'Fotos divergentes.',
+            moderatedAt: '2026-11-14T12:00:00Z',
+          },
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+      });
+      renderAtWithAuth(
+        paths.adminModeration,
+        makeAuthValue({ isAuthenticated: true, user: ADMIN }),
+      );
+      expect(await screen.findByText('Jaqueta suspensa do teste')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Restaurar anúncio' })).toBeEnabled();
+      expect(listSuspended).toHaveBeenCalledTimes(1);
+      expect(listReceipts).not.toHaveBeenCalled();
+      expect(listReports).not.toHaveBeenCalled();
+    });
 
     // #427: Reclamações deixou de ser placeholder.
     it('admin em /admin/reports vê a lista de Reclamações, com cabeçalho próprio e sem rodapé', async () => {
@@ -250,6 +350,8 @@ describe('<AppRoutes />', () => {
       expect(listReceipts).not.toHaveBeenCalled();
       // RN-78: quem não é admin nem dispara a consulta das Reclamações.
       expect(listReports).not.toHaveBeenCalled();
+      expect(listSuspended).not.toHaveBeenCalled();
+      expect(getDashboard).not.toHaveBeenCalled();
     });
 
     it.each(NEW_ADMIN_ROUTES)(
@@ -266,6 +368,8 @@ describe('<AppRoutes />', () => {
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
         expect(listReports).not.toHaveBeenCalled();
+        expect(listSuspended).not.toHaveBeenCalled();
+        expect(getDashboard).not.toHaveBeenCalled();
       },
     );
 
@@ -285,6 +389,8 @@ describe('<AppRoutes />', () => {
         ).not.toBeInTheDocument();
         expect(listReceipts).not.toHaveBeenCalled();
         expect(listReports).not.toHaveBeenCalled();
+        expect(listSuspended).not.toHaveBeenCalled();
+        expect(getDashboard).not.toHaveBeenCalled();
       },
     );
 
@@ -310,6 +416,11 @@ describe('<AppRoutes />', () => {
           'page',
         );
         expect(listReceipts).toHaveBeenCalledTimes(receiptCalls);
+        if (path === paths.adminModeration) {
+          await waitFor(() =>
+            expect(listSuspended).toHaveBeenCalledWith({ page: 1, pageSize: 20 }),
+          );
+        }
       }
 
       await user.click(

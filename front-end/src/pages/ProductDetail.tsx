@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import SuspendProductAction from '@/components/admin/SuspendProductAction';
 import Avatar from '@/components/common/Avatar';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
@@ -134,7 +135,7 @@ function CartIcon() {
 function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading: authLoading, user } = useAuth();
   const { cart, loading: cartLoading, error: cartError, add } = useCart();
   const { ids: favoriteIds, setFavorite } = useFavorites();
   const { toast } = useToast();
@@ -197,7 +198,10 @@ function ProductDetail() {
   }, [loadedProductId]);
 
   const productId = product?.id ?? '';
-  const purchaseUnavailable = product?.status === 'reservado' || product?.status === 'vendido';
+  const purchaseUnavailable =
+    product?.status === 'reservado' ||
+    product?.status === 'vendido' ||
+    product?.status === 'despublicado';
   const isFavorite = productId !== '' && favoriteIds.has(productId);
 
   /**
@@ -465,6 +469,22 @@ function ProductDetail() {
               </p>
             </div>
           </div>
+
+          {!authLoading && isAuthenticated && user?.is_admin === true ? (
+            <SuspendProductAction
+              key={product.id}
+              productId={product.id}
+              status={product.status}
+              onSuspended={(result) => {
+                // O POST é parcial; conserva a ficha e só atualiza esta peça.
+                if (result.status === 'rascunho') return;
+                const nextStatus = result.status;
+                setProduct((current) =>
+                  current?.id === result.productId ? { ...current, status: nextStatus } : current,
+                );
+              }}
+            />
+          ) : null}
 
           <Link
             to={storeProfile(product.store.id)}
