@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     field_serializer,
@@ -24,14 +25,33 @@ ProductAIStatusValue = Literal[
 ]
 
 
+def _lista_de_filtro(valor: object) -> object:
+    """Por dentro, filtro de múltipla escolha é sempre lista (back-end#351).
+
+    Entra string de quem manda um valor só: a sugestão de preço monta
+    `ProductFilters(**valores)` com os campos do pedido. E entra lista de quem
+    manda o parâmetro repetido, que é como o front manda os filtros marcados
+    (`catalogService.ts`, `size=M&size=G`).
+    """
+    if isinstance(valor, str):
+        return [valor]
+    if isinstance(valor, list) and not valor:
+        return None
+    return valor
+
+
+FiltroMultivalor = Annotated[list[str] | None, BeforeValidator(_lista_de_filtro)]
+"""Filtro que a tela deixa marcar em mais de um valor (RN-40)."""
+
+
 class ProductFilters(BaseModel):
     category: str | None = None
     price_min: Decimal | None = Field(default=None, ge=0)
     price_max: Decimal | None = Field(default=None, ge=0)
-    size: str | None = None
-    brand: str | None = None
-    condition: str | None = None
-    color: str | None = None
+    size: FiltroMultivalor = None
+    brand: FiltroMultivalor = None
+    condition: FiltroMultivalor = None
+    color: FiltroMultivalor = None
     store_id: int | None = Field(default=None, gt=0)
     city: str | None = None
     state: str | None = None
@@ -46,19 +66,29 @@ class ProductFilters(BaseModel):
             raise ValueError("price_min deve ser menor ou igual a price_max")
         return self
 
-    def applied(self) -> dict[str, str | float | int]:
+    def applied(self) -> dict[str, str | float | int | list[str]]:
         """Os filtros que de fato entraram, para a resposta ecoar.
 
         `Decimal` dentro de dict nao passa por `field_serializer`: sairia como
         string ao lado de um `price` numerico, na mesma resposta. Era a ultima
         ponta da `#212` -- `GET /api/products?price_min=100.50` devolvia
         `"price": 246.7` e `"price_min": "100.50"` no mesmo JSON.
+
+        Filtro de múltipla escolha com um valor só ecoa string, e não lista de
+        um elemento: quem manda `size=M` recebe o mesmo `applied_filters` de
+        antes da `#351`.
         """
-        return {
-            key: float(value) if isinstance(value, Decimal) else value
-            for key, value in self.model_dump().items()
-            if value is not None
-        }
+        aplicados: dict[str, str | float | int | list[str]] = {}
+        for key, value in self.model_dump().items():
+            if value is None:
+                continue
+            if isinstance(value, Decimal):
+                aplicados[key] = float(value)
+            elif isinstance(value, list):
+                aplicados[key] = value[0] if len(value) == 1 else value
+            else:
+                aplicados[key] = value
+        return aplicados
 
 
 class FeedStoreResponse(BaseModel):
@@ -68,9 +98,26 @@ class FeedStoreResponse(BaseModel):
 
 
 class ProductFeedItemResponse(BaseModel):
+    """Uma peça em qualquer listagem: feed, favoritos, recomendação, busca por
+    foto e as peças que o chat devolve.
+
+    `category`, `size` e `condition` são o que o cartão do catálogo mostra
+    (back-end#352). A **RN-39** declara foto, título, preço e loja; estes três
+    são atributos da peça pela **RN-49**, e estão aqui porque sem eles o front
+    buscava o detalhe de cada peça da página só para desenhar o cartão.
+
+    Os três são anuláveis e **sem default**, como o `cover_image_url`: assim
+    entram no `required` do contrato, e quem lê a resposta tem um vazio só, o
+    `null`, em vez de "chave ausente ou nula". É o mesmo cuidado que a
+    `InterpretedPhotoResponse` toma com `""`.
+    """
+
     id: int
     name: str
     price: Decimal
+    category: str | None
+    size: str | None
+    condition: str | None
     cover_image_url: str | None
     store: FeedStoreResponse
     status: str
@@ -82,6 +129,9 @@ class ProductFeedItemResponse(BaseModel):
             id=row["id"],
             name=row["name"],
             price=row["price"],
+            category=row["category"],
+            size=row["size"],
+            condition=row["condition"],
             cover_image_url=row["cover_image_url"],
             status=row["status"],
             store=FeedStoreResponse(
@@ -156,7 +206,12 @@ class FeedResponse(BaseModel):
     page: int
     page_size: int
     total: int
-    applied_filters: dict[str, str | float] = Field(default_factory=dict)
+    # `int` na união para o `store_id` ecoar `7`, e não `7.0`: sem ele o
+    # inteiro era empurrado para float (back-end#352). O que conserta é ele
+    # estar na união, não a posição: medido nas duas ordens, no pydantic 2.14.
+    applied_filters: dict[str, str | int | float | list[str]] = Field(
+        default_factory=dict
+    )
     match_type: Literal["exact", "fallback"] = "exact"
     suggestions: SuggestionsResponse | None = None
 
@@ -173,6 +228,54 @@ class RecommendationsResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class CombinationStoreResponse(BaseModel):
+    id: int
+    name: str
+
+
+class CombinationItemResponse(BaseModel):
+    """Uma peça que combina com a peça aberta (back-end#328)."""
+
+    id: int
+    name: str
+    price: Decimal
+    category: str
+    cover_image_url: str | None
+    store: CombinationStoreResponse
+
+    @classmethod
+    def from_row(cls, row: ProductFeedRow) -> "CombinationItemResponse":
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            price=row["price"],
+            category=row["category"] or "",
+            cover_image_url=row["cover_image_url"],
+            store=CombinationStoreResponse(id=row["store_id"], name=row["store_name"]),
+        )
+
+    @field_serializer("price")
+    def serializar_preco(self, price: Decimal) -> float:
+        return float(price)
+
+
+class CombinationsResponse(BaseModel):
+    """`GET /api/products/{id}/combinations` (BE-US030-1, back-end#328).
+
+    `match_type` tem o sentido do feed e da conversa: `fallback` quando as
+    peças não vieram da semelhança, e sim do catálogo de outras categorias.
+    `total_amount` é a soma dos preços de `pieces`.
+    """
+
+    pieces: list[CombinationItemResponse]
+    match_type: Literal["exact", "fallback"]
+    total_amount: Decimal
+
+    @field_serializer("total_amount")
+    def serializar_total(self, total_amount: Decimal) -> float:
+        return float(total_amount)
 
 
 class ProductMediaResponse(BaseModel):

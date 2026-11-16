@@ -263,3 +263,25 @@ test('o comentário da raiz usa marcador próprio, diferente do portal do back-e
   assert.match(draft, /const marker = '<!-- documentation-draft-bot:root -->';/);
   assert.doesNotMatch(draft, /const marker = '<!-- documentation-draft-bot -->';/);
 });
+
+// --- Gerenciador de pacotes -----------------------------------------------
+// O repositório usa pnpm (como o front-end); o portal não pode voltar ao npm.
+
+test('o portal usa pnpm: packageManager, pnpm-lock.yaml e sem package-lock.json', () => {
+  const manifest = JSON.parse(readFileSync(join(root, 'documentation/package.json'), 'utf8'));
+
+  assert.match(manifest.packageManager, /^pnpm@\d+\.\d+\.\d+$/);
+  assert.ok(existsSync(join(root, 'documentation/pnpm-lock.yaml')), 'pnpm-lock.yaml');
+  assert.equal(existsSync(join(root, 'documentation/package-lock.json')), false);
+});
+
+test('o workflow do draft instala e builda com pnpm, sem npm', () => {
+  const draft = readFileSync(workflows.draft, 'utf8');
+
+  assert.match(draft, /pnpm\/action-setup@/);
+  assert.match(draft, /run: pnpm install --frozen-lockfile/);
+  assert.match(draft, /run: pnpm build/);
+  assert.match(draft, /cache-dependency-path: documentation\/pnpm-lock\.yaml/);
+  assert.doesNotMatch(draft, /\bnpm (ci|install|run)\b/);
+  assert.doesNotMatch(draft, /cache: npm/);
+});

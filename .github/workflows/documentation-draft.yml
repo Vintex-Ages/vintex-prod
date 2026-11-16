@@ -39,12 +39,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.28.4
+          run_install: false
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: documentation/package-lock.json
+          cache: pnpm
+          cache-dependency-path: documentation/pnpm-lock.yaml
 
       - name: Listar arquivos alterados no PR
         env:
@@ -61,13 +67,13 @@ jobs:
 
       - name: Instalar dependências do Docusaurus
         working-directory: documentation
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build do preview Docusaurus
         id: build
         working-directory: documentation
         continue-on-error: true
-        run: npm run build
+        run: pnpm build
 
       - name: Publicar preview como artifact
         if: steps.build.outcome == 'success'

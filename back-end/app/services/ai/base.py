@@ -5,9 +5,9 @@ por `AIProvider`. Trocar de fornecedor é implementar uma nova subclasse e
 apontar `AI_PROVIDER` (`app/config.py`) para ela — nenhuma feature muda.
 
 Só cobre os usos já confirmados por uma issue em andamento (análise de
-imagem para VS-014, busca conversacional para VS-027). Recomendação,
-sugestão de preço e personalidade entram na interface quando a issue
-correspondente definir o contrato de entrada/saída — declará-los antes
+imagem para VS-014, busca conversacional para VS-027, a fala da assistente
+para VS-028). Recomendação e sugestão de preço entram na interface quando a
+issue correspondente definir o contrato de entrada/saída — declará-los antes
 disso seria inventar um contrato sem consumidor.
 """
 
@@ -102,6 +102,48 @@ class InterpretedQuery(BaseModel):
     type: Literal["interpreted"] = "interpreted"
     filters: dict[str, str] = {}
     similarity: str | None = None
+    # back-end#231: não são filtro. `tipo` é um valor de `TIPOS_DE_PECA`, e
+    # `in_scope` é falso quando a pergunta não é sobre roupa, sapato ou
+    # acessório. Nulos quando o modelo não disse.
+    tipo: str | None = None
+    in_scope: bool | None = None
+
+
+class PecaParaComentar(BaseModel):
+    """Uma peça que a busca devolveu, como o modelo a vê (back-end#329).
+
+    Os atributos da RN-49 que a conversa pode citar, menos o preço: quem
+    escreve preço é o servidor. `name` e `description` são texto do vendedor e
+    chegam ao prompt delimitados (`personalidade.montar_pecas`).
+    """
+
+    product_id: int
+    name: str
+    description: str | None = None
+    category: str | None = None
+    color: str | None = None
+    size: str | None = None
+    brand: str | None = None
+    condition: str | None = None
+    city: str | None = None
+
+
+class ComentarioDaPeca(BaseModel):
+    """O que o modelo responde de uma peça: qual é, e o comentário dela."""
+
+    product_id: int
+    comentario: str
+
+
+class FalaDaVintex(BaseModel):
+    """A fala da assistente sobre as peças da busca (back-end#329).
+
+    Só comentário: nome, preço e a frase que abre a resposta são escritos pelo
+    servidor. Lista vazia é resposta legítima, de quando nenhuma peça da busca
+    merece comentário.
+    """
+
+    comentarios: list[ComentarioDaPeca] = []
 
 
 class SearchDone(BaseModel):
@@ -149,6 +191,25 @@ class AIProvider(ImageAnalysisProvider, ABC):
         `InterpretedQuery.filters`/`similarity` (RN-65 — a IA não inventa
         peça, preço ou loja).
         """
+
+    def comentar_pecas(
+        self,
+        pergunta: str,
+        pecas: Sequence[PecaParaComentar],
+        *,
+        alternativas: bool = False,
+    ) -> FalaDaVintex:
+        """Comenta as peças que a busca devolveu (back-end#329).
+
+        Segunda chamada ao modelo, depois da busca: na primeira, que lê a
+        pergunta, as peças ainda não existem. Devolve só comentário, amarrado
+        ao `product_id` — o texto quem monta é quem chama.
+
+        O padrão falha de propósito, como `analyze_image_bytes`: provedor que
+        não gera texto não tem fala, e a conversa volta à frase pronta. Nenhuma
+        tela depende desta chamada, então falhar aqui é degradar, não quebrar.
+        """
+        raise AIProviderError("Este provedor não comenta as peças da busca.")
 
     @abstractmethod
     def embed(self, texts: Sequence[str]) -> list[list[float]]:

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -5,9 +6,11 @@ import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import OrderCard from '@/components/orders/OrderCard';
 import { OrderCardSkeleton } from '@/components/orders/OrderCardSkeleton';
+import ReportProblemDialog from '@/components/orders/ReportProblemDialog';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import type { PaymentAction } from '@/hooks/useOrderDetail';
 import { orderDetailPath, orderPaymentPath, paths } from '@/routes/paths';
+import { canReportOrder } from '@/services/reportService';
 
 /**
  * "Meus pedidos" (FE-US023-1, #321; VS-023 "Lista consolidada"), em
@@ -21,8 +24,12 @@ import { orderDetailPath, orderPaymentPath, paths } from '@/routes/paths';
  * carregar, `ErrorState` com retry, `EmptyState` sem pedidos e "Carregar
  * mais" enquanto houver.
  *
- * Fica de fora: rastreio e "tempo médio" (RN-83/RN-21), "Avaliar loja" e
- * "Reportar problema" (Sprint 4).
+ * "Reportar problema" (#410) vai no `afterSaleActions.secondary` do cartão
+ * quando `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
+ * `ReportProblemDialog` sem sair da lista.
+ *
+ * Fica de fora: rastreio e "tempo médio" (RN-83/RN-21) e "Avaliar loja"
+ * (issue própria).
  *
  * Só apresentação: carga, paginação e qual ação cada Pedido tem vêm do
  * `useMyOrders`.
@@ -39,6 +46,7 @@ const ACTION_LABEL: Record<Exclude<PaymentAction, null>, string> = {
 export default function Orders() {
   const navigate = useNavigate();
   const { state, entries, hasMore, loadingMore, loadMoreError, loadMore, retry } = useMyOrders();
+  const [reportingId, setReportingId] = useState<string | null>(null);
 
   function content() {
     if (state.status === 'loading') return <OrderCardSkeleton />;
@@ -77,10 +85,30 @@ export default function Orders() {
                       }
                     : undefined
                 }
+                afterSaleActions={
+                  canReportOrder(order.status)
+                    ? {
+                        secondary: {
+                          label: 'Reportar problema',
+                          onClick: () => setReportingId(order.id),
+                        },
+                      }
+                    : undefined
+                }
               />
             </li>
           ))}
         </ul>
+
+        {/* `key`: cada Pedido abre o formulário vazio. */}
+        {reportingId ? (
+          <ReportProblemDialog
+            key={reportingId}
+            open
+            orderId={reportingId}
+            onClose={() => setReportingId(null)}
+          />
+        ) : null}
 
         {loadMoreError ? (
           <p role="alert" className="text-body-sm text-vermelho-escuro">

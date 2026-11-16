@@ -6,7 +6,13 @@ from functools import reduce
 from typing import TypedDict, cast
 
 from sqlalchemy import ScalarSelect, Select, case, func, literal, select, update
-from sqlalchemy.orm import Session, joinedload, selectinload, with_expression
+from sqlalchemy.orm import (
+    QueryableAttribute,
+    Session,
+    joinedload,
+    selectinload,
+    with_expression,
+)
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.pagination import Page, PageParams, paginate
@@ -39,11 +45,29 @@ class ProductFeedRow(TypedDict):
     id: int
     name: str
     price: Decimal
+    category: str | None
+    size: str | None
+    condition: str | None
     cover_image_url: str | None
     status: str
     store_id: int
     store_name: str
     store_verified: bool
+
+
+class ProductAtributosRow(TypedDict):
+    """Os atributos da peça que a RN-49 lista, fora os que a linha do feed já
+    traz (back-end#329). A cidade é a do endereço da loja."""
+
+    id: int
+    name: str
+    description: str | None
+    category: str | None
+    color: str | None
+    size: str | None
+    brand: str | None
+    condition: str | None
+    city: str | None
 
 
 class ProductSimilarRow(ProductFeedRow):
@@ -79,6 +103,12 @@ def _feed_select() -> Select[tuple[object, ...]]:
         Product.id,
         Product.name,
         Product.price,
+        Product.category,
+        # Tamanho e conservação são o que o cartão do catálogo mostra ao lado da
+        # categoria, e sem eles o front buscava o detalhe de cada peça da página
+        # (back-end#352).
+        Product.size,
+        Product.condition,
         _cover_image_url().label("cover_image_url"),
         Product.status,
         Store.id.label("store_id"),
@@ -107,7 +137,13 @@ class ProductRepository:
         )
 
     def get_active_feed(
-        self, params: PageParams, filters: ProductFilters, q: str | None = None
+        self,
+        params: PageParams,
+        filters: ProductFilters,
+        q: str | None = None,
+        *,
+        exclude_category: str | None = None,
+        exclude_product_id: int | None = None,
     ) -> tuple[list[ProductFeedRow], int]:
         stmt = (
             _feed_select()
@@ -115,7 +151,10 @@ class ProductRepository:
             # A localizacao e da loja. O outer join preserva lojas sem endereco
             # quando city/state nao foram informados.
             .outerjoin(Address, Store.address_id == Address.id)
-            .where(*self._condicoes_do_catalogo(filters))
+            .where(
+                *self._condicoes_do_catalogo(filters),
+                *self._exclusoes(exclude_category, exclude_product_id),
+            )
             .order_by(Product.created_at.desc(), Product.id.desc())
         )
 
@@ -136,7 +175,8 @@ class ProductRepository:
     def _condicoes_do_catalogo(
         self, filters: ProductFilters
     ) -> list[ColumnElement[bool]]:
-        """Peça ativa mais os filtros do catálogo, somados por E lógico.
+        """Peça ativa mais os filtros do catálogo: filtros diferentes somam
+        por E lógico, e os valores de um mesmo filtro por OU.
 
         Compartilhado pelo feed e pela busca por semelhança (back-end#246),
         para os dois filtrarem do mesmo jeito. Quem chama junta `Store` e,
@@ -154,19 +194,55 @@ class ProductRepository:
         }
         for field_name, column in filter_columns.items():
             value = getattr(filters, field_name)
-            if value is not None:
-                normalized_column = func.lower(column)
-                normalized_value = func.lower(value)
-                if self.db.get_bind().dialect.name == "postgresql":
-                    normalized_column = func.immutable_unaccent(normalized_column)
-                    normalized_value = func.immutable_unaccent(normalized_value)
-                conditions.append(normalized_column == normalized_value)
+            if value is None:
+                continue
+            # Tamanho, marca, conservação e cor chegam como lista: a tela deixa
+            # marcar mais de um valor, e os valores do mesmo filtro somam
+            # (back-end#351). Filtros diferentes seguem combinando por E, como
+            # a #87 estabeleceu.
+            valores = value if isinstance(value, list) else [value]
+            conditions.append(
+                self._normalizado(column).in_(
+                    [self._normalizado(valor) for valor in valores]
+                )
+            )
         if filters.price_min is not None:
             conditions.append(Product.price >= filters.price_min)
         if filters.price_max is not None:
             conditions.append(Product.price <= filters.price_max)
         if filters.store_id is not None:
             conditions.append(Store.id == filters.store_id)
+        return conditions
+
+    def _normalizado(
+        self, expr: QueryableAttribute[str | None] | str
+    ) -> ColumnElement[str]:
+        """Minúsculo e, no Postgres, sem acento (RN-41): "Calça" e "calca"
+        comparam iguais. O SQLite dos testes sem banco não tem `unaccent`."""
+        normalized = func.lower(expr)
+        if self.db.get_bind().dialect.name == "postgresql":
+            normalized = func.immutable_unaccent(normalized)
+        return normalized
+
+    def _exclusoes(
+        self, exclude_category: str | None, exclude_product_id: int | None
+    ) -> list[ColumnElement[bool]]:
+        """O que a combinação de peças tira da lista (back-end#328).
+
+        `exclude_category` deixa só peças **com** categoria e diferente dela,
+        comparada sem acento e sem caixa: peça sem categoria não pode ser
+        afirmada como "de outra categoria". `""` tira só as sem categoria.
+        `None` nos dois não tira nada, que é o caso do feed e da busca.
+        """
+        conditions: list[ColumnElement[bool]] = []
+        if exclude_category is not None:
+            conditions.append(Product.category.is_not(None))
+            conditions.append(
+                self._normalizado(Product.category)
+                != self._normalizado(exclude_category)
+            )
+        if exclude_product_id is not None:
+            conditions.append(Product.id != exclude_product_id)
         return conditions
 
     def list_for_seller(
@@ -240,6 +316,10 @@ class ProductRepository:
         embedding_model: str,
         params: PageParams,
         filters: ProductFilters | None = None,
+        *,
+        exclude_category: str | None = None,
+        exclude_product_id: int | None = None,
+        prefer_styles: Sequence[str] = (),
     ) -> tuple[list[ProductSimilarRow], int]:
         """Peças ativas mais próximas do vetor da busca, paginadas, e o total
         (BE-US027-3, back-end#149; paginação, filtros e distância na #246).
@@ -253,6 +333,13 @@ class ProductRepository:
           rotular. Não há limiar aqui dentro: uma busca sem nada parecido
           ainda devolve as mais próximas, e a lista não volta vazia enquanto
           houver catálogo (RN-61).
+        - **`exclude_category` e `exclude_product_id`** servem à combinação de
+          peças (back-end#328): a mesma semelhança, com a categoria da peça de
+          origem e ela mesma fora (`_exclusoes`).
+        - **`prefer_styles`** serve à recomendação (back-end#346): as peças
+          cujo `style` está na lista vêm antes das outras, e cada grupo segue
+          pela semelhança. Ninguém sai da lista: com menos peças do estilo que
+          a página, as outras completam.
 
         Nunca inventa peça: só o que já existe no catálogo real (RN-65).
         """
@@ -264,14 +351,20 @@ class ProductRepository:
             .outerjoin(Address, Store.address_id == Address.id)
             .where(
                 *self._condicoes_do_catalogo(filters or ProductFilters()),
+                *self._exclusoes(exclude_category, exclude_product_id),
                 Product.embedding.is_not(None),
                 Product.embedding_model == embedding_model,
             )
         )
         total = self.db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        estilo_primeiro = (
+            [case((Product.style.in_(list(prefer_styles)), 0), else_=1)]
+            if prefer_styles
+            else []
+        )
         rows = (
             self.db.execute(
-                stmt.order_by(distancia, Product.id)
+                stmt.order_by(*estilo_primeiro, distancia, Product.id)
                 .offset(params.offset)
                 .limit(params.limit)
             )
@@ -279,6 +372,48 @@ class ProductRepository:
             .all()
         )
         return [cast(ProductSimilarRow, dict(row)) for row in rows], total
+
+    def atributos_das_pecas(self, ids: Sequence[int]) -> list[ProductAtributosRow]:
+        """Os atributos da RN-49 das peças indicadas, na ordem em que vieram.
+
+        A linha do feed carrega nome, preço, categoria, tamanho, conservação e
+        loja; cor, marca, cidade e descrição não. A fala da assistente
+        (back-end#329) comenta justamente esses, então uma consulta a mais, com
+        os ids que a busca já escolheu — não um `_feed_select()` mais gordo,
+        que pesaria em toda listagem do catálogo por causa de uma.
+
+        Tamanho e conservação entraram na linha do feed depois, pela #352, para
+        tirar as 20 requisições de detalhe que a home fazia por página. Esta
+        consulta continua pedindo os dois, porque a fala monta a frase de uma
+        linha só.
+
+        O preço não entra: na fala quem escreve preço é o servidor, a partir da
+        linha da busca, que já o tem.
+        """
+        if not ids:
+            return []
+        rows = (
+            self.db.execute(
+                select(
+                    Product.id,
+                    Product.name,
+                    Product.description,
+                    Product.category,
+                    Product.color,
+                    Product.size,
+                    Product.brand,
+                    Product.condition,
+                    Address.city.label("city"),
+                )
+                .join(Store, Store.id == Product.store_id)
+                .outerjoin(Address, Store.address_id == Address.id)
+                .where(Product.id.in_(list(ids)))
+            )
+            .mappings()
+            .all()
+        )
+        por_id = {row["id"]: cast(ProductAtributosRow, dict(row)) for row in rows}
+        return [por_id[i] for i in ids if i in por_id]
 
     def vetores_pelo_nome(
         self,
@@ -339,6 +474,17 @@ class ProductRepository:
         melhor = (rows[0].acertos, rows[0].extras)
         return [row.embedding for row in rows if (row.acertos, row.extras) == melhor]
 
+    def marcas(self, product_ids: Sequence[int]) -> dict[int, str | None]:
+        """A marca de cada peça, para a combinação reconhecer o mesmo modelo de
+        marcas diferentes (back-end#328). Fica fora do `_feed_select`, que é
+        de todas as listagens."""
+        if not product_ids:
+            return {}
+        rows = self.db.execute(
+            select(Product.id, Product.brand).where(Product.id.in_(product_ids))
+        )
+        return {row.id: row.brand for row in rows}
+
     def get_detail_by_id(self, product_id: int) -> Product | None:
         stmt = (
             select(Product)
@@ -376,6 +522,31 @@ class ProductRepository:
             .where(Product.id.in_(product_ids))
         )
         return list(self.db.scalars(stmt).unique())
+
+    def list_moderated(self, params: PageParams) -> tuple[list[Product], int]:
+        """Peças tiradas do ar pela moderação, mais recente primeiro (#327).
+
+        O filtro é `moderated_at IS NOT NULL`, e não `status = 'despublicado'`:
+        a peça que o **vendedor** pausou também está `despublicado` e não é
+        Suspensa. A capa vem na mesma consulta (back-end#265), e `moderated_by`
+        entra por join para a tela mostrar quem moderou.
+        """
+        moderadas = Product.moderated_at.is_not(None)
+        total = self.db.scalar(select(func.count(Product.id)).where(moderadas)) or 0
+        stmt = (
+            select(Product)
+            .options(
+                joinedload(Product.store),
+                joinedload(Product.moderated_by),
+                with_expression(Product.cover_image_url, _cover_image_url()),
+            )
+            .execution_options(populate_existing=True)
+            .where(moderadas)
+            .order_by(Product.moderated_at.desc(), Product.id.desc())
+            .offset(params.offset)
+            .limit(params.limit)
+        )
+        return list(self.db.scalars(stmt).unique()), total
 
     def reserve(self, product_ids: Sequence[int]) -> int:
         """`ativo -> reservado` num comando só, e devolve quantas mudaram.

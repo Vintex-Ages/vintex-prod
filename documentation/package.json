@@ -2,6 +2,7 @@
   "name": "vintex-prod-docs",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.28.4",
   "description": "Portal Docusaurus de GitOps, promoções e governança do Vintex.",
   "scripts": {
     "start": "docusaurus start",
@@ -29,6 +30,6 @@
     ]
   },
   "engines": {
-    "node": ">=20.0"
+    "node": ">=22.13"
   }
 }
