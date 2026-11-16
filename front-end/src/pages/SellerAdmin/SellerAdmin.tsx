@@ -5,6 +5,7 @@ import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import NewSaleNotice from '@/components/seller/NewSaleNotice';
 import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
 import { useToast } from '@/context/useToast';
 import {
@@ -58,6 +59,10 @@ function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
  * cadastros pela metade, fora das contagens e do total (RN-51) — ver
  * `SellerDrafts` e `docs/adr/0004`. No topo, o card do selo Confiável
  * (FE-US007-1, #224) — ver `TrustSealCard`.
+ *
+ * Acima dos cartões financeiros, um aviso por venda não lida (FE-US036-3,
+ * #421) — ver `NewSaleNotice`. O botão do aviso abre o filtro "Vendidas" e sai
+ * dos Rascunhos.
  */
 const SOLD_REASON = 'Peça vendida não pode ser editada';
 
@@ -163,6 +168,13 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
           <Button onClick={anunciar}>Anunciar peça</Button>
         </div>
       </div>
+
+      <NewSaleNotice
+        onShowSold={() => {
+          setShowDrafts(false);
+          setFilter('vendido');
+        }}
+      />
 
       <FinancialSummary />
 
