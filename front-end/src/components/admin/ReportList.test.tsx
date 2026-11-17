@@ -13,7 +13,7 @@ function reclamacao(id: string, overrides: Partial<AdminOrderReport> = {}): Admi
     reason: 'danificado',
     description: 'A manga veio rasgada.',
     createdAt: '2026-10-29T14:32:00',
-    buyer: { id: 'u_1', name: 'Ana Compradora' },
+    buyer: { name: 'Ana Compradora', email: 'ana@exemplo.com' },
     store: { id: 's_1', name: 'Brechó da Bia' },
     ...overrides,
   };
@@ -36,7 +36,7 @@ describe('<ReportList />', () => {
             description: 'Nunca chegou.',
             orderId: '42',
             createdAt: '2026-10-30T09:05:00',
-            buyer: { id: 'u_2', name: 'Bia Souza' },
+            buyer: { name: 'Bia Souza', email: 'bia@exemplo.com' },
             store: { id: 's_2', name: 'Garimpo da Redenção' },
           }),
           reclamacao('1'),

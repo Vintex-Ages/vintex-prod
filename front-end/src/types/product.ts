@@ -182,6 +182,14 @@ export interface SellerProduct {
   brand?: string;
   condition?: string;
   style?: string;
+  /**
+   * Motivo da suspensão pela administradora (RN-80, back-end#327), ou `null`
+   * sem moderação — inclusive na peça que o vendedor pausou. `despublicado` com
+   * motivo é **Suspensa**; sem motivo, **Pausada** (ver `isSuspended`).
+   */
+  moderationReason?: string | null;
+  /** Quando a administradora suspendeu (ISO 8601), ou `null` sem moderação. */
+  moderatedAt?: string | null;
 }
 
 /** Peça completa do vendedor (`ProductDraftResponse`, back-end#159), em qualquer status. */
