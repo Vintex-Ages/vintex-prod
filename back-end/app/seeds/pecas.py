@@ -7,6 +7,13 @@ Uso::
 Rode `python -m app.seeds.lojas` antes. Idempotente: se já houver o número
 alvo de peças, não faz nada.
 
+Fotos: com `PUBLIC_BASE_URL` configurada, o modelo que tem foto real em
+`app/seeds/fotos/manifest.json` usa essa foto (servida por `/api/media/`, depois
+de `scripts/infra/seed_media.py` enviá-la ao bucket) e a cor que aparece nela.
+Os outros continuam com o picsum. `--refresh-images` aplica as fotos reais às
+peças já semeadas, sem zerar o banco, e apaga o vetor delas para o
+`scripts.backfill_embeddings` gerar de novo.
+
 As peças saem de `MODELOS`, um catálogo de peças plausíveis de brechó por
 estilo: cada modelo amarra tipo, marcas, cores, faixa de preço, composição e
 uma descrição no vocabulário do estilo. Antes, cada atributo era sorteado
@@ -17,6 +24,7 @@ do estilo escolhido; com atributos sorteados, ela não tinha o que acertar.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import math
 import random
@@ -26,6 +34,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.constants.catalog import CATEGORIES
 from app.constants.catalog import COLORS as CATALOGO_CORES
 from app.constants.catalog import CONDITIONS as CATALOGO_CONSERVACAO
@@ -33,6 +42,8 @@ from app.constants.styles import STYLES as CATALOGO_ESTILOS
 from app.core.clock import utcnow_naive
 from app.database import SessionLocal
 from app.models import Product, ProductImage, Store
+from app.seeds.fotos import FOTOS_POR_MODELO, Foto, slug
+from app.services.product_embedding import apagar_embedding
 
 logger = logging.getLogger("vintex.seeds")
 
@@ -592,6 +603,22 @@ def _descricao(modelo: Modelo, color: str, size: str, condition: str) -> str:
     )
 
 
+PICSUM = "https://picsum.photos/seed/vintex-"
+
+
+def _url_da_midia(key: str) -> str:
+    """A mesma URL de `MediaController.url_publica`."""
+    return f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/media/{key}"
+
+
+def _foto_real(modelo: Modelo, index: int) -> Foto | None:
+    """Foto real do modelo, se houver e se a API souber montar a URL dela."""
+    if not settings.PUBLIC_BASE_URL:
+        return None
+    fotos = FOTOS_POR_MODELO.get(slug(modelo.nome), ())
+    return fotos[index % len(fotos)] if fotos else None
+
+
 def seed_pecas(session: Session, *, total: int = TOTAL) -> list[Product]:
     """Cria `total` peças distribuídas entre as lojas. Não faz commit."""
     if session.query(Product).count() >= total:
@@ -613,6 +640,12 @@ def seed_pecas(session: Session, *, total: int = TOTAL) -> list[Product]:
         condition = rng.choices(
             CONDITIONS, weights=[PESO_CONSERVACAO[c] for c in CONDITIONS]
         )[0]
+        # Sorteia sempre, com ou sem foto real: a sequência do `rng` não muda.
+        quantas = rng.randint(1, 3)
+        foto = _foto_real(modelo, index)
+        if foto is not None:
+            # A cor cadastrada é a da foto, para a IA ter o que acertar.
+            color = foto.cor
 
         product = Product(
             store=store,
@@ -630,13 +663,13 @@ def seed_pecas(session: Session, *, total: int = TOTAL) -> list[Product]:
             status=_status_for(index),
             sold_at=_sold_at_for(index),
         )
-        for position in range(rng.randint(1, 3)):
-            product.images.append(
-                ProductImage(
-                    image_url=f"https://picsum.photos/seed/vintex-{index}-{position}/600/800",
-                    position=position,
-                )
-            )
+        urls = (
+            [_url_da_midia(foto.key)]
+            if foto is not None
+            else [f"{PICSUM}{index}-{position}/600/800" for position in range(quantas)]
+        )
+        for position, url in enumerate(urls):
+            product.images.append(ProductImage(image_url=url, position=position))
         session.add(product)
         products.append(product)
 
@@ -644,10 +677,58 @@ def seed_pecas(session: Session, *, total: int = TOTAL) -> list[Product]:
     return products
 
 
-def run() -> None:
+def atualizar_fotos(session: Session) -> int:
+    """Troca o picsum pelas fotos reais nas peças já semeadas. Não faz commit.
+
+    A peça é reconhecida pelo nome, que começa pelo nome do modelo. A cor passa
+    a ser a da foto, e o vetor é apagado porque o texto da peça mudou.
+    """
+    if not settings.PUBLIC_BASE_URL:
+        raise RuntimeError("PUBLIC_BASE_URL é necessária para montar a URL da foto.")
+    modelos = sorted(MODELOS, key=lambda m: len(m.nome), reverse=True)
+    trocadas = 0
+    for index, product in enumerate(session.query(Product).order_by(Product.id)):
+        if not product.images or not all(
+            image.image_url.startswith(PICSUM) for image in product.images
+        ):
+            continue
+        modelo = next((m for m in modelos if product.name.startswith(m.nome)), None)
+        foto = _foto_real(modelo, index) if modelo else None
+        if foto is None:
+            continue
+        product.images.clear()
+        product.images.append(
+            ProductImage(image_url=_url_da_midia(foto.key), position=0)
+        )
+        product.color = foto.cor
+        product.description = _descricao(
+            modelo, foto.cor, product.size or "", product.condition
+        )
+        apagar_embedding(product)
+        trocadas += 1
+    session.flush()
+    return trocadas
+
+
+def run(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Seed de peças e imagens.")
+    parser.add_argument(
+        "--refresh-images",
+        action="store_true",
+        help="troca o picsum pelas fotos reais nas peças já semeadas",
+    )
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     session = SessionLocal()
     try:
+        if args.refresh_images:
+            trocadas = atualizar_fotos(session)
+            session.commit()
+            logger.info(
+                "Fotos reais em %d peças; rode `python -m scripts.backfill_embeddings`.",
+                trocadas,
+            )
+            return
         products = seed_pecas(session)
         session.commit()
         vendidas = sum(1 for p in products if p.status == "vendido")
