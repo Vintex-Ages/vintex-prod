@@ -1155,4 +1155,27 @@ describe('#422 — avaliação da loja no mock', () => {
       code: 'ALREADY_RATED',
     });
   });
+
+  it('a trava sobrevive ao recarregamento, como o UNIQUE do back', async () => {
+    const antes = await import('./storeService');
+    const store = await antes.createStore(input);
+
+    await antes.rateStore(store.id, '999423', 5);
+
+    // F5: os módulos voltam do zero. A loja e a avaliação ficam no
+    // `sessionStorage`; a sessão do mock é de módulo, então entra de novo.
+    vi.resetModules();
+    const auth = await import('./authService');
+    await auth.register({
+      name: 'Outro Avaliador',
+      email: `avaliador${Date.now()}${Math.random()}@vintex.com`,
+      password: 'senha123',
+    });
+    const depois = await import('./storeService');
+
+    await expect(depois.rateStore(store.id, '999423', 4)).rejects.toMatchObject({
+      name: 'StoreError',
+      code: 'ALREADY_RATED',
+    });
+  });
 });

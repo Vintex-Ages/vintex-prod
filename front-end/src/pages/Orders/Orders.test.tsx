@@ -5,6 +5,7 @@ import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
 import { listMyOrders } from '@/services/orderService';
 import { reportOrder } from '@/services/reportService';
+import { rateStore, StoreError } from '@/services/storeService';
 import type { OrderSummary } from '@/types/order';
 import type { Paginated } from '@/types/product';
 import Orders from './Orders';
@@ -17,6 +18,11 @@ vi.mock('@/services/orderService', async (importOriginal) => ({
 vi.mock('@/services/reportService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/reportService')>()),
   reportOrder: vi.fn(),
+}));
+
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  rateStore: vi.fn(),
 }));
 
 /** "Meus pedidos" (FE-US023-1, #321; VS-023 "Lista consolidada"). */
@@ -74,6 +80,7 @@ function cartao(id: string) {
 beforeEach(() => {
   vi.mocked(listMyOrders).mockReset();
   vi.mocked(reportOrder).mockReset();
+  vi.mocked(rateStore).mockReset();
 });
 
 afterEach(cleanup);
@@ -244,8 +251,8 @@ describe('<Orders />', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  // RN-83/RN-21: sem rastreio nem "tempo médio"; "Avaliar loja" é outra issue.
-  it('não mostra rastreio, tempo médio nem avaliação', async () => {
+  // RN-83/RN-21: sem rastreio nem "tempo médio". "Avaliar loja" (#409) tem casos próprios abaixo.
+  it('não mostra rastreio nem tempo médio', async () => {
     vi.mocked(listMyOrders).mockResolvedValue(
       pagina([pedido('ped-1', { status: 'enviado' }), pedido('ped-2', { status: 'concluido' })]),
     );
@@ -253,8 +260,96 @@ describe('<Orders />', () => {
     await screen.findByRole('list', { name: 'Pedidos' });
 
     expect(container.textContent).not.toMatch(
-      /rastrei|rastreamento|transportadora|tempo real|tempo médio|avaliar/i,
+      /rastrei|rastreamento|transportadora|tempo real|tempo médio/i,
     );
+  });
+
+  // #409 (FE-US026-1): "Avaliar loja" só no concluído (RN-82).
+  it('Pedido concluído tem "Avaliar loja" e "Reportar problema" no cartão', async () => {
+    vi.mocked(listMyOrders).mockResolvedValue(pagina([pedido('ped-1', { status: 'concluido' })]));
+    renderOrders();
+    await screen.findByRole('list', { name: 'Pedidos' });
+
+    expect(
+      within(cartao('ped-1'))
+        .getAllByRole('button')
+        .map((botao) => botao.textContent),
+    ).toEqual(['Pedido #ped-1', 'Avaliar loja', 'Reportar problema']);
+  });
+
+  it.each([
+    ['aguardando_comprovante', null],
+    ['em_analise', { status: 'pendente' as const, receiptName: 'pix.pdf' }],
+    ['confirmado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['preparando', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['enviado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['expirado', null],
+  ] as const)('Pedido %s não tem "Avaliar loja"', async (status, payment) => {
+    vi.mocked(listMyOrders).mockResolvedValue(pagina([pedido('ped-1', { status, payment })]));
+    renderOrders();
+    await screen.findByRole('list', { name: 'Pedidos' });
+
+    expect(
+      within(cartao('ped-1')).queryByRole('button', { name: 'Avaliar loja' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('avalia a loja pelo cartão: só a nota vai, e o botão some daquele Pedido', async () => {
+    vi.mocked(listMyOrders).mockResolvedValue(
+      pagina([pedido('ped-2', { status: 'concluido' }), pedido('ped-1', { status: 'concluido' })]),
+    );
+    vi.mocked(rateStore).mockResolvedValue({
+      id: 'r_1',
+      storeId: '5',
+      orderId: 'ped-2',
+      score: 5,
+      createdAt: '2026-11-15T12:00:00Z',
+    });
+    renderOrders();
+    await screen.findByRole('list', { name: 'Pedidos' });
+
+    fireEvent.click(within(cartao('ped-2')).getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    expect(within(dialogo).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '5 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent('Avaliação enviada');
+    expect(rateStore).toHaveBeenCalledWith('5', 'ped-2', 5);
+
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Entendi' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      within(cartao('ped-2')).queryByRole('button', { name: 'Avaliar loja' }),
+    ).not.toBeInTheDocument();
+    // "Reportar problema" continua, e o outro Pedido ainda pode ser avaliado.
+    expect(
+      within(cartao('ped-2')).getByRole('button', { name: 'Reportar problema' }),
+    ).toBeInTheDocument();
+    expect(
+      within(cartao('ped-1')).getByRole('button', { name: 'Avaliar loja' }),
+    ).toBeInTheDocument();
+  });
+
+  it('409 ALREADY_RATED pelo cartão vira "já avaliado" e tira o botão', async () => {
+    vi.mocked(listMyOrders).mockResolvedValue(pagina([pedido('ped-1', { status: 'concluido' })]));
+    vi.mocked(rateStore).mockRejectedValue(
+      new StoreError('ALREADY_RATED', 'Este pedido já foi avaliado.'),
+    );
+    renderOrders();
+    await screen.findByRole('list', { name: 'Pedidos' });
+
+    fireEvent.click(within(cartao('ped-1')).getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '4 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(/já avaliou/i);
+    expect(within(dialogo).queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      within(cartao('ped-1')).queryByRole('button', { name: 'Avaliar loja' }),
+    ).not.toBeInTheDocument();
   });
 
   // #410 (FE-US025-1), teste 5: "Reportar problema" nos 4 status válidos (RN-77).

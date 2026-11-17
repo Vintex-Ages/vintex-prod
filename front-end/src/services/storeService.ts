@@ -3,6 +3,7 @@ import type { MyStoreDetails, StoreAddress, StoreDocument, StoreUpdate } from '@
 import { markCurrentAccountAsSeller, me } from '@/services/authService';
 import { httpClient } from '@/services/httpClient';
 import { products as mockProducts } from '@/mocks/products';
+import type { OrderStatus } from '@/types/order';
 import type { Paginated, Product, Store } from '@/types/product';
 import type {
   StoreInput,
@@ -314,7 +315,7 @@ async function mockRequestVerification(): Promise<StoreProfile> {
  */
 function mockGetStore(id: string): StoreProfile {
   const withRatings = (store: StoreProfile): StoreProfile => {
-    const ratings = [...mockRatingsByOrder.values()].filter((rating) => rating.storeId === id);
+    const ratings = Object.values(readRatings()).filter((rating) => rating.storeId === id);
     if (ratings.length === 0) return store;
     const baseCount = store.metrics?.ratingCount ?? 0;
     const baseRating = store.metrics?.rating ?? null;
@@ -924,9 +925,30 @@ function mapStoreRating(rating: ApiStoreRating): StoreRating {
   };
 }
 
-/** Uma avaliação por pedido; estado compartilhado entre chamadas no modo mock. */
-const mockRatingsByOrder = new Map<string, StoreRating>();
-let mockRatingSequence = 0;
+/**
+ * Uma avaliação por pedido, como o `UNIQUE(order_id)` do back. Fica no
+ * `sessionStorage` para sobreviver ao recarregamento: era um `Map` de módulo, e
+ * depois de um F5 dava para avaliar o mesmo pedido de novo, contra o que o
+ * cabeçalho do `Orders` promete (#409).
+ */
+const RATINGS_STORAGE_KEY = 'vintex.storeRatings';
+
+function readRatings(): Record<string, StoreRating> {
+  try {
+    const raw = window.sessionStorage.getItem(RATINGS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, StoreRating>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRatings(ratings: Record<string, StoreRating>): void {
+  try {
+    window.sessionStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratings));
+  } catch {
+    // Sem storage disponível: avaliação mockada não é persistida.
+  }
+}
 
 async function mockRateStore(
   storeId: string,
@@ -941,19 +963,20 @@ async function mockRateStore(
 
   mockGetStore(storeId);
 
-  if (mockRatingsByOrder.has(orderId)) {
+  const ratings = readRatings();
+  if (ratings[orderId]) {
     throw new StoreError('ALREADY_RATED', 'Este pedido já foi avaliado.');
   }
 
   const rating: StoreRating = {
-    id: String(++mockRatingSequence),
+    id: String(Object.keys(ratings).length + 1),
     storeId,
     orderId,
     score,
     createdAt: new Date().toISOString(),
   };
 
-  mockRatingsByOrder.set(orderId, rating);
+  writeRatings({ ...ratings, [orderId]: rating });
   return { ...rating };
 }
 
@@ -967,6 +990,17 @@ async function apiRateStore(storeId: string, orderId: string, score: number): Pr
   } catch (error) {
     throw toStoreError(error);
   }
+}
+
+/**
+ * Se o Pedido abre a avaliação da loja (FE-US026-1, #409; RN-82): só
+ * `concluido`, o status derivado que o back devolve três dias depois da
+ * aprovação. É o mesmo critério do back para "entregue": fora dele, a rota
+ * responde `403 RATING_NOT_ALLOWED`. A mesma regra decide o "Avaliar loja" no
+ * cartão de "Meus pedidos" e no detalhe do Pedido.
+ */
+export function canRateOrder(status: OrderStatus): boolean {
+  return status === 'concluido';
 }
 
 /** RN-75/RN-76: apenas nota, sem comentário; autorização validada pelo backend. */
