@@ -28,17 +28,55 @@ export function resolveMode({ eventName, baseRef }, config) {
   return "changed";
 }
 
-// `exists` recebe um caminho e diz se ele existe no checkout; componentes que
-// declaram `requires` ficam desligados enquanto o arquivo não existir (ex.: back-end
-// antes de ser importado), em qualquer modo.
-export function classify({ files, mode, config, exists = () => true }) {
+// Cada componente é uma pasta "pai": qualquer arquivo alterado dentro dela liga o
+// componente inteiro, sem distinguir subpastas (mudou algo em `back-end/`, roda tudo
+// do back-end). `exists` recebe um caminho e diz se ele existe no checkout;
+// componentes que declaram `requires` ficam desligados enquanto o arquivo não existir
+// (ex.: back-end antes de ser importado), em qualquer modo.
+//
+// Documentação (`docsGlobs`) nunca liga componente: um PR só de docs não roda testes, e
+// um PR de docs + código liga apenas o componente do código. O flag `docs` olha a lista
+// original de arquivos.
+//
+// `onlyPullRequestBaseRefs` restringe o componente a PRs cujo destino esteja na lista
+// (ex.: infra só em PRs para `qa`); push, agenda e execução manual não o ligam.
+export function classify({
+  files,
+  mode,
+  config,
+  exists = () => true,
+  eventName = "",
+  baseRef = "",
+}) {
   const forceAll =
     mode === "all" || files.some((file) => matchesAny(file, config.runAllWhenChanged));
+  const codeFiles = files.filter((file) => !matchesAny(file, config.docsGlobs || []));
   const flags = {};
   for (const [name, component] of Object.entries(config.components)) {
     const present = !component.requires || exists(component.requires);
-    const touched = files.some((file) => matchesAny(file, component.paths));
-    flags[name] = present && (forceAll || touched);
+    const eligible =
+      !component.onlyPullRequestBaseRefs ||
+      (eventName === "pull_request" && component.onlyPullRequestBaseRefs.includes(baseRef));
+    const candidates = name === "docs" ? files : codeFiles;
+    const touched = candidates.some((file) => matchesAny(file, component.paths));
+    flags[name] = present && eligible && (forceAll || touched);
   }
-  return { flags, forceAll };
+  return { flags, forceAll, frontEndScope: frontEndScope({ codeFiles, mode, forceAll, config }) };
+}
+
+// Quantos testes do front-end rodar. "changed": só os afetados (o job pede ao vitest a
+// lista via grafo de módulos e, se ela vier vazia, roda tudo). "all": suíte completa.
+// Só vale "changed" em PR para `develop` quando todo arquivo alterado do front-end está
+// em `frontEnd.scopedPaths` e fora de `frontEnd.fullTestPaths` (setup global dos testes).
+// Qualquer outro arquivo (package.json, lockfile, configs, tests/...) não tem teste
+// identificável e vale a suíte completa.
+export function frontEndScope({ codeFiles, mode, forceAll, config }) {
+  const { scopedPaths = [], fullTestPaths = [] } = config.frontEnd || {};
+  if (mode !== "changed" || forceAll) return "all";
+  const own = codeFiles.filter((file) => matchesAny(file, ["front-end/**"]));
+  if (!own.length) return "all";
+  const identifiable = own.every(
+    (file) => matchesAny(file, scopedPaths) && !matchesAny(file, fullTestPaths),
+  );
+  return identifiable ? "changed" : "all";
 }

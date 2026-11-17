@@ -201,4 +201,233 @@ describe('<ChatProductList />', () => {
       document.removeEventListener(type, observeDefault);
     }
   });
+
+  // #438 (FE-FIG-4): trava as classes do layout padrão, que não pode mudar.
+  it('sem layout, mantém exatamente as classes da lista e não mostra cartão nem selo', () => {
+    renderList(<ChatProductList products={products.slice(0, 3)} title="Peças sugeridas" />);
+
+    expect(screen.getByRole('list').className).toBe('flex gap-3 flex-col');
+    expect(screen.getAllByRole('listitem')[0].className).toBe(
+      'flex gap-3 border border-linha bg-papel p-3',
+    );
+    expect(screen.getByRole('heading', { name: 'Peças sugeridas' }).className).toBe(
+      'mb-3 text-body font-semibold text-tinta',
+    );
+    expect(screen.queryByTestId('chat-product-cards')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-product-seal')).not.toBeInTheDocument();
+  });
+
+  it('o layout padrão continua sem title na loja e sem mt-auto no link', () => {
+    renderList(<ChatProductList products={[products[0]]} />);
+
+    expect(screen.getByText(products[0].store.name)).not.toHaveAttribute('title');
+    expect(screen.getByRole('link', { name: 'Ver peça: Vestido floral' })).not.toHaveClass(
+      'mt-auto',
+    );
+  });
+
+  it('layout="list" gera o mesmo HTML de omitir o layout', () => {
+    const { container: padrao } = renderList(<ChatProductList products={products} />);
+    const htmlPadrao = padrao.innerHTML;
+    cleanup();
+
+    const { container: explicito } = renderList(
+      <ChatProductList products={products} layout="list" />,
+    );
+
+    expect(explicito.innerHTML).toBe(htmlPadrao);
+  });
+
+  describe('layout="cards"', () => {
+    const tres = products.slice(0, 3);
+    const titulo = 'Alternativas próximas';
+
+    it('3 peças viram 3 colunas iguais com nome, preço, loja e link', () => {
+      renderList(<ChatProductList products={tres} layout="cards" title={titulo} />);
+
+      const list = screen.getByRole('list');
+      const items = within(list).getAllByRole('listitem');
+      const prices = [/R\$\s?89,90/, /R\$\s?45,00/, /R\$\s?120,00/];
+
+      expect(list).toHaveClass('grid', 'grid-cols-3');
+      expect(list).not.toHaveClass('overflow-x-auto');
+      expect(items).toHaveLength(3);
+
+      tres.forEach((product, index) => {
+        const item = within(items[index]);
+
+        expect(items[index]).toHaveClass('border', 'border-linha', 'bg-papel-profundo');
+        expect(item.getByText(product.name)).toHaveClass(
+          'line-clamp-2',
+          'text-label',
+          'font-semibold',
+        );
+        expect(item.getByText(prices[index])).toHaveClass('text-label', 'font-bold');
+        expect(item.getByText(product.store.name)).toHaveClass('text-label');
+
+        const link = item.getByRole('link', { name: `Ver peça: ${product.name}` });
+        expect(link).toHaveTextContent('Ver peça');
+        expect(link).toHaveClass('text-label');
+        expect(link).toHaveAttribute('href', productDetail(product.id));
+      });
+    });
+
+    it('imagem em 4:5 e placeholder quando a peça não tem foto', () => {
+      const semFoto: Product = { ...products[1], coverImageUrl: null };
+      renderList(<ChatProductList products={[products[0], semFoto]} layout="cards" />);
+
+      const foto = screen.getByRole('img', { name: products[0].name });
+      expect(foto.tagName).toBe('IMG');
+      expect(foto).toHaveClass('object-cover');
+      expect(foto.parentElement).toHaveClass('aspect-[4/5]');
+
+      const placeholder = screen.getByRole('img', { name: semFoto.name });
+      expect(placeholder.tagName).toBe('DIV');
+      expect(placeholder.parentElement).toHaveClass('aspect-[4/5]');
+    });
+
+    it('o cartão usa tokens, giro e moldura dourada decorativa', () => {
+      renderList(<ChatProductList products={tres} layout="cards" title={titulo} />);
+
+      const cartao = screen.getByTestId('chat-product-cards');
+      expect(cartao).toHaveClass('bg-branco-quente', 'border', 'border-linha', 'p-3');
+      expect(cartao).toHaveClass('-rotate-[0.45deg]');
+      expect(cartao.className).toContain('theme(colors.papel-profundo)');
+
+      const moldura = screen.getByTestId('chat-product-frame');
+      expect(moldura).toHaveAttribute('aria-hidden', 'true');
+      expect(moldura).toHaveClass(
+        'absolute',
+        'inset-[5.6px]',
+        'border-dourado/55',
+        'pointer-events-none',
+      );
+    });
+
+    it('o título continua sendo heading, agora em display h4', () => {
+      renderList(<ChatProductList products={tres} layout="cards" title={titulo} />);
+
+      expect(screen.getByRole('heading', { level: 3, name: titulo })).toHaveClass(
+        'font-display',
+        'text-h4',
+        'tracking-tight',
+      );
+    });
+
+    it.each([3, 2])('o selo mostra %i (products.length), "achados" e "reais"', (count) => {
+      renderList(<ChatProductList products={products.slice(0, count)} layout="cards" />);
+
+      const selo = screen.getByTestId('chat-product-seal');
+      expect(within(selo).getByText(String(count))).toBeInTheDocument();
+      expect(within(selo).getByText('achados')).toBeInTheDocument();
+      expect(within(selo).getByText('reais')).toBeInTheDocument();
+      expect(selo).toHaveClass(
+        'rotate-[7deg]',
+        'rounded-full',
+        'border-verde-rs',
+        'text-verde-rs',
+        'text-label',
+        'uppercase',
+      );
+    });
+
+    it('acima de 3 peças usa rolagem horizontal com colunas de largura fixa', () => {
+      renderList(<ChatProductList products={products} layout="cards" />);
+
+      const list = screen.getByRole('list');
+      expect(list).toHaveClass('flex', 'flex-nowrap', 'overflow-x-auto');
+      expect(list).not.toHaveClass('grid');
+      expect(within(list).getAllByRole('listitem')).toHaveLength(4);
+      within(list)
+        .getAllByRole('listitem')
+        .forEach((item) => expect(item).toHaveClass('w-32', 'shrink-0'));
+      expect(within(screen.getByTestId('chat-product-seal')).getByText('4')).toBeInTheDocument();
+    });
+
+    // jsdom não calcula layout: a folga real do texto no círculo foi medida no Chromium.
+    it('o círculo do selo tem 72px e o texto fica visível em text-label', () => {
+      renderList(<ChatProductList products={tres} layout="cards" title={titulo} />);
+
+      const selo = screen.getByTestId('chat-product-seal');
+      expect(selo).toHaveClass('size-[72px]', 'shrink-0', 'text-label');
+      expect(selo).not.toHaveClass('h-[51px]');
+      expect(selo).not.toHaveClass('w-[51px]');
+      expect(selo).not.toHaveAttribute('aria-hidden');
+      ['3', 'achados', 'reais'].forEach((linha) => {
+        expect(within(selo).getByText(linha)).toBeVisible();
+      });
+    });
+
+    it.each([
+      [1, ['1', 'achado', 'real']],
+      [2, ['2', 'achados', 'reais']],
+      [3, ['3', 'achados', 'reais']],
+    ])('o selo concorda com %i peça(s)', (count, linhas) => {
+      renderList(<ChatProductList products={products.slice(0, count)} layout="cards" />);
+
+      const selo = screen.getByTestId('chat-product-seal');
+      expect(Array.from(selo.children).map((linha) => linha.textContent)).toEqual(linhas);
+    });
+
+    it.each([
+      ['grade', 3],
+      ['faixa horizontal', 4],
+    ])('na %s, as colunas esticam e o link fica ao pé', (_modo, count) => {
+      renderList(<ChatProductList products={products.slice(0, count)} layout="cards" />);
+
+      const list = screen.getByRole('list');
+      expect(list).toHaveClass('items-stretch');
+
+      products.slice(0, count).forEach((product) => {
+        const nome = screen.getByText(product.name);
+        const coluna = nome.closest('li');
+        const link = screen.getByRole('link', { name: `Ver peça: ${product.name}` });
+
+        expect(coluna).toHaveClass('flex', 'flex-col');
+        expect(link).toHaveClass('mt-auto');
+
+        // Preço e loja logo abaixo do nome, e o link por último.
+        const preco = nome.nextElementSibling;
+        const loja = preco?.nextElementSibling;
+        expect(preco).toHaveTextContent(/R\$/);
+        expect(loja).toHaveTextContent(product.store.name);
+        expect(loja?.nextElementSibling).toBe(link);
+      });
+    });
+
+    it('a loja mantém truncate e guarda o nome completo em title', () => {
+      renderList(<ChatProductList products={tres} layout="cards" />);
+
+      tres.forEach((product) => {
+        const loja = screen.getByText(product.store.name);
+        expect(loja).toHaveClass('truncate');
+        expect(loja).toHaveAttribute('title', product.store.name);
+      });
+    });
+
+    it('não renderiza nada sem produtos', () => {
+      const { container } = renderList(<ChatProductList products={[]} layout="cards" />);
+
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    it('o link chama onOpen igual à lista', async () => {
+      const user = userEvent.setup();
+      const onOpen = vi.fn();
+      renderList(
+        <Routes>
+          <Route
+            path="/"
+            element={<ChatProductList products={tres} layout="cards" onOpen={onOpen} />}
+          />
+          <Route path={productDetail(tres[1].id)} element={<p>Detalhe da camisa</p>} />
+        </Routes>,
+      );
+
+      await user.click(screen.getByRole('link', { name: 'Ver peça: Camisa de linho' }));
+
+      expect(onOpen).toHaveBeenCalledWith('prod-1');
+      expect(screen.getByText('Detalhe da camisa')).toBeInTheDocument();
+    });
+  });
 });

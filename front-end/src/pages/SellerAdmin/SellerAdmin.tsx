@@ -6,9 +6,12 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
-import StatCard from '@/components/seller/StatCard';
 import { useToast } from '@/context/useToast';
-import { useSellerProducts, type StatusFilter } from '@/hooks/useSellerProducts';
+import {
+  useSellerProducts,
+  type SellerProductsCounts,
+  type StatusFilter,
+} from '@/hooks/useSellerProducts';
 import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
 import { paths, sellerProductPath } from '@/routes/paths';
 import { SellerProductError } from '@/services/sellerProductService';
@@ -25,26 +28,34 @@ const CHIPS: { value: StatusFilter; label: string }[] = [
   { value: 'despublicado', label: 'Pausadas' },
 ];
 
+/** Quantas peças cada filtro mostra: as contagens já vêm do `useSellerProducts`. */
+function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
+  return filter === 'todas' ? counts.total : counts[filter];
+}
+
 /**
  * `/seller` — painel do vendedor (FE-US019-1, #220): peças por status e
  * totais. Visão de saldo, não de estoque (RN-51): cada peça é única, então o
  * que importa é em que situação ela está, não quantas unidades existem.
  *
+ * Alinhado ao frame ajustado do Figma (T15, FE-FIG-3, #437): título "Painel de
+ * Vendas & Gestão de Peças", cartões financeiros no topo (ver
+ * `FinancialSummary`), a aba "Minhas Peças Cadastradas (N)" e os filtros por
+ * status com a contagem de cada um. A aba "Pedidos para Envio" não existe: não
+ * há rota no back para o vendedor ver Pedidos.
+ *
  * Ações por linha (FE-US019-2, #221), decididas pelo valor do status:
- * - `ativo` → Editar · Despublicar (pausa; sai da vitrine, fica no histórico — RN-52)
- * - `despublicado` → Editar · Republicar (`publish`)
- * - `vendido` → Editar desabilitado com o motivo (RN-53), sem despublicar
+ * - `ativo` → Editar anúncio · Pausar (sai da vitrine, fica no histórico — RN-52)
+ * - `despublicado` → Editar anúncio · Republicar (`publish`)
+ * - `vendido` → Editar anúncio desabilitado com o motivo (RN-53), sem pausar
  *
- * Despublicar confirma com um Toast que oferece "Desfazer" (republica). A
- * linha muda sem recarregar a lista; erro do back vira Toast de erro.
+ * Pausar confirma com um Toast que oferece "Desfazer" (republica). A linha muda
+ * sem recarregar a lista; erro do back vira Toast de erro.
  *
- * Aba "Rascunhos" (FE-US019-6, #345) ao lado dos chips de status: lista os
+ * Aba "Rascunhos" (FE-US019-6, #345) ao lado dos filtros de status: lista os
  * cadastros pela metade, fora das contagens e do total (RN-51) — ver
- * `SellerDrafts` e `docs/adr/0004`.
- *
- * Abaixo das peças, a seção "Financeiro" (FE-US019-3, #222) com o resumo de
- * vendas por período — ver `FinancialSummary`. No topo, o card do selo
- * Confiável (FE-US007-1, #224) — ver `TrustSealCard`.
+ * `SellerDrafts` e `docs/adr/0004`. No topo, o card do selo Confiável
+ * (FE-US007-1, #224) — ver `TrustSealCard`.
  */
 const SOLD_REASON = 'Peça vendida não pode ser editada';
 
@@ -89,13 +100,22 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
   function acoes(product: SellerProduct): RowAction[] {
     const editar: RowAction = {
-      label: 'Editar',
+      label: 'Editar anúncio',
+      variant: 'secondary',
       onSelect: () => navigate(sellerProductPath(product.id)),
     };
 
     switch (product.status) {
       case 'ativo':
-        return [editar, { label: 'Despublicar', onSelect: () => void despublicar(product) }];
+        // "Pausar" reserva a largura de "Republicar": ao pausar, o botão não encolhe nem move o "Editar anúncio".
+        return [
+          editar,
+          {
+            label: 'Pausar',
+            widthLabel: 'Republicar',
+            onSelect: () => void despublicar(product),
+          },
+        ];
       case 'despublicado':
         return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
       case 'vendido':
@@ -108,7 +128,15 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
   return (
     <Container as="main" className="flex flex-col gap-6 py-10">
       <div className="flex flex-col gap-4 web:flex-row web:items-center web:justify-between">
-        <h1 className="font-display text-h2 text-tinta">Painel do vendedor</h1>
+        <div className="flex flex-col gap-1">
+          {/* Token `h3` (24px): o frame (T15) usa 35,2px, que não existe na escala de tipografia. */}
+          <h1 className="font-display text-h3 leading-[1.1] tracking-[-0.02em] text-tinta">
+            Painel de Vendas &amp; Gestão de Peças
+          </h1>
+          <p className="font-ui text-body-sm text-texto-auxiliar">
+            Acompanhe seus anúncios ativos, valores a receber via Pix e pedidos prontos para envio.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={editarLoja}>
             Editar loja
@@ -117,7 +145,22 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
         </div>
       </div>
 
+      <FinancialSummary />
+
       <TrustSealCard storeSource={storeSource} />
+
+      {/* Única aba do frame (a de "Pedidos para Envio" não existe): é só o título da lista. */}
+      {/* No celular a aba ocupa metade da largura, em duas linhas, como no frame (T15). */}
+      <div className="border-b-2 border-tinta">
+        <h2 className="flex min-h-touch w-1/2 items-center web:min-h-0 justify-center bg-tinta px-2 py-3 text-center font-ui text-body-sm font-semibold leading-[normal] text-branco-quente tablet:inline-flex tablet:w-auto tablet:px-6">
+          <span>
+            <span className="block tablet:inline">Minhas Peças</span>{' '}
+            <span className="block tablet:inline">
+              {state.status === 'ready' ? `Cadastradas (${state.counts.total})` : 'Cadastradas'}
+            </span>
+          </span>
+        </h2>
+      </div>
 
       {state.status === 'loading' && (
         <>
@@ -148,30 +191,18 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
       {state.status === 'ready' && (
         <>
-          <section
-            aria-label="Resumo das suas peças"
-            className="grid grid-cols-1 gap-4 web:grid-cols-3"
-          >
-            <div data-testid="stat-anunciadas">
-              <StatCard label="Anunciadas" value={String(state.counts.ativo)} />
-            </div>
-            <div data-testid="stat-vendidas">
-              <StatCard label="Vendidas" value={String(state.counts.vendido)} />
-            </div>
-            <div data-testid="stat-pausadas">
-              <StatCard label="Pausadas" value={String(state.counts.despublicado)} />
-            </div>
-          </section>
-
+          {/* Sem os cartões Anunciadas/Vendidas/Pausadas: o frame (T15) só tem as contagens nos filtros. */}
           <p className="font-ui text-body-sm text-texto-auxiliar">
             {state.counts.total === 1 ? '1 peça no total' : `${state.counts.total} peças no total`}
           </p>
 
-          <div className="flex flex-wrap gap-2">
+          {/* Uma linha só, com rolagem na horizontal, como no frame (T15): os filtros não quebram. */}
+          <div className="flex gap-2 overflow-x-auto pb-4">
             {CHIPS.map((chip) => (
               <FilterChip
                 key={chip.value}
-                label={chip.label}
+                tone="tinta"
+                label={`${chip.label} (${countOf(state.counts, chip.value)})`}
                 active={!showDrafts && filter === chip.value}
                 onToggle={() => {
                   setShowDrafts(false);
@@ -180,6 +211,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
               />
             ))}
             <FilterChip
+              tone="tinta"
               label="Rascunhos"
               active={showDrafts}
               onToggle={() => setShowDrafts(true)}
@@ -211,9 +243,9 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
                   <SellerProductRow
                     product={product}
                     actions={acoes(product)}
-                    // Vendida não abre o formulário (RN-53): o nome fica só como texto.
+                    // Vendida ou reservada não abre o formulário: o nome fica só como texto.
                     onOpen={
-                      product.status === 'vendido'
+                      product.status === 'vendido' || product.status === 'reservado'
                         ? undefined
                         : (id) => navigate(sellerProductPath(id))
                     }
@@ -224,8 +256,6 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
           )}
         </>
       )}
-
-      <FinancialSummary />
     </Container>
   );
 }

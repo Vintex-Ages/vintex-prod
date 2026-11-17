@@ -1,7 +1,10 @@
 name: CI
 
-# feature -> develop : valida só o que mudou (ver .github/config/ci-paths.json)
+# feature -> develop : valida só o componente cuja pasta mudou (front-end/, back-end/, ...;
+#                      ver .github/config/ci-paths.json). Documentação não roda testes e o
+#                      front-end roda apenas os testes afetados (ver ci-front-end.yml).
 # develop -> qa, qa -> main, main -> deploy, push e agenda : valida tudo
+# Jobs de infra (ci-infra.yml) rodam apenas em PR para `qa`.
 # O único check a exigir no ruleset é o "CI gate": workflows filtrados por caminho
 # deixam checks obrigatórios pendentes para sempre quando não rodam.
 
@@ -33,6 +36,8 @@ jobs:
       infra: ${{ steps.detect.outputs.infra }}
       automation: ${{ steps.detect.outputs.automation }}
       docs: ${{ steps.detect.outputs.docs }}
+      front_end_scope: ${{ steps.detect.outputs.front_end_scope }}
+      base_sha: ${{ steps.detect.outputs.base_sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -51,12 +56,24 @@ jobs:
     needs: changes
     if: needs.changes.outputs.front_end == 'true'
     uses: ./.github/workflows/ci-front-end.yml
+    with:
+      scope: ${{ needs.changes.outputs.front_end_scope }}
+      base_sha: ${{ needs.changes.outputs.base_sha }}
 
   back-end:
     name: back-end
     needs: changes
     if: needs.changes.outputs.back_end == 'true'
     uses: ./.github/workflows/ci-back-end.yml
+
+  infra:
+    name: infra
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    uses: ./.github/workflows/ci-infra.yml
+    permissions:
+      contents: read
+      id-token: write # llm-key assume o role AWS por OIDC
 
   automation:
     name: Automation scripts
@@ -72,14 +89,19 @@ jobs:
         with:
           node-version: 22
       - name: Test automation scripts
-        run: node --test .github/scripts/lib/*.tests.mjs
+        run: node --test .github/scripts/lib/*.test.mjs .github/scripts/lib/*.tests.mjs
 
   gate:
-    name: CI gate
+    name: ${{ matrix.check }}
+    strategy:
+      matrix:
+        # "Front-end CI" e "Back-end CI" mantêm os rulesets ao vivo satisfeitos até a
+        # troca para o CI gate (config/governance/rulesets); depois, remover os dois.
+        check: [CI gate, Front-end CI, Back-end CI]
     # Um job pulado conta como sucesso para a proteção de branch; por isso o gate roda
     # sempre e falha explicitamente se qualquer job executado não tiver passado.
     if: ${{ always() }}
-    needs: [changes, front-end, back-end, automation]
+    needs: [changes, front-end, back-end, infra, automation]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

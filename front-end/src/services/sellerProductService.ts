@@ -44,11 +44,15 @@ interface GetMineParams {
  * (`app/core/errors.py::ErrorCode`) — quem chama o service trata o mesmo
  * formato de erro estando no mock ou na API real. `NO_IMAGE` é o único código
  * só do front: o back devolve 422 `VALIDATION_ERROR` com `fields.images`.
+ *
+ * `field` diz a que campo da peça o erro se refere, quando o back aponta um
+ * (hoje só `video_url`, back-end#333); a mensagem é a do back.
  */
 export class SellerProductError extends Error {
   constructor(
     public readonly code: string,
     message: string,
+    public readonly field?: string,
   ) {
     super(message);
     this.name = 'SellerProductError';
@@ -146,7 +150,7 @@ type MockStore = SellerProductDetail['store'];
 const FALLBACK_MOCK_STORE: MockStore = { id: 'store-mock', name: 'Minha loja', city: null };
 
 function seedProducts(store: MockStore): SellerProductDetail[] {
-  const base = { store, quantity: 1 as const, aiCorrections: [] };
+  const base = { store, quantity: 1 as const, aiCorrections: [], videoUrl: null };
   return [
     {
       ...base,
@@ -210,7 +214,11 @@ async function readProducts(userId: string): Promise<SellerProductDetail[]> {
   try {
     const raw = window.sessionStorage.getItem(sellerProductsKey(userId));
     if (raw) {
-      return JSON.parse(raw) as SellerProductDetail[];
+      // Peças gravadas antes do vídeo existir não têm o campo: a leitura sempre devolve `videoUrl`.
+      return (JSON.parse(raw) as SellerProductDetail[]).map((product) => ({
+        ...product,
+        videoUrl: product.videoUrl ?? null,
+      }));
     }
   } catch {
     // Storage indisponível ou corrompido: cai no seed abaixo.
@@ -257,7 +265,11 @@ async function loadOwned(id: string) {
   return { product: products[index], save };
 }
 
-/** Só aplica o que foi enviado, igual o `exclude_unset` do PATCH no back. */
+/**
+ * Só aplica o que foi enviado, igual o `exclude_unset` do PATCH no back. Por
+ * isso `videoUrl` ausente mantém o vídeo, uma URL troca e `null` remove: o
+ * filtro descarta `undefined`, mas deixa `null` passar.
+ */
 function applyInput(
   product: SellerProductDetail,
   input: Partial<ProductInput>,
@@ -283,6 +295,7 @@ async function mockCreateDraft(
       name: input.name,
       price: input.price,
       images: [],
+      videoUrl: null,
       quantity: 1,
       status: 'rascunho',
       store: await currentMockStore(),
@@ -429,6 +442,8 @@ interface ApiSellerProductDetail extends ApiSellerProduct {
   composition: string | null;
   store: { id: number | string; name: string; city: string | null };
   images: string[];
+  /** URL do vídeo (3 a 5 s, RN-48) ou `null` sem vídeo (back-end#333). */
+  video_url?: string | null;
   ai_corrections: ApiCorrection[];
 }
 
@@ -478,6 +493,7 @@ function mapSellerProductDetail(item: ApiSellerProductDetail): SellerProductDeta
     ...mapSellerProduct(item),
     composition: optional(item.composition),
     images: item.images,
+    videoUrl: item.video_url ?? null,
     quantity: 1,
     store: { id: String(item.store.id), name: item.store.name, city: item.store.city },
     aiCorrections: item.ai_corrections.map((correction) => ({
@@ -488,22 +504,44 @@ function mapSellerProductDetail(item: ApiSellerProductDetail): SellerProductDeta
   };
 }
 
-/** `quantity` não vai: o back fixa em 1 e nem recebe o campo (RN-46). */
+/**
+ * `quantity` não vai: o back fixa em 1 e nem recebe o campo (RN-46).
+ *
+ * `video_url` só vai quando a peça tem vídeo para criar, trocar ou remover
+ * (`null`, RN-52). Ausente, o campo fica fora do corpo e o back mantém o vídeo
+ * que a peça já tem (back-end#333).
+ */
 function toApiBody(input: Partial<ProductInput>, corrections: ListingCorrection[]) {
-  const fields: Partial<ProductInput> = { ...input };
+  const { videoUrl, ...fields }: Partial<ProductInput> = { ...input };
   delete fields.quantity;
-  return { ...fields, ai_corrections: corrections };
+  return {
+    ...fields,
+    ...(videoUrl !== undefined && { video_url: videoUrl }),
+    ai_corrections: corrections,
+  };
 }
 
 /**
  * Normaliza erro do axios pro mesmo `SellerProductError` do caminho mock. O
  * back manda "sem imagem" como 422 `VALIDATION_ERROR` com `fields.images`, e
  * aqui isso vira `NO_IMAGE`.
+ *
+ * URL que não é de vídeo em `video_url` volta como 422 com `fields.video_url`
+ * (back-end#333): o código do back fica e a mensagem é a dele, com o campo para
+ * a tela. O 422 de duração do upload (3 a 5 s) cai no último ramo, com o código
+ * e a mensagem do back ("clip.mp4 tem 6,0s…").
  */
 function toSellerProductError(error: unknown): SellerProductError {
   const data = (error as { response?: { data?: ApiErrorEnvelope } }).response?.data;
   if (data?.error?.fields?.images) {
     return noImage();
+  }
+  if (data?.error?.fields?.video_url) {
+    return new SellerProductError(
+      data.error.code ?? 'VALIDATION_ERROR',
+      data.error.fields.video_url,
+      'video_url',
+    );
   }
   if (data?.error?.code) {
     return new SellerProductError(data.error.code, data.error.message ?? 'Erro ao salvar peça.');
@@ -692,8 +730,12 @@ interface ApiMediaItem {
  * PALPITE: o back ainda não fixou como a etiqueta é marcada no upload
  * (back-end#257). `kind: 'label'` é a melhor aposta; ajustar aqui (e nos
  * testes) quando ele fechar.
+ *
+ * `video` sobe o vídeo da peça (mp4 ou quicktime, de 3 a 5 segundos, RN-48;
+ * back-end#333). Fora dessa duração, ou sem duração legível, o back responde
+ * 422 com a mensagem pronta, que o service repassa.
  */
-export type MediaKind = 'photo' | 'label';
+export type MediaKind = 'photo' | 'label' | 'video';
 
 /**
  * `POST /api/users/me/media` (back-end#73). A URL que volta é absoluta e

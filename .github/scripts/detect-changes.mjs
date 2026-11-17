@@ -25,14 +25,21 @@ if (mode === "changed") {
   }
 }
 
-const { flags, forceAll } = classify({
+const { flags, forceAll, frontEndScope } = classify({
   files,
   mode: diffFailed ? "all" : mode,
   config,
   exists: (path) => fs.existsSync(path),
+  eventName,
+  baseRef,
 });
 
-const outputs = { mode: diffFailed ? "all" : mode, force_all: String(forceAll || diffFailed) };
+const outputs = {
+  mode: diffFailed ? "all" : mode,
+  force_all: String(forceAll || diffFailed),
+  front_end_scope: diffFailed ? "all" : frontEndScope,
+  base_sha: baseSha,
+};
 for (const [name, value] of Object.entries(flags)) {
   outputs[name.replaceAll("-", "_")] = String(value);
 }

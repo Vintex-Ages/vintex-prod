@@ -167,4 +167,210 @@ describe('<OrderCard />', () => {
       /prazo|previs|estimad|dias úteis|rastrei|rastreamento|transportadora|código de/i,
     );
   });
+
+  // #424: quem decide quais ações valem para o Pedido é a página, não o cartão.
+  describe('ações de pós-venda', () => {
+    const REVIEW = 'Avaliar loja';
+    const REPORT = 'Reportar problema';
+
+    it('com as duas ações mostra os dois botões', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{
+            primary: { label: REVIEW, onClick: vi.fn() },
+            secondary: { label: REPORT, onClick: vi.fn() },
+          }}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: REVIEW })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: REPORT })).toBeInTheDocument();
+      expect(screen.getAllByRole('button')).toHaveLength(3);
+    });
+
+    it('só com a principal não mostra a secundária', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{ primary: { label: REVIEW, onClick: vi.fn() } }}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: REVIEW })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: REPORT })).toBeNull();
+    });
+
+    it('só com a secundária não mostra a principal', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{ secondary: { label: REPORT, onClick: vi.fn() } }}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: REPORT })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: REVIEW })).toBeNull();
+    });
+
+    it('sem nenhuma ação, ou com o objeto vazio, o cartão fica igual ao de hoje', () => {
+      const today = render(<OrderCard order={makeOrder()} onOpen={vi.fn()} />);
+      const todayHtml = today.container.innerHTML;
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+      today.unmount();
+
+      const { container } = render(
+        <OrderCard order={makeOrder()} onOpen={vi.fn()} afterSaleActions={{}} />,
+      );
+
+      // Igualdade do HTML pega também um grupo vazio, que somaria um `gap` no cartão.
+      expect(container.innerHTML).toBe(todayHtml);
+    });
+
+    it.each([
+      ['principal', REVIEW, REPORT],
+      ['secundária', REPORT, REVIEW],
+    ] as const)(
+      'clicar na %s chama só o onClick dela e não chama onOpen',
+      async (_kind, label, other) => {
+        const onOpen = vi.fn();
+        const handlers = { [REVIEW]: vi.fn(), [REPORT]: vi.fn() };
+        render(
+          <OrderCard
+            order={makeOrder()}
+            onOpen={onOpen}
+            afterSaleActions={{
+              primary: { label: REVIEW, onClick: handlers[REVIEW] },
+              secondary: { label: REPORT, onClick: handlers[REPORT] },
+            }}
+          />,
+        );
+
+        await userEvent.click(screen.getByRole('button', { name: label }));
+
+        expect(handlers[label]).toHaveBeenCalledTimes(1);
+        expect(handlers[other]).not.toHaveBeenCalled();
+        expect(onOpen).not.toHaveBeenCalled();
+      },
+    );
+
+    it('clicar no cartão continua chamando onOpen e não dispara as ações', async () => {
+      const onOpen = vi.fn();
+      const onReview = vi.fn();
+      const onReport = vi.fn();
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={onOpen}
+          afterSaleActions={{
+            primary: { label: REVIEW, onClick: onReview },
+            secondary: { label: REPORT, onClick: onReport },
+          }}
+        />,
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: /Pedido #ped-123/ }));
+
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(onOpen).toHaveBeenCalledWith('ped-123');
+      expect(onReview).not.toHaveBeenCalled();
+      expect(onReport).not.toHaveBeenCalled();
+    });
+
+    it('com action e as ações de pós-venda juntas, os três botões funcionam isolados', async () => {
+      const onOpen = vi.fn();
+      const onAction = vi.fn();
+      const onReview = vi.fn();
+      const onReport = vi.fn();
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={onOpen}
+          action={{ label: 'Enviar comprovante', onClick: onAction }}
+          afterSaleActions={{
+            primary: { label: REVIEW, onClick: onReview },
+            secondary: { label: REPORT, onClick: onReport },
+          }}
+        />,
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Enviar comprovante' }));
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(onReview).not.toHaveBeenCalled();
+      expect(onReport).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole('button', { name: REVIEW }));
+      expect(onReview).toHaveBeenCalledTimes(1);
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(onReport).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole('button', { name: REPORT }));
+      expect(onReport).toHaveBeenCalledTimes(1);
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(onReview).toHaveBeenCalledTimes(1);
+
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    it('o nome acessível de cada ação vem do label recebido', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{
+            primary: { label: 'Rótulo principal', onClick: vi.fn() },
+            secondary: { label: 'Rótulo secundário', onClick: vi.fn() },
+          }}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: 'Rótulo principal' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Rótulo secundário' })).toBeInTheDocument();
+    });
+
+    // Em jsdom não há layout: o que dá para travar é o contrato de classes e a árvore.
+    it('as ações ficam acima do ::after, fora do botão do cartão e abaixo do resumo', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{
+            primary: { label: REVIEW, onClick: vi.fn() },
+            secondary: { label: REPORT, onClick: vi.fn() },
+          }}
+        />,
+      );
+
+      const cardButton = screen.getByRole('button', { name: /Pedido #ped-123/ });
+      const total = screen.getByText('R$ 1.234,50');
+
+      for (const label of [REVIEW, REPORT]) {
+        const button = screen.getByRole('button', { name: label });
+        expect(button).toHaveClass('relative', 'z-10', 'w-full', 'tablet:w-auto');
+        expect(cardButton).not.toContainElement(button);
+        expect(total.compareDocumentPosition(button)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    });
+
+    it('a principal é cheia e a secundária tem contorno', () => {
+      render(
+        <OrderCard
+          order={makeOrder()}
+          onOpen={vi.fn()}
+          afterSaleActions={{
+            primary: { label: REVIEW, onClick: vi.fn() },
+            secondary: { label: REPORT, onClick: vi.fn() },
+          }}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: REVIEW })).toHaveClass('bg-vermelho-escuro');
+      const report = screen.getByRole('button', { name: REPORT });
+      expect(report).toHaveClass('border-vermelho-escuro', 'bg-transparent');
+      expect(report).not.toHaveClass('bg-vermelho-escuro');
+    });
+  });
 });

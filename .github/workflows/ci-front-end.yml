@@ -1,7 +1,24 @@
 name: CI front-end
 
+# Fluxo: static (lint, formatação, tipos) roda primeiro e sempre; se passar, test, coverage,
+# build e audit rodam em paralelo.
+#
+# Escopo dos testes (decidido em detect-changes.mjs):
+#   all     : suíte completa (promoções para qa/main/deploy, push, agenda, ou mudança em
+#             arquivo sem teste identificável, como package.json e configs)
+#   changed : só os testes afetados pelas mudanças do PR (grafo de módulos do vitest);
+#             se o vitest não identificar nenhum teste, roda a suíte completa.
+# `coverage` roda só em scope=all. Nesse caso a suíte roda duas vezes ao mesmo tempo (test e
+# coverage), trocando minutos de runner por tempo de relógio. Na agenda só rodam static e audit.
 on:
   workflow_call:
+    inputs:
+      scope:
+        type: string
+        default: all
+      base_sha:
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -11,59 +28,73 @@ defaults:
     working-directory: front-end
 
 jobs:
-  audit:
-    name: front-end audit
+  static:
+    name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        with:
-          version: 11.28.4
-          run_install: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: front-end/pnpm-lock.yaml
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Audit all dependencies
-        run: pnpm audit --audit-level high
-
-  quality:
-    name: front-end quality
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        with:
-          version: 11.28.4
-          run_install: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: front-end/pnpm-lock.yaml
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-front-end
       - name: Lint
         run: pnpm lint
       - name: Check formatting
         run: pnpm format:check
       - name: Check types
         run: pnpm exec tsc --noEmit
-      # `test:coverage` já roda a suíte inteira e falha se um teste falhar; rodar
-      # `pnpm test` antes executava os mesmos testes duas vezes (~80s a mais).
-      - name: Test braces security
-        run: pnpm test:braces-security
-      - name: Test application with coverage
+
+  test:
+    name: Test application
+    needs: static
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # `vitest --changed <base_sha>` precisa do histórico do PR
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front-end
+      - name: Select tests
+        id: select
+        env:
+          SCOPE: ${{ inputs.scope }}
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          mode=all
+          if [ "$SCOPE" = "changed" ] && [ -n "$BASE_SHA" ]; then
+            list=$(pnpm exec vitest list --filesOnly --changed "$BASE_SHA" 2>/dev/null \
+              | grep -E '\.(test|spec)\.[cm]?[jt]sx?$' || true)
+            if [ -n "$list" ]; then
+              mode=changed
+              echo "Testes afetados:"; echo "$list"
+            else
+              echo "::notice::Nenhum teste identificado para as mudanças; rodando a suíte completa."
+            fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+      - name: Test affected tests
+        if: steps.select.outputs.mode == 'changed'
+        env:
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: pnpm exec vitest run --changed "$BASE_SHA" --maxWorkers=2
+      - name: Test application
+        if: steps.select.outputs.mode == 'all'
+        run: pnpm test
+
+  coverage:
+    name: Test coverage
+    needs: static
+    if: github.event_name != 'schedule' && inputs.scope == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front-end
+      - name: Test coverage
         run: pnpm test:coverage
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
@@ -72,6 +103,18 @@ jobs:
           path: front-end/coverage
           if-no-files-found: ignore
           retention-days: 30
+
+  build:
+    name: Build
+    needs: static
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front-end
       - name: Build
         run: pnpm build
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -79,3 +122,16 @@ jobs:
           name: front-end-dist
           path: front-end/dist
           retention-days: 7
+
+  audit:
+    name: Audit
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front-end
+      - name: Audit all dependencies
+        run: pnpm audit --audit-level high

@@ -5,21 +5,13 @@
       "requires": "front-end/package.json"
     },
     "back-end": {
-      "paths": [
-        "back-end/app/**",
-        "back-end/tests/**",
-        "back-end/alembic/**",
-        "back-end/alembic.ini",
-        "back-end/requirements.txt",
-        "back-end/Dockerfile",
-        "back-end/pytest.ini",
-        "back-end/docker-compose.yml"
-      ],
+      "paths": ["back-end/**"],
       "requires": "back-end/requirements.txt"
     },
     "infra": {
-      "paths": ["back-end/infra/**", "back-end/scripts/infra/**", "back-end/Makefile"],
-      "requires": "back-end/Makefile"
+      "paths": ["back-end/**"],
+      "requires": "back-end/Makefile",
+      "onlyPullRequestBaseRefs": ["qa"]
     },
     "automation": {
       "paths": [".github/scripts/**", "config/**"]
@@ -27,6 +19,18 @@
     "docs": {
       "paths": ["documentation/**"]
     }
+  },
+  "docsGlobs": [
+    "**/*.md",
+    "**/*.mdx",
+    "documentation/**",
+    "back-end/documentation/**",
+    "front-end/docs/**",
+    "docs/**"
+  ],
+  "frontEnd": {
+    "scopedPaths": ["front-end/src/**"],
+    "fullTestPaths": ["front-end/src/test/**"]
   },
   "runAllWhenChanged": [".github/workflows/**", ".github/config/**"],
   "allModeEvents": ["push", "schedule", "workflow_dispatch"],

@@ -67,4 +67,28 @@ describe('FilterChip', () => {
 
     expect(screen.getByRole('button', { name: 'Roupas' })).toHaveClass('min-h-touch');
   });
+
+  describe('tone', () => {
+    it('o padrão é verde: o catálogo não muda', () => {
+      render(<FilterChip label="Roupas" active />);
+
+      expect(screen.getByRole('button', { name: 'Roupas' })).toHaveClass('bg-verde-rs');
+    });
+
+    it('tinta ativo usa o fundo de tinta, como o painel do vendedor no Figma', () => {
+      render(<FilterChip label="Todas (4)" tone="tinta" active />);
+
+      const chip = screen.getByRole('button', { name: 'Todas (4)' });
+      expect(chip).toHaveClass('bg-tinta', 'border-tinta', 'text-branco-quente');
+      expect(chip).not.toHaveClass('bg-verde-rs');
+    });
+
+    it('tinta inativo usa o papel com borda de linha e texto de tinta', () => {
+      render(<FilterChip label="Vendidas (1)" tone="tinta" />);
+
+      const chip = screen.getByRole('button', { name: 'Vendidas (1)' });
+      expect(chip).toHaveClass('bg-papel', 'border-linha', 'text-tinta');
+      expect(chip).not.toHaveClass('text-verde-rs');
+    });
+  });
 });

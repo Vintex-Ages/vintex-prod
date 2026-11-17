@@ -1,6 +1,11 @@
 import fs from "node:fs";
-import { createGraphqlClient } from "./lib/github-graphql.mjs";
-import { findProjectItem } from "./lib/project-items.mjs";
+import {
+  allowedRepositories,
+  formatRef,
+  isAllowed,
+  isLocal,
+  parseClosingRefs,
+} from "./lib/issue-refs.mjs";
 
 const event = JSON.parse(
   fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
@@ -10,9 +15,11 @@ const config = JSON.parse(
 );
 const token = process.env.GH_TOKEN;
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+const current = { owner, repo };
+const allowedRepos = allowedRepositories(config, current);
+const allowedNames = [owner + "/" + repo, ...(config.issueRepositories || [])];
 
 if (!token) throw new Error("GH_TOKEN não configurado.");
-const graphql = createGraphqlClient(token);
 
 const headers = {
   Authorization: "Bearer " + token,
@@ -43,13 +50,16 @@ const rest = async (path, options = {}) => {
   return response.status === 204 ? null : response.json();
 };
 
-const closingIssues = (body) => [
-  ...new Set(
-    [...(body || "").matchAll(/\b(?:Closes|Fixes|Resolves)\s+#(\d+)/gi)].map(
-      (match) => Number(match[1]),
-    ),
-  ),
-];
+const graphql = async (query, variables) => {
+  const payload = await rest("/graphql", {
+    method: "POST",
+    body: JSON.stringify({ query, variables }),
+  });
+  if (payload.errors) throw new Error(JSON.stringify(payload.errors));
+  return payload.data;
+};
+
+const closingIssues = (body) => parseClosingRefs(body, current);
 
 const issueIsRequired = (pr) =>
   config.issueRequiredOn.includes(pr.base.ref) &&
@@ -70,7 +80,6 @@ const listPages = async (path) => {
 };
 
 const projectCache = new Map();
-const contentItemCache = new Map();
 
 const fieldValueQuery = `
   fieldValues(first: 100) {
@@ -96,35 +105,7 @@ const fieldValueQuery = `
   }
 `;
 
-async function loadItemsForContent(contentId) {
-  if (contentItemCache.has(contentId)) return contentItemCache.get(contentId);
-  const items = [];
-  let cursor = null;
-  do {
-    const data = await graphql(`
-      query ($id: ID!, $cursor: String) {
-        node(id: $id) {
-          ... on Issue { projectItems(first: 100, after: $cursor) {
-            pageInfo { hasNextPage endCursor }
-            nodes { id project { id } ${fieldValueQuery} }
-          } }
-          ... on PullRequest { projectItems(first: 100, after: $cursor) {
-            pageInfo { hasNextPage endCursor }
-            nodes { id project { id } ${fieldValueQuery} }
-          } }
-        }
-      }
-    `, { id: contentId, cursor });
-    const connection = data.node?.projectItems;
-    if (!connection) break;
-    items.push(...connection.nodes.filter(Boolean));
-    cursor = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
-  } while (cursor);
-  contentItemCache.set(contentId, items);
-  return items;
-}
-
-async function loadProject(number, contentIds = null) {
+async function loadProject(number) {
   if (projectCache.has(number)) return projectCache.get(number);
 
   const headerData = await graphql(
@@ -157,16 +138,9 @@ async function loadProject(number, contentIds = null) {
   if (!project) throw new Error("Project #" + number + " não encontrado.");
 
   const items = [];
-  if (contentIds) {
-    for (const contentId of contentIds) {
-      const linked = await loadItemsForContent(contentId);
-      const item = findProjectItem(linked, project.id);
-      if (item) items.push({ ...item, content: { id: contentId } });
-    }
-  } else {
-    let cursor = null;
-    do {
-      const pageData = await graphql(
+  let cursor = null;
+  do {
+    const pageData = await graphql(
       `
         query ($org: String!, $number: Int!, $cursor: String) {
           organization(login: $org) {
@@ -188,13 +162,12 @@ async function loadProject(number, contentIds = null) {
       `,
       { org: config.organization, number, cursor },
     );
-      const connection = pageData.organization.projectV2.items;
-      items.push(...connection.nodes);
-      cursor = connection.pageInfo.hasNextPage
-        ? connection.pageInfo.endCursor
-        : null;
-    } while (cursor);
-  }
+    const connection = pageData.organization.projectV2.items;
+    items.push(...connection.nodes);
+    cursor = connection.pageInfo.hasNextPage
+      ? connection.pageInfo.endCursor
+      : null;
+  } while (cursor);
 
   const loaded = {
     id: project.id,
@@ -345,10 +318,7 @@ async function archiveProjectItem(project, item) {
 }
 
 async function syncProject(number, pr, primaryIssue) {
-  const targetedIds = event.pull_request
-    ? [pr.node_id, primaryIssue?.node_id].filter(Boolean)
-    : null;
-  const project = await loadProject(number, targetedIds);
+  const project = await loadProject(number);
   let issueItem = primaryIssue
     ? project.items.find((item) => item.content?.id === primaryIssue.node_id)
     : null;
@@ -415,6 +385,23 @@ const changeLabel = (body) => {
 const equalSets = (left, right) =>
   left.size === right.size && [...left].every((value) => right.has(value));
 
+// O número de uma milestone muda entre repositórios (S4 é #5 no front-end e
+// #1 no vintex-prod); o título é o que as une.
+let localMilestones;
+async function localMilestoneNumber(title) {
+  if (!title) return null;
+  localMilestones ??= await listPages(
+    "/repos/" + owner + "/" + repo + "/milestones?state=all",
+  );
+  const found = localMilestones.find((milestone) => milestone.title === title);
+  if (!found) {
+    throw new Error(
+      "A milestone " + title + " não existe em " + owner + "/" + repo + ".",
+    );
+  }
+  return found.number;
+}
+
 async function syncRepositoryMetadata(pr, issues) {
   if (!issues.length) return;
 
@@ -442,7 +429,7 @@ async function syncRepositoryMetadata(pr, issues) {
   const currentAssignees = new Set(
     (pr.assignees || []).map((assignee) => assignee.login),
   );
-  const desiredMilestone = issues[0].milestone?.number ?? null;
+  const desiredMilestone = await localMilestoneNumber(issues[0].milestone?.title);
   const currentMilestone = pr.milestone?.number ?? null;
 
   if (
@@ -472,28 +459,41 @@ async function syncPullRequest(inputPr) {
   const required = issueIsRequired(pr);
 
   if (required && !issueNumbers.length) {
-    console.warn(`PR #${pr.number}: sem issue vinculada; sincronização ignorada.`);
-    return;
+    throw new Error(
+      "PR #" + pr.number + " precisa indicar Closes #<issue>.",
+    );
   }
 
   const branchIssue = pr.head.ref.match(
     /^(?:feature|bugfix|hotfix|refactor|docs|chore)\/(\d+)-/,
   );
-  const legacyIssue = pr.head.ref === "hotfix/braces-nesting-depth-guard" ? 347 : null;
-  if (required &&
-      (branchIssue ? Number(branchIssue[1]) !== issueNumbers[0] :
-        legacyIssue !== issueNumbers[0])) {
-    console.warn(`PR #${pr.number}: issue primária não corresponde à branch; sincronização ignorada.`);
-    return;
+  if (
+    required &&
+    (!branchIssue || Number(branchIssue[1]) !== issueNumbers[0]?.number)
+  ) {
+    throw new Error(
+      "A issue primária do PR #" +
+        pr.number +
+        " deve coincidir com o número da branch.",
+    );
   }
 
   const issues = [];
-  for (const number of issueNumbers) {
+  for (const ref of issueNumbers) {
+    const label = formatRef(ref, current);
+    if (!isAllowed(ref, allowedRepos)) {
+      throw new Error(
+        label +
+          ": só são aceitas issues de " +
+          allowedNames.join(", ") +
+          ".",
+      );
+    }
     const issue = await rest(
-      "/repos/" + owner + "/" + repo + "/issues/" + number,
+      "/repos/" + ref.owner + "/" + ref.repo + "/issues/" + ref.number,
     );
     if (issue.pull_request) {
-      throw new Error("#" + number + " não é uma issue.");
+      throw new Error(label + " não é uma issue.");
     }
     issues.push(issue);
   }
@@ -524,7 +524,8 @@ async function syncPullRequest(inputPr) {
       pr.number +
       " sincronizado" +
       (issueNumbers.length
-        ? " com as issues " + issueNumbers.map((number) => "#" + number).join(", ")
+        ? " com as issues " +
+          issueNumbers.map((ref) => formatRef(ref, current)).join(", ")
         : " como promoção sem issue") +
       ".",
   );
@@ -538,7 +539,9 @@ async function selectedPullRequests() {
   );
   if (event.issue && !event.issue.pull_request) {
     return open.filter((pr) =>
-      closingIssues(pr.body).includes(event.issue.number),
+      closingIssues(pr.body).some(
+        (ref) => isLocal(ref, current) && ref.number === event.issue.number,
+      ),
     );
   }
   return open;

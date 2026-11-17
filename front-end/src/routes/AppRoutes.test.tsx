@@ -409,7 +409,7 @@ describe('<AppRoutes />', () => {
   // --- FE-FND-4 (#205): rotas da Sprint 2 e guardas ---
 
   it.each([
-    [paths.seller, 'Painel do vendedor', SELLER],
+    [paths.seller, 'Painel de Vendas & Gestão de Peças', SELLER],
     [paths.sellerProductNew, 'Nova peça', SELLER],
     [sellerProductPath('1'), 'Editar peça', SELLER],
     [sellerProductReviewPath('1'), 'Revisar anúncio', SELLER],
@@ -473,7 +473,9 @@ describe('<AppRoutes />', () => {
 
       expect(await screen.findByRole('heading', { name: 'Quero vender' })).toBeInTheDocument();
       expect(screen.getByText('Para anunciar, crie sua loja')).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -493,7 +495,9 @@ describe('<AppRoutes />', () => {
   it('P-06: /sell com loja vai ao painel do vendedor', async () => {
     renderAtWithAuth(paths.sell, makeAuthValue({ isAuthenticated: true, user: SELLER }));
 
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Abrir minha loja' })).not.toBeInTheDocument();
   });
 
@@ -750,12 +754,16 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
     renderPanel();
 
     expect(await screen.findByText('Verificando sua loja…')).toHaveAttribute('role', 'status');
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).not.toBeInTheDocument();
     expect(publicReads()).toEqual([]);
     expect(validationPosts()).toEqual([]);
 
     await act(async () => privateGate?.resolve());
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     await sealCard();
   });
 
@@ -765,10 +773,14 @@ describe('#359 — painel usa o selo da loja carregada pela guarda', () => {
     renderPanel();
 
     expect(await screen.findByText('Não foi possível verificar sua loja.')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Painel do vendedor' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
-    expect(await screen.findByRole('heading', { name: 'Painel do vendedor' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Painel de Vendas & Gestão de Peças' }),
+    ).toBeInTheDocument();
     await sealCard();
   });
 

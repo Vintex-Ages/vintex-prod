@@ -1,0 +1,154 @@
+import fs from "node:fs";
+import {
+  allowedRepositories,
+  formatRef,
+  isAllowed,
+  parseClosingRefs,
+} from "./lib/issue-refs.mjs";
+import { flowErrors } from "./lib/branch-flow.mjs";
+
+const event = JSON.parse(
+  fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"),
+);
+const config = JSON.parse(
+  fs.readFileSync("config/governance/pr-automation.json", "utf8"),
+);
+const pr = event.pull_request;
+const token = process.env.GITHUB_TOKEN;
+const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
+const current = { owner, repo };
+const allowedRepos = allowedRepositories(config, current);
+const allowedNames = [`${owner}/${repo}`, ...(config.issueRepositories || [])];
+const errors = [];
+const base = pr.base.ref;
+const head = pr.head.ref;
+const promotionMatch = head.match(
+  /^promote\/(front-end|back-end)-([0-9a-f]{7})$/,
+);
+const workBranch =
+  /^(feature|bugfix|hotfix|refactor|docs|chore)\/[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
+    head,
+  );
+const closingIssues = parseClosingRefs(pr.body, current);
+
+if (base === "develop" && !promotionMatch && !workBranch)
+  errors.push(
+    `Branch ${head} não é uma promoção nem uma branch de trabalho válida.`,
+  );
+
+const api = async (path) => {
+  const response = await fetch(`https://api.github.com${path}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: "application/vnd.github+json",
+    },
+  });
+  if (!response.ok)
+    throw new Error(`GET ${path}: ${response.status} ${await response.text()}`);
+  return response.json();
+};
+
+const qaResponse = await fetch(
+  `https://api.github.com/repos/${owner}/${repo}/branches/qa`,
+  {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: "application/vnd.github+json",
+    },
+  },
+);
+errors.push(...flowErrors({ base, head, qaExists: qaResponse.ok }));
+
+if (base === "develop" && workBranch) {
+  const branchIssue = Number(head.match(/^[^/]+\/(\d+)-/)?.[1]);
+  if (!closingIssues.length) {
+    errors.push("Inclua Closes #<issue> no corpo do PR.");
+  } else {
+    if (branchIssue !== closingIssues[0].number) {
+      errors.push("A primeira issue vinculada deve coincidir com o número da branch.");
+    }
+    const issues = [];
+    for (const ref of closingIssues) {
+      const label = formatRef(ref, current);
+      if (!isAllowed(ref, allowedRepos)) {
+        errors.push(
+          `${label}: só são aceitas issues de ${allowedNames.join(", ")}.`,
+        );
+        continue;
+      }
+      try {
+        const issue = await api(
+          `/repos/${ref.owner}/${ref.repo}/issues/${ref.number}`,
+        );
+        if (issue.pull_request) {
+          errors.push(`${label} é um Pull Request, não uma issue.`);
+        } else {
+          issues.push(issue);
+        }
+      } catch {
+        errors.push(`A issue ${label} não existe em ${ref.owner}/${ref.repo}.`);
+      }
+    }
+    // O número da milestone muda de um repositório para outro; o título não.
+    const milestones = new Set(
+      issues.map((issue) => issue.milestone?.title).filter(Boolean),
+    );
+    if (milestones.size > 1) {
+      errors.push("As issues vinculadas possuem milestones diferentes.");
+    }
+  }
+}
+
+if (promotionMatch) {
+  const component = promotionMatch[1];
+  const files = await api(
+    `/repos/${owner}/${repo}/pulls/${pr.number}/files?per_page=100`,
+  );
+  const expected = `components/${component}/release.yml`;
+  const changed = files.map((file) => file.filename);
+  if (changed.length !== 1 || changed[0] !== expected)
+    errors.push(`A promoção deve alterar exclusivamente ${expected}.`);
+
+  const response = await fetch(
+    `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(head)}/${expected}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) errors.push(`Não foi possível ler ${expected}.`);
+  else {
+    const manifest = Object.fromEntries(
+      (await response.text())
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.split(/:\s+/, 2)),
+    );
+    const expectedRepo = `Vintex-Ages/${component}`;
+    if (manifest.component !== component)
+      errors.push("component não corresponde à branch.");
+    if (manifest.source_repository !== expectedRepo)
+      errors.push(`source_repository deve ser ${expectedRepo}.`);
+    if (manifest.source_branch !== "deploy")
+      errors.push("source_branch deve ser deploy.");
+    if (!/^[0-9a-f]{40}$/.test(manifest.source_sha || ""))
+      errors.push("source_sha deve ser um SHA completo.");
+    if (/^[0-9a-f]{40}$/.test(manifest.source_sha || "")) {
+      const commitResponse = await fetch(
+        `https://api.github.com/repos/${expectedRepo}/commits/${manifest.source_sha}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          },
+        },
+      );
+      if (!commitResponse.ok)
+        errors.push("source_sha não existe no repositório de origem.");
+    }
+  }
+}
+
+if (errors.length) {
+  for (const error of errors) console.error(`::error::${error}`);
+  process.exit(1);
+}
+
+console.log(`Fluxo GitOps válido: ${head} -> ${base}`);
