@@ -10,12 +10,15 @@ from __future__ import annotations
 from app.config import settings
 from app.services.ai.base import AIProvider
 from app.services.ai.fake import FakeAIProvider
+from app.services.ai.freellmapi import FreeLLMAPIProvider
 from app.services.ai.google import GoogleAIProvider
 from app.services.ai.unavailable import UnavailableAIProvider
 
 _PROVIDERS: dict[str, type[AIProvider]] = {
     "unavailable": UnavailableAIProvider,
     "google": GoogleAIProvider,
+    # Gateway interno da staging (sugestão de cadastro e embedding da busca).
+    "freellmapi": FreeLLMAPIProvider,
     # Determinístico, para a suíte E2E (ver `fake.py`). Nunca em produção.
     "fake": FakeAIProvider,
 }

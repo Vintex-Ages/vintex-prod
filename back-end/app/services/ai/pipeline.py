@@ -46,7 +46,9 @@ def process_image_analysis(
             logger.warning(
                 "Falha na análise de IA da peça %s (%s)",
                 product_id,
-                type(exc).__name__,
+                # Mensagens de AIProviderError são nossas e sem segredo (só o
+                # status HTTP); qualquer outra exceção segue só pelo tipo.
+                exc if isinstance(exc, AIProviderError) else type(exc).__name__,
             )
             product.ai_status = "failed"
             product.ai_error = (

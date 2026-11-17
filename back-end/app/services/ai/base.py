@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from typing import Literal, NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class AIProviderError(Exception):
@@ -62,6 +62,34 @@ class ImageAnalysisResult(BaseModel):
     # Composição do tecido, com o mesmo cuidado da marca (back-end#257): só
     # sai de etiqueta legível, nunca do aspecto do tecido.
     composition: SuggestedField | None = None
+
+    @field_validator(
+        "category",
+        "color",
+        "size",
+        "condition",
+        "description",
+        "brand",
+        "composition",
+        mode="before",
+    )
+    @classmethod
+    def _sem_valor_vira_none(cls, campo: object) -> object:
+        """`{"value": null}` quer dizer "não sei", o mesmo que o campo nulo.
+
+        Modelos que não reconhecem a peça (foto sem roupa, por exemplo) devolvem
+        o objeto com `value` nulo em vez de omitir o campo, e o `str` de
+        `SuggestedField.value` rejeitava a resposta inteira como inválida.
+        Números (um tamanho `38`) viram texto pelo mesmo motivo.
+        """
+        if not isinstance(campo, dict) or "value" not in campo:
+            return campo
+        valor = campo["value"]
+        if valor is None or (isinstance(valor, str) and not valor.strip()):
+            return None
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+            return {**campo, "value": str(valor)}
+        return campo
 
 
 class ImagePhoto(NamedTuple):

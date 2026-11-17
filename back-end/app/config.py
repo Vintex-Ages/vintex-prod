@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     FREELLMAPI_BASE_URL: str = "http://freellmapi:3001/v1"
     FREELLMAPI_API_KEY: str = ""
     FREELLMAPI_MODEL: str = "auto"
+    # Família de embedding pedida ao gateway quando AI_PROVIDER=freellmapi. Um
+    # nome só, de propósito (mesma razão do GOOGLE_EMBEDDING_MODEL): "auto"
+    # deixaria o gateway trocar de espaço vetorial sem que `Product.embedding`
+    # soubesse.
+    FREELLMAPI_EMBEDDING_MODEL: str = "gemini-embedding-001"
 
     # Storage de mídia (VE-16). Sem endpoint explícito, boto3 usa a AWS.
     # Base publica da propria API, usada para montar a URL da midia. Fica
