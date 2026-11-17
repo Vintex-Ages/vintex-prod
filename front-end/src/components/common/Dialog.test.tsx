@@ -81,6 +81,34 @@ describe('<Dialog />', () => {
     trigger.remove();
   });
 
+  it('gatilho que saiu da página com a ação: o foco vai para o conteúdo', () => {
+    // `#conteudo` é o alvo do "pular para o conteúdo", presente em toda página.
+    const conteudo = document.createElement('div');
+    conteudo.id = 'conteudo';
+    conteudo.tabIndex = -1;
+    document.body.appendChild(conteudo);
+
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const { rerender } = render(
+      <Dialog open onClose={() => {}} title="Título">
+        conteúdo
+      </Dialog>,
+    );
+    // O pai tira o botão do DOM ao concluir a ação (ex.: "Avaliar loja", #409).
+    trigger.remove();
+    rerender(
+      <Dialog open={false} onClose={() => {}} title="Título">
+        conteúdo
+      </Dialog>,
+    );
+
+    expect(conteudo).toHaveFocus();
+    conteudo.remove();
+  });
+
   it('clique no fundo fecha por padrão, mas não clique dentro do painel', async () => {
     const user = userEvent.setup();
     const { onClose } = renderDialog();

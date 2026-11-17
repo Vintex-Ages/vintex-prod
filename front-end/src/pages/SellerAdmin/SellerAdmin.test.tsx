@@ -2,7 +2,12 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import NotificationBell from '@/components/layout/NotificationBell';
+import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
+import { listNotifications, markAsRead } from '@/services/notificationService';
+import type { Notification } from '@/types/notification';
 import {
   discardDraft,
   getMine,
@@ -46,24 +51,59 @@ function pagina(items: SellerProduct[]): Paginated<SellerProduct> {
   return { items, page: 1, pageSize: 20, total: items.length };
 }
 
+vi.mock('@/services/notificationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/notificationService')>()),
+  listNotifications: vi.fn(),
+  markAsRead: vi.fn(),
+  markAllAsRead: vi.fn(),
+}));
+
+const VENDEDORA: AuthContextValue = {
+  user: { id: 'u-421', name: 'Nair', email: 'nair@exemplo.com', is_seller: true, is_admin: false },
+  token: 't',
+  isAuthenticated: true,
+  loading: false,
+  login: () => {},
+  logout: () => {},
+  refreshUser: async () => {},
+};
+
+/** Notificações vêm do provider real, como no `App` (o sino mostra o contador). */
 function renderPage() {
   return render(
     <ToastProvider>
       <MemoryRouter initialEntries={['/seller']}>
-        <Routes>
-          <Route path="/seller" element={<SellerAdmin />} />
-          <Route path="/seller/products/new" element={<h1>Anunciar peça</h1>} />
-          <Route path="/seller/store" element={<h1>Editar loja</h1>} />
-          <Route path="/seller/products/:id" element={<h1>Formulário da peça</h1>} />
-          <Route path="/seller/products/:id/review" element={<h1>Revisão da peça</h1>} />
-        </Routes>
+        <AuthContext.Provider value={VENDEDORA}>
+          <NotificationsProvider>
+            <NotificationBell open={false} onToggle={() => {}} onClose={() => {}} />
+            <Routes>
+              <Route path="/seller" element={<SellerAdmin />} />
+              <Route path="/seller/products/new" element={<h1>Anunciar peça</h1>} />
+              <Route path="/seller/store" element={<h1>Editar loja</h1>} />
+              <Route path="/seller/products/:id" element={<h1>Formulário da peça</h1>} />
+              <Route path="/seller/products/:id/review" element={<h1>Revisão da peça</h1>} />
+            </Routes>
+          </NotificationsProvider>
+        </AuthContext.Provider>
       </MemoryRouter>
     </ToastProvider>,
   );
 }
 
+function notificacoes(items: Notification[]) {
+  vi.mocked(listNotifications).mockResolvedValue({
+    items,
+    page: 1,
+    pageSize: items.length,
+    total: items.length,
+    unreadCount: items.filter((item) => !item.isRead).length,
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  notificacoes([]);
+  vi.mocked(markAsRead).mockResolvedValue(undefined);
   vi.mocked(getMyVerification).mockResolvedValue('pendente');
   vi.mocked(getSalesSummary).mockImplementation(async (period) => ({
     period,
@@ -825,6 +865,254 @@ describe('<SellerAdmin />', () => {
         await screen.findByText('Não foi possível validar seus dados agora. Tente de novo.'),
       ).toBeInTheDocument();
       expect(card.getByRole('img', { name: 'Pendente' })).toBeInTheDocument();
+    });
+  });
+
+  describe('aviso de nova venda (FE-US036-3, #421)', () => {
+    const PECAS = [
+      peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
+      peca({ id: '3', name: 'Bota Chelsea', status: 'vendido' }),
+    ];
+
+    function venda(overrides: Partial<Notification> = {}): Notification {
+      return {
+        id: 'venda-421',
+        type: 'sale',
+        productName: 'Bota Chelsea',
+        orderId: 'pedido-421',
+        createdAt: '2026-10-21T15:00:00.000Z',
+        isRead: false,
+        ...overrides,
+      };
+    }
+
+    const sino = () => screen.getByRole('button', { name: 'Notificações' });
+    const regiaoAvisos = () => screen.queryByRole('region', { name: 'Avisos de nova venda' });
+
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina(PECAS));
+    });
+
+    it('uma venda não lida aparece no topo, acima dos cartões financeiros', async () => {
+      notificacoes([venda()]);
+      renderPage();
+
+      const aviso = await screen.findByRole('heading', {
+        name: 'Sua peça Bota Chelsea foi vendida',
+      });
+      const financeiro = screen.getByRole('region', { name: 'Financeiro' });
+      expect(
+        aviso.compareDocumentPosition(financeiro) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(sino()).toHaveAccessibleDescription('1 notificação não lida');
+    });
+
+    it('fechar marca como lida, o aviso some e o contador do sino acompanha', async () => {
+      const user = userEvent.setup();
+      notificacoes([
+        venda(),
+        { ...venda({ id: 'fav-1', productName: 'Saia midi' }), type: 'favorite' },
+      ]);
+      renderPage();
+      await screen.findByRole('heading', { name: 'Sua peça Bota Chelsea foi vendida' });
+      expect(sino()).toHaveAccessibleDescription('2 notificações não lidas');
+
+      await user.click(
+        screen.getByRole('button', { name: 'Dispensar aviso da venda de Bota Chelsea' }),
+      );
+
+      expect(markAsRead).toHaveBeenCalledExactlyOnceWith('u-421', 'venda-421');
+      await waitFor(() => expect(regiaoAvisos()).not.toBeInTheDocument());
+      expect(sino()).toHaveAccessibleDescription('1 notificação não lida');
+      expect(listNotifications).toHaveBeenCalledTimes(1);
+    });
+
+    it('sem venda não lida, nenhum bloco de aviso aparece', async () => {
+      notificacoes([
+        venda({ isRead: true }),
+        { ...venda({ id: 'fav-1', productName: 'Saia midi' }), type: 'favorite' },
+      ]);
+      renderPage();
+
+      expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
+      await waitFor(() => expect(listNotifications).toHaveBeenCalled());
+      expect(regiaoAvisos()).not.toBeInTheDocument();
+      expect(screen.queryByText(/nova venda/i)).not.toBeInTheDocument();
+    });
+
+    it('falha da rota de notificações não derruba o painel', async () => {
+      vi.mocked(listNotifications).mockRejectedValue(new Error('rota fora'));
+      renderPage();
+
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'Painel de Vendas & Gestão de Peças',
+        }),
+      ).toBeInTheDocument();
+      expect(await screen.findByText('Jaqueta jeans')).toBeInTheDocument();
+      await waitFor(() => expect(listNotifications).toHaveBeenCalled());
+      expect(regiaoAvisos()).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Financeiro' })).toBeInTheDocument();
+    });
+
+    it('"Ver vendidas" leva à aba Vendidas', async () => {
+      const user = userEvent.setup();
+      notificacoes([venda()]);
+      renderPage();
+      await screen.findByText('Jaqueta jeans');
+
+      await user.click(await screen.findByRole('button', { name: 'Ver vendidas' }));
+
+      expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByText('Bota Chelsea', { selector: ':not(h2)' })).toBeInTheDocument();
+      expect(screen.queryByText('Jaqueta jeans')).not.toBeInTheDocument();
+    });
+
+    it('"Ver vendidas" também sai da aba Rascunhos', async () => {
+      const user = userEvent.setup();
+      notificacoes([venda()]);
+      vi.mocked(getMine).mockImplementation(async (params) =>
+        pagina(
+          params?.status === 'rascunho'
+            ? [peca({ id: '7', name: 'Saia plissada', status: 'rascunho' })]
+            : PECAS,
+        ),
+      );
+      renderPage();
+      await user.click(await screen.findByRole('button', { name: 'Rascunhos' }));
+      expect(await screen.findByText('Saia plissada')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Ver vendidas' }));
+
+      expect(screen.getByRole('button', { name: 'Rascunhos' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(screen.getByRole('button', { name: 'Vendidas (1)' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.queryByText('Saia plissada')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('peça Suspensa pela moderação (FE-US034-2, #433)', () => {
+    const MOTIVO = 'Fotos não correspondem à peça.';
+    const MSG_SUSPENSA =
+      'A peça foi suspensa pela moderação e só a administradora pode devolvê-la à vitrine.';
+    const ATIVA = peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' });
+    const PAUSADA = peca({ id: '2', name: 'Bolsa palha', status: 'despublicado' });
+    const SUSPENSA = peca({
+      id: '5',
+      name: 'Camisa xadrez',
+      status: 'despublicado',
+      moderationReason: MOTIVO,
+      moderatedAt: '2026-11-14T15:00:00.000Z',
+    });
+
+    function linha(nome: string) {
+      return screen.getByText(nome).closest('article') as HTMLElement;
+    }
+
+    beforeEach(() => {
+      vi.mocked(getMine).mockResolvedValue(pagina([ATIVA, PAUSADA, SUSPENSA]));
+      vi.mocked(publish).mockResolvedValue({} as never);
+      vi.mocked(unpublish).mockResolvedValue({} as never);
+    });
+
+    it('na aba Pausadas, a Suspensa tem selo e motivo, sem Republicar; a Pausada republica', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Camisa xadrez');
+
+      // A contagem dos chips não muda: as duas são `despublicado`.
+      await user.click(screen.getByRole('button', { name: 'Pausadas (2)' }));
+
+      const suspensa = within(linha('Camisa xadrez'));
+      expect(suspensa.getByText('Suspensa')).toBeInTheDocument();
+      expect(suspensa.queryByText('Pausada')).toBeNull();
+      expect(suspensa.getByText(MOTIVO)).toBeInTheDocument();
+      expect(suspensa.queryByRole('button', { name: 'Republicar' })).toBeNull();
+      expect(suspensa.queryByRole('button', { name: /publicar/i })).toBeNull();
+
+      const pausada = within(linha('Bolsa palha'));
+      expect(pausada.getByText('Pausada')).toBeInTheDocument();
+      expect(pausada.queryByText('Suspensa')).toBeNull();
+      expect(pausada.getByRole('button', { name: 'Republicar' })).toBeInTheDocument();
+    });
+
+    it('a Suspensa mantém "Editar anúncio", que leva ao formulário', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Camisa xadrez');
+
+      const editar = within(linha('Camisa xadrez')).getByRole('button', { name: 'Editar anúncio' });
+      expect(editar).toBeEnabled();
+      await user.click(editar);
+
+      expect(
+        await screen.findByRole('heading', { name: 'Formulário da peça' }),
+      ).toBeInTheDocument();
+    });
+
+    it('a Pausada pelo vendedor continua republicando normalmente', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(publish).toHaveBeenCalledWith('2');
+      expect(await screen.findByText('Anúncio publicado de novo')).toBeInTheDocument();
+      expect(within(linha('Bolsa palha')).getByText('Anunciada')).toBeInTheDocument();
+    });
+
+    it('se o back recusa publicar (PRODUCT_SUSPENDED), a tela mostra a mensagem dele', async () => {
+      const user = userEvent.setup();
+      // A peça parecia Pausada na lista, mas a administradora suspendeu antes do clique.
+      vi.mocked(publish).mockRejectedValue(
+        new SellerProductError('PRODUCT_SUSPENDED', MSG_SUSPENSA),
+      );
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(await screen.findByText(MSG_SUSPENSA)).toBeInTheDocument();
+      expect(within(linha('Bolsa palha')).getByText('Pausada')).toBeInTheDocument();
+      expect(screen.queryByText('Anúncio publicado de novo')).toBeNull();
+    });
+
+    it('outro erro do back ao republicar também mostra a mensagem dele', async () => {
+      const user = userEvent.setup();
+      vi.mocked(publish).mockRejectedValue(
+        new SellerProductError('PRODUCT_NOT_EDITABLE', 'Peça num pedido aberto não pode voltar.'),
+      );
+      renderPage();
+      await screen.findByText('Bolsa palha');
+
+      await user.click(within(linha('Bolsa palha')).getByRole('button', { name: 'Republicar' }));
+
+      expect(
+        await screen.findByText('Peça num pedido aberto não pode voltar.'),
+      ).toBeInTheDocument();
+    });
+
+    it('"Pausar" continua igual na peça anunciada', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByText('Jaqueta jeans');
+
+      await user.click(within(linha('Jaqueta jeans')).getByRole('button', { name: 'Pausar' }));
+
+      expect(unpublish).toHaveBeenCalledWith('1');
+      expect(await screen.findByText('Anúncio pausado')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pausadas (3)' })).toBeInTheDocument();
     });
   });
 });

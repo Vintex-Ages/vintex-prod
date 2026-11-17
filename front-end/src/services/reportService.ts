@@ -1,6 +1,7 @@
 import { httpClient } from '@/services/httpClient';
 import { findExampleOrder } from '@/services/orderService';
 import {
+  ORDER_REPORT_DESCRIPTION_MAX_LENGTH,
   ORDER_REPORT_REASONS,
   type AdminOrderReport,
   type ListReportsParams,
@@ -18,15 +19,21 @@ import type { Paginated } from '@/types/product';
  *     (lê os Pedidos de todos os compradores do mock e guarda as Reclamações);
  *   - `'false'` → API real via `httpClient`.
  *
- * API real CONTRATO PROPOSTO pelo front (back-end#268), não fixado pelo back.
- * O back fixa; o front segue o que vier. A diferença, se houver, é corrigida
- * aqui no service (a tela não muda):
- *   `POST /users/me/orders/{order_id}/reports` { reason, description }
+ * API real — rotas do back (back-end#268, alinhadas no #441). Qualquer
+ * diferença de formato é corrigida aqui no service (a tela não muda):
+ *   `POST /users/me/orders/{order_id}/complaints` { reason, description }
  *        → 201 { id, order_id, reason, description, created_at }
- *   `GET  /admin/reports?page=&page_size=`
- *        → 200 { items: [{ id, order_id, reason, description, created_at,
- *                          buyer: { id, name }, store: { id, name } }],
+ *        → 409 `ALREADY_REPORTED` (o Pedido já tem Reclamação) ou
+ *              `COMPLAINT_NOT_ALLOWED` (ainda não confirmado)
+ *        → 422 motivo fora dos dois ou descrição vazia / acima de 1000
+ *   `GET  /admin/complaints?page=&page_size=`
+ *        → 200 { items: [{ id, reason, description, created_at,
+ *                          buyer: { name, email, phone },
+ *                          order: { id, status, store: { id, name, … }, items,
+ *                                   total_amount } }],
  *                page, page_size, total }
+ *   Na API real, a ordem da lista é a do back (back-end#353): o service não
+ *   reordena. O mock continua com a mais recente primeiro.
  *
  * O comprador NÃO tem rota para ler a Reclamação que enviou (pendência no plano
  * da S4): por isso o service não oferece essa leitura.
@@ -48,7 +55,8 @@ export type OrderReportField = 'reason' | 'description';
 /**
  * Erro de Reclamação com `code` tipado, igual em mock e API real.
  * Códigos: `FORBIDDEN`, `ORDER_NOT_FOUND`, `VALIDATION_ERROR` (com `field`),
- * `ORDER_NOT_REPORTABLE`, `INTERNAL_ERROR`.
+ * `COMPLAINT_NOT_ALLOWED`, `ALREADY_REPORTED`, `INTERNAL_ERROR`; da API real,
+ * qualquer outro código do back chega como veio.
  */
 export class OrderReportError extends Error {
   constructor(
@@ -72,7 +80,7 @@ const REPORTABLE_STATUSES: readonly OrderStatus[] = [
 /**
  * Se o Pedido aceita Reclamação (RN-77). A mesma regra decide o botão
  * "Reportar problema" no `OrderCard` e no detalhe do Pedido (#410) e a
- * recusa `ORDER_NOT_REPORTABLE` do mock.
+ * recusa `COMPLAINT_NOT_ALLOWED` do mock.
  */
 export function canReportOrder(status: OrderStatus): boolean {
   return REPORTABLE_STATUSES.includes(status);
@@ -80,8 +88,16 @@ export function canReportOrder(status: OrderStatus): boolean {
 
 const REASON_ERROR = 'Escolha um dos motivos: não recebido ou danificado.';
 const DESCRIPTION_ERROR = 'Descreva o problema.';
+const DESCRIPTION_TOO_LONG = `A descrição pode ter até ${ORDER_REPORT_DESCRIPTION_MAX_LENGTH} caracteres.`;
+const ALREADY_REPORTED_MESSAGE = 'Este pedido já tem um problema reportado.';
+/** Mesma recusa do back (`order_complaint_controller.py:49`). */
+const COMPLAINT_NOT_ALLOWED_MESSAGE =
+  'Só dá para reportar um problema depois que o pedido é confirmado.';
 
-/** Valida antes de qualquer chamada (mock ou API): o `422` já sai com o campo. */
+/**
+ * Valida antes de qualquer chamada (mock ou API), como o back: tira os espaços
+ * das pontas e só então confere vazio e o teto. O `422` já sai com o campo.
+ */
 function normalizeInput(
   reason: OrderReportReason,
   description: string,
@@ -92,6 +108,9 @@ function normalizeInput(
   const trimmed = description.trim();
   if (trimmed.length === 0) {
     throw new OrderReportError('VALIDATION_ERROR', DESCRIPTION_ERROR, 'description');
+  }
+  if (trimmed.length > ORDER_REPORT_DESCRIPTION_MAX_LENGTH) {
+    throw new OrderReportError('VALIDATION_ERROR', DESCRIPTION_TOO_LONG, 'description');
   }
   return { reason, description: trimmed };
 }
@@ -147,21 +166,24 @@ function mockReportOrder(
     throw new OrderReportError('ORDER_NOT_FOUND', `Pedido ${orderId} não encontrado.`);
   }
   if (!canReportOrder(found.order.status as OrderStatus)) {
-    throw new OrderReportError(
-      'ORDER_NOT_REPORTABLE',
-      'Só é possível reportar um Pedido depois da confirmação.',
-    );
+    throw new OrderReportError('COMPLAINT_NOT_ALLOWED', COMPLAINT_NOT_ALLOWED_MESSAGE);
   }
 
   const reports = readReports();
+  // Como o `UNIQUE` de `order_id` no back: uma Reclamação por Pedido (409).
+  if (reports.some((report) => report.orderId === orderId)) {
+    throw new OrderReportError('ALREADY_REPORTED', ALREADY_REPORTED_MESSAGE);
+  }
+
   const stored: AdminOrderReport = {
     id: `r_${reports.length + 1}`,
     orderId,
     reason,
     description,
     createdAt: new Date().toISOString(),
-    // O mock de Pedidos não guarda dados do comprador: deriva do `userId`.
-    buyer: { id: found.userId, name: found.userId },
+    // O mock de Pedidos não guarda dados do comprador: deriva do `userId`,
+    // sem id (como o back) e com o e-mail no mesmo padrão do `adminReceiptService`.
+    buyer: { name: found.userId, email: `${found.userId}@mock.vintex` },
     store: { id: found.order.store.id, name: found.order.store.name },
   };
   window.sessionStorage.setItem(REPORTS_KEY, JSON.stringify([...reports, stored]));
@@ -186,9 +208,10 @@ function mockListReports(params: ListReportsParams): Paginated<AdminOrderReport>
 }
 
 // ---------------------------------------------------------------------------
-// Modo API REAL — proposta do front, não confirmada (ver doc do arquivo).
+// Modo API REAL — rotas do back (ver doc do arquivo).
 // ---------------------------------------------------------------------------
 
+/** `OrderComplaintResponse` do back: o 201 que o comprador recebe. */
 interface ApiReport {
   id: number | string;
   order_id: number | string;
@@ -197,9 +220,21 @@ interface ApiReport {
   created_at: string;
 }
 
-interface ApiAdminReport extends ApiReport {
-  buyer: { id: number | string; name: string };
-  store: { id: number | string; name: string };
+/**
+ * `AdminComplaintEntry` do back: sem `order_id` no topo; o Pedido vem em
+ * `order` (com a loja em `order.store`) e o comprador sem id. Só os campos que
+ * o service usa estão descritos.
+ */
+interface ApiAdminReport {
+  id: number | string;
+  reason: OrderReportReason;
+  description: string;
+  created_at: string;
+  buyer: { name: string; email: string; phone: string | null };
+  order: {
+    id: number | string;
+    store: { id: number | string; name: string };
+  };
 }
 
 interface ApiPage<T> {
@@ -220,10 +255,16 @@ function mapApiReport(data: ApiReport): OrderReport {
 }
 
 function mapApiAdminReport(data: ApiAdminReport): AdminOrderReport {
+  const { name, email, phone } = data.buyer;
   return {
-    ...mapApiReport(data),
-    buyer: { id: String(data.buyer.id), name: data.buyer.name },
-    store: { id: String(data.store.id), name: data.store.name },
+    id: String(data.id),
+    orderId: String(data.order.id),
+    reason: data.reason,
+    description: data.description,
+    createdAt: data.created_at,
+    // `phone: null` fica de fora (mesmo padrão do `adminReceiptService`).
+    buyer: phone ? { name, email, phone } : { name, email },
+    store: { id: String(data.order.store.id), name: data.order.store.name },
   };
 }
 
@@ -284,7 +325,7 @@ async function apiReportOrder(
   description: string,
 ): Promise<OrderReport> {
   try {
-    const { data } = await httpClient.post<ApiReport>(`/users/me/orders/${orderId}/reports`, {
+    const { data } = await httpClient.post<ApiReport>(`/users/me/orders/${orderId}/complaints`, {
       reason,
       description,
     });
@@ -296,7 +337,7 @@ async function apiReportOrder(
 
 async function apiListReports(params: ListReportsParams): Promise<Paginated<AdminOrderReport>> {
   try {
-    const { data } = await httpClient.get<ApiPage<ApiAdminReport>>('/admin/reports', {
+    const { data } = await httpClient.get<ApiPage<ApiAdminReport>>('/admin/complaints', {
       params: { page: params.page, page_size: params.pageSize },
     });
     return {

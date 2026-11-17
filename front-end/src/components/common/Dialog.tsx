@@ -69,7 +69,17 @@ function Dialog({
     const focusable = panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     (focusable?.[0] ?? panelRef.current)?.focus();
 
-    return () => previouslyFocused?.focus();
+    return () => {
+      if (previouslyFocused?.isConnected) {
+        previouslyFocused.focus();
+        return;
+      }
+      // O gatilho saiu da página junto com a ação que o diálogo concluiu (ex.:
+      // "Avaliar loja" depois de avaliar, #409): o `focus()` nele não faz nada,
+      // o foco fica no `body` e o próximo Tab recomeça do topo da página. O
+      // alvo do "pular para o conteúdo" existe em toda página (`Layout.tsx`).
+      document.getElementById('conteudo')?.focus();
+    };
   }, [open]);
 
   if (!open) return null;

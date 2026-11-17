@@ -5,6 +5,7 @@ import {
   getById,
   getMine,
   getSalesSummary,
+  isSuspended,
   publish,
   SellerProductError,
   unpublish,
@@ -12,12 +13,16 @@ import {
   uploadMedia,
 } from './sellerProductService';
 import { logout, register } from './authService';
+import type { SellerProduct } from '@/types/product';
 
 /** Peças de exemplo do mock, uma de cada status (ver `seedProducts`). */
 const DRAFT_WITHOUT_IMAGE = 'seller-mock-1';
 const ACTIVE = 'seller-mock-2';
 const SOLD = 'seller-mock-3';
+/** Pausada pelo vendedor: `despublicado` sem moderação. */
 const UNPUBLISHED = 'seller-mock-4';
+/** Suspensa pela administradora (#433): `despublicado` com motivo. */
+const SUSPENDED = 'seller-mock-5';
 
 /** O mock de auth vive em memória entre os testes: cada cadastro precisa de e-mail novo. */
 let userSeq = 0;
@@ -157,9 +162,11 @@ describe('sellerProductService', () => {
 
   it('getMine filtra por status e pagina', async () => {
     const all = await getMine();
-    expect(all.total).toBe(4);
+    // #433: o seed ganhou uma peça Suspensa (despublicado com motivo) ao lado da Pausada.
+    expect(all.total).toBe(5);
     expect(all.items.map((item) => item.status).sort()).toEqual([
       'ativo',
+      'despublicado',
       'despublicado',
       'rascunho',
       'vendido',
@@ -169,8 +176,56 @@ describe('sellerProductService', () => {
     expect(sold.items.map((item) => item.id)).toEqual([SOLD]);
 
     const firstPage = await getMine({ page: 1, pageSize: 3 });
-    expect(firstPage).toMatchObject({ page: 1, pageSize: 3, total: 4 });
+    expect(firstPage).toMatchObject({ page: 1, pageSize: 3, total: 5 });
     expect(firstPage.items).toHaveLength(3);
+  });
+
+  describe('peça Suspensa pela moderação (#433)', () => {
+    it('o mock lista uma Suspensa (com motivo e data) e uma Pausada (sem moderação)', async () => {
+      const byId = new Map((await getMine()).items.map((item) => [item.id, item]));
+
+      expect(byId.get(SUSPENDED)).toMatchObject({
+        status: 'despublicado',
+        moderationReason: expect.stringMatching(/\S/),
+        moderatedAt: expect.any(String),
+      });
+      expect(isSuspended(byId.get(SUSPENDED) as SellerProduct)).toBe(true);
+      expect(byId.get(UNPUBLISHED)).toMatchObject({
+        status: 'despublicado',
+        moderationReason: null,
+        moderatedAt: null,
+      });
+      expect(isSuspended(byId.get(UNPUBLISHED) as SellerProduct)).toBe(false);
+    });
+
+    it('publish recusa a Suspensa com PRODUCT_SUSPENDED e a mensagem do back', async () => {
+      const error = await publish(SUSPENDED).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(SellerProductError);
+      expect(error).toMatchObject({
+        code: 'PRODUCT_SUSPENDED',
+        message:
+          'A peça foi suspensa pela moderação e só a administradora pode devolvê-la à vitrine.',
+      });
+      const mine = await getMine();
+      expect(mine.items.find((item) => item.id === SUSPENDED)?.status).toBe('despublicado');
+    });
+
+    it('a Pausada pelo vendedor continua republicando', async () => {
+      expect((await publish(UNPUBLISHED)).status).toBe('ativo');
+    });
+
+    it.each([
+      ['despublicado com motivo', { status: 'despublicado', moderationReason: 'Fotos' }, true],
+      ['despublicado sem motivo', { status: 'despublicado', moderationReason: null }, false],
+      ['despublicado sem o campo', { status: 'despublicado' }, false],
+      ['motivo só com espaços', { status: 'despublicado', moderationReason: '   ' }, false],
+      ['motivo vazio', { status: 'despublicado', moderationReason: '' }, false],
+      ['ativa com motivo (não é Suspensa)', { status: 'ativo', moderationReason: 'Fotos' }, false],
+    ] as const)('isSuspended: %s → %s', (_caso, campos, esperado) => {
+      const product = { id: '1', name: 'Peça', price: 10, ...campos } as SellerProduct;
+      expect(isSuspended(product)).toBe(esperado);
+    });
   });
 
   // #358: a listagem leva a capa (foto de posição 0) das peças publicadas e
@@ -391,6 +446,70 @@ describe('sellerProductService com a API real', () => {
       status: 'rascunho',
       coverImageUrl: null,
     });
+  });
+
+  // #433: `moderation_reason`/`moderated_at` da listagem (back-end#327).
+  it('getMine lê moderation_reason e moderated_at; ausente, nulo ou só espaços = sem moderação', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { getMine: apiGetMine, isSuspended: apiIsSuspended } =
+      await import('./sellerProductService');
+    const despublicada = { ...BACKEND_MANAGEMENT_PAGE.items[0], status: 'despublicado' };
+
+    httpClient.defaults.adapter = (config) =>
+      Promise.resolve({
+        data: {
+          ...BACKEND_MANAGEMENT_PAGE,
+          items: [
+            {
+              ...despublicada,
+              id: 51,
+              moderation_reason: 'Fotos não correspondem à peça.',
+              moderated_at: '2026-11-14T12:00:00-03:00',
+            },
+            { ...despublicada, id: 52, moderation_reason: null, moderated_at: null },
+            { ...despublicada, id: 53 },
+            { ...despublicada, id: 54, moderation_reason: '   ', moderated_at: null },
+          ],
+          total: 4,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      });
+
+    const { items } = await apiGetMine();
+
+    expect(items[0]).toMatchObject({
+      id: '51',
+      status: 'despublicado',
+      moderationReason: 'Fotos não correspondem à peça.',
+      moderatedAt: '2026-11-14T12:00:00-03:00',
+    });
+    for (const item of items.slice(1)) {
+      expect(item).toMatchObject({ moderationReason: null, moderatedAt: null });
+    }
+    expect(items.map(apiIsSuspended)).toEqual([true, false, false, false]);
+  });
+
+  it('publish recusado com PRODUCT_SUSPENDED repassa o código e a mensagem do back', async () => {
+    const { httpClient } = await import('@/services/httpClient');
+    const { publish: apiPublish, SellerProductError: ApiError } =
+      await import('./sellerProductService');
+    const message =
+      'A peça foi suspensa pela moderação e só a administradora pode devolvê-la à vitrine.';
+
+    httpClient.defaults.adapter = () =>
+      Promise.reject(
+        Object.assign(new Error('HTTP 409'), {
+          response: { status: 409, data: { error: { code: 'PRODUCT_SUSPENDED', message } } },
+        }),
+      );
+
+    const error = await apiPublish('51').catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ code: 'PRODUCT_SUSPENDED', message });
   });
 
   // FE-US019-6 (#345): rotas do back-end#271 (PR back-end#323).

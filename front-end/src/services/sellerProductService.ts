@@ -59,6 +59,29 @@ export class SellerProductError extends Error {
   }
 }
 
+/** Mesma mensagem e código do back (`_get_owned_publicavel`, RN-80). */
+function productSuspended(): SellerProductError {
+  return new SellerProductError(
+    'PRODUCT_SUSPENDED',
+    'A peça foi suspensa pela moderação e só a administradora pode devolvê-la à vitrine.',
+  );
+}
+
+/** Motivo da moderação, ou `null` quando ausente, nulo ou só espaços. */
+function moderationReasonOf(value: string | null | undefined): string | null {
+  return value?.trim() ? value : null;
+}
+
+/**
+ * Peça **Suspensa** pela administradora (RN-80, #433): `despublicado` com motivo
+ * de moderação. Sem motivo (ou só com espaços), é a **Pausada** pelo vendedor.
+ * A Suspensa não volta à vitrine pelo vendedor: o `publish` é recusado com
+ * `PRODUCT_SUSPENDED`.
+ */
+export function isSuspended(product: SellerProduct): boolean {
+  return product.status === 'despublicado' && moderationReasonOf(product.moderationReason) !== null;
+}
+
 function productNotFound(id: string): SellerProductError {
   return new SellerProductError('PRODUCT_NOT_FOUND', `Peça ${id} não encontrada.`);
 }
@@ -130,6 +153,8 @@ function toSellerProduct(detail: SellerProductDetail): SellerProduct {
     brand,
     condition,
     style,
+    moderationReason: moderationReasonOf(detail.moderationReason),
+    moderatedAt: detail.moderatedAt ?? null,
   };
 }
 
@@ -200,7 +225,23 @@ function seedProducts(store: MockStore): SellerProductDetail[] {
       condition: 'Seminovo',
       price: 89.9,
       images: ['https://picsum.photos/seed/vintex-seller-4/600/800'],
+      // Pausada pelo vendedor: sem moderação.
       status: 'despublicado',
+    },
+    {
+      ...base,
+      id: 'seller-mock-5',
+      name: 'Saia Plissada Midi',
+      category: 'Roupas',
+      size: 'M',
+      color: 'Bege',
+      condition: 'Seminovo',
+      price: 79.9,
+      images: ['https://picsum.photos/seed/vintex-seller-5/600/800'],
+      // Suspensa pela administradora (#433): mesmo `despublicado`, com motivo.
+      status: 'despublicado',
+      moderationReason: 'As fotos não mostram a peça descrita no anúncio.',
+      moderatedAt: '2026-11-14T15:00:00.000Z',
     },
   ];
 }
@@ -329,6 +370,10 @@ async function mockUpdate(
 /** Publicar rascunho e republicar despublicado são a mesma transição (combinado na #202). */
 async function mockPublish(id: string): Promise<SellerProductDetail> {
   const { product, save } = await loadOwned(id);
+  // RN-80: como no back, a Suspensa só volta pela administradora.
+  if (moderationReasonOf(product.moderationReason) !== null) {
+    throw productSuspended();
+  }
   if (product.status === 'vendido') {
     throw productSold();
   }
@@ -434,6 +479,13 @@ interface ApiSellerProduct {
    * campo existir chegam sem ele.
    */
   cover_image_url?: string | null;
+  /**
+   * Moderação da administradora (RN-80, back-end#327): nulos quando a peça não
+   * foi suspensa, inclusive na Pausada pelo vendedor. Opcionais pelo mesmo
+   * motivo de `cover_image_url`.
+   */
+  moderation_reason?: string | null;
+  moderated_at?: string | null;
 }
 
 /** `ProductDraftResponse` (back-end#159). */
@@ -485,6 +537,9 @@ function mapSellerProduct(item: ApiSellerProduct): SellerProduct {
     brand: optional(item.brand),
     condition: optional(item.condition),
     style: optional(item.style),
+    // Ausente, nulo ou só espaços: sem moderação (ver `isSuspended`).
+    moderationReason: moderationReasonOf(item.moderation_reason),
+    moderatedAt: item.moderated_at ?? null,
   };
 }
 

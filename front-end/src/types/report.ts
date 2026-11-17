@@ -20,9 +20,16 @@ export interface OrderReport {
   createdAt: string;
 }
 
-/** Item da listagem da administradora: a Reclamação mais quem reclamou e de qual loja. */
+/** Teto da descrição: o back recusa acima disso (`max_length=1000`). */
+export const ORDER_REPORT_DESCRIPTION_MAX_LENGTH = 1000;
+
+/**
+ * Item da listagem da administradora: a Reclamação mais quem reclamou e de qual
+ * loja. O comprador vem sem id, com o contato para a administradora
+ * intermediar (RN-79); a tela mostra só o nome.
+ */
 export interface AdminOrderReport extends OrderReport {
-  buyer: { id: string; name: string };
+  buyer: { name: string; email: string; phone?: string };
   store: { id: string; name: string };
 }
 

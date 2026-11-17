@@ -1,7 +1,0 @@
-schema_version: 1
-component: front-end
-source_repository: Vintex-Ages/front-end
-source_branch: deploy
-source_sha: 5adf7a0be238f4f0321105a8506ec1601c4518e3
-promoted_at: 2026-10-28T23:37:38.099Z
-source_run_url: https://github.com/Vintex-Ages/front-end/actions/runs/40788652120

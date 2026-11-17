@@ -5,6 +5,7 @@ import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import NewSaleNotice from '@/components/seller/NewSaleNotice';
 import SellerProductRow, { type RowAction } from '@/components/seller/SellerProductRow';
 import { useToast } from '@/context/useToast';
 import {
@@ -14,7 +15,7 @@ import {
 } from '@/hooks/useSellerProducts';
 import type { StoreVerificationSource } from '@/hooks/useStoreVerification';
 import { paths, sellerProductPath } from '@/routes/paths';
-import { SellerProductError } from '@/services/sellerProductService';
+import { isSuspended, SellerProductError } from '@/services/sellerProductService';
 import type { SellerProduct } from '@/types/product';
 import FinancialSummary from './FinancialSummary';
 import SellerDrafts from './SellerDrafts';
@@ -46,7 +47,9 @@ function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
  *
  * Ações por linha (FE-US019-2, #221), decididas pelo valor do status:
  * - `ativo` → Editar anúncio · Pausar (sai da vitrine, fica no histórico — RN-52)
- * - `despublicado` → Editar anúncio · Republicar (`publish`)
+ * - `despublicado` → Editar anúncio · Republicar (`publish`); a Suspensa pela
+ *   administradora (#433, `isSuspended`) só tem Editar anúncio, com selo e motivo
+ *   na linha, e um republicar recusado mostra a mensagem do back
  * - `vendido` → Editar anúncio desabilitado com o motivo (RN-53), sem pausar
  *
  * Pausar confirma com um Toast que oferece "Desfazer" (republica). A linha muda
@@ -56,6 +59,10 @@ function countOf(counts: SellerProductsCounts, filter: StatusFilter): number {
  * cadastros pela metade, fora das contagens e do total (RN-51) — ver
  * `SellerDrafts` e `docs/adr/0004`. No topo, o card do selo Confiável
  * (FE-US007-1, #224) — ver `TrustSealCard`.
+ *
+ * Acima dos cartões financeiros, um aviso por venda não lida (FE-US036-3,
+ * #421) — ver `NewSaleNotice`. O botão do aviso abre o filtro "Vendidas" e sai
+ * dos Rascunhos.
  */
 const SOLD_REASON = 'Peça vendida não pode ser editada';
 
@@ -64,6 +71,21 @@ function errorMessage(error: unknown, fallback: string): string {
     return 'Esta peça já foi vendida e não pode mais ser alterada.';
   }
   return fallback;
+}
+
+/**
+ * Republicar recusado pelo back (ex.: `PRODUCT_SUSPENDED`, #433): mostra a
+ * mensagem dele. `INTERNAL_ERROR` é o código do service sem envelope do back,
+ * com mensagem técnica, e fica com o texto genérico.
+ */
+function republishErrorMessage(error: unknown): string {
+  if (error instanceof SellerProductError && error.code === 'PRODUCT_SOLD') {
+    return errorMessage(error, '');
+  }
+  if (error instanceof SellerProductError && error.code !== 'INTERNAL_ERROR') {
+    return error.message;
+  }
+  return 'Não foi possível republicar a peça agora.';
 }
 
 function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource }) {
@@ -82,7 +104,7 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
       await republishProduct(product.id);
       toast('Anúncio publicado de novo', { kind: 'success' });
     } catch (error) {
-      toast(errorMessage(error, 'Não foi possível republicar a peça agora.'), { kind: 'error' });
+      toast(republishErrorMessage(error), { kind: 'error' });
     }
   }
 
@@ -117,6 +139,8 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
           },
         ];
       case 'despublicado':
+        // Suspensa (#433): corrigir não devolve à vitrine; só a administradora devolve.
+        if (isSuspended(product)) return [editar];
         return [editar, { label: 'Republicar', onSelect: () => void republicar(product) }];
       case 'vendido':
         return [{ ...editar, disabled: true, disabledReason: SOLD_REASON }];
@@ -144,6 +168,13 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
           <Button onClick={anunciar}>Anunciar peça</Button>
         </div>
       </div>
+
+      <NewSaleNotice
+        onShowSold={() => {
+          setShowDrafts(false);
+          setFilter('vendido');
+        }}
+      />
 
       <FinancialSummary />
 
