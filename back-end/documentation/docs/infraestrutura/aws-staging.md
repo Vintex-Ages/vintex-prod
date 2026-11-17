@@ -197,16 +197,14 @@ minutos para ficar pronta. O custo adicional principal é o IPv4 público fixo
 não há WAF para CloudFront nem certificado ACM (por isso a URL é a do
 CloudFront). O trecho CloudFront → EC2 é HTTP, porque o DNS da EC2 não aceita
 certificado público; use senhas descartáveis nas contas de demo e dados
-sintéticos. O deploy fixa `AI_PROVIDER=unavailable`, então chat e sugestão
-síncrona de IA ficam degradados no preview.
+sintéticos. A API usa o gateway de IA da própria EC2 para sugestão de cadastro
+e embedding da busca; ver [runtime](./aws-staging-runtime.md#parâmetros-e-ia).
 
-**O que este módulo não faz.** Ele só provisiona o lado AWS. Para o preview
-responder, o release da staging ainda precisa de três ajustes que **não estão
-neste módulo**: publicar o Nginx fora do loopback, exigir o header
-`X-Origin-Verify` e usar o IP real do cliente no rate limit (além de bloquear o
-cadastro também no Nginx), e aceitar a URL `https://….cloudfront.net` em
-`public_base_url` no deploy. Esses ajustes seguem em PR separado, depois de
-validados na instância real.
+**O que este módulo não faz.** Ele só provisiona o lado AWS. O lado do release
+fica no runtime da staging: com `public_base_url` igual à URL do CloudFront, o
+deploy publica o Nginx fora do loopback, exige o header `X-Origin-Verify`, usa
+o IP real do cliente no rate limit e fecha o cadastro no Nginx. Ver o
+[modo preview do runtime](./aws-staging-runtime.md#runtime).
 
 ## Verificações sem AWS
 

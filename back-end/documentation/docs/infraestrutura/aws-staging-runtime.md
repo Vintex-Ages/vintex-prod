@@ -20,31 +20,50 @@ estão fixadas por versão e digest; não há build na instância.
 | Serviço | Memória | Rede/IP | Função |
 | --- | ---: | --- | --- |
 | Nginx 1.28.0 Alpine | 64 MiB | app / 172.30.73.2 | Front estático, proxy API e rate limit |
-| API | 384 MiB | app / 172.30.73.3 | Aplicação existente, S3 e produtor SQS |
+| API | 384 MiB | app / 172.30.73.3; llm / 172.30.74.4 | Aplicação existente, S3, produtor SQS e chamadas síncronas ao gateway |
 | Worker | 256 MiB | app / 172.30.73.4; llm / 172.30.74.2 | Consumidor `app.workers.ai_analysis` existente |
 | FreeLLMAPI v0.14.2 | 512 MiB | llm / 172.30.74.3 | Imagem oficial espelhada no ECR; ajuste medido na #290 |
 | pgvector 0.8.1 / PostgreSQL 16 | 448 MiB | app / 172.30.73.5 | Banco local do Compose, dados persistentes no EBS |
 
 As redes são exclusivas deste runtime, com bridges `br-vintex-app` e
-`br-vintex-llm`. API não participa de llm; FreeLLMAPI não participa de app.
-O gateway padrão do worker pode ser escolhido pelo Docker em qualquer rede.
-O guard permite IMDS somente aos pares bridge/IP da API (`app / 172.30.73.3`)
-e do worker (`app / 172.30.73.4` e `llm / 172.30.74.2`). Um IP autorizado
-na bridge errada também é bloqueado. Isso mantém compatibilidade com Docker 25
+`br-vintex-llm`. A API participa de llm para a sugestão de cadastro e o
+embedding da busca; FreeLLMAPI não participa de app. O gateway padrão da API e
+do worker pode ser escolhido pelo Docker em qualquer rede.
+O guard permite IMDS somente aos pares bridge/IP da API (`app / 172.30.73.3` e
+`llm / 172.30.74.4`) e do worker (`app / 172.30.73.4` e `llm / 172.30.74.2`).
+Um IP autorizado na bridge errada também é bloqueado. Isso mantém compatibilidade com Docker 25
 fornecido pela AWS, sem exigir `gw_priority` nem alterar a AMI Amazon Linux 2023.
-O FreeLLMAPI (`llm / 172.30.74.3`) continua bloqueado; a permissão adicional é
-para a segunda interface do mesmo worker, sem autorizar outro serviço.
+O FreeLLMAPI (`llm / 172.30.74.3`) continua bloqueado; as permissões adicionais
+são para a segunda interface da própria API e do próprio worker, sem autorizar
+outro serviço.
 Nenhuma aplicação usa host networking, modo privilegiado ou socket Docker.
 NET_RAW é removida dos cinco serviços para impedir falsificação de origem.
-API e banco não publicam portas. Proxy e dashboard publicam somente
-`127.0.0.1:80` e `127.0.0.1:3001`, acessíveis por SSM. O SG da #274 não tem ingress.
+API e banco não publicam portas. O dashboard publica somente `127.0.0.1:3001`,
+acessível por SSM. O proxy depende do modo, escolhido pelo `public_base_url`:
+
+| Modo | `public_base_url` | Porta do proxy | Nginx |
+| --- | --- | --- | --- |
+| Túnel | `http://localhost:<porta>` | `127.0.0.1:80`, só por SSM | `nginx.conf` do release |
+| Preview | `https://<id>.cloudfront.net` | `0.0.0.0:80`; o SG só admite o CloudFront | `nginx.preview.conf` renderizado |
+
+No preview, o deploy lê `/vintex/staging/origin_verify` (alfanumérico, 32 a 128
+caracteres) e troca o placeholder `__ORIGIN_VERIFY__` do `nginx.preview.conf`. O
+resultado, que contém o segredo, é gravado com modo 0600 junto dos env files do
+release, nunca na pasta do release. Esse Nginx exige o cabeçalho
+`X-Origin-Verify` em `/api`, `/index.html` e na SPA (`/health` fica livre para o
+deploy), usa o IP real do cliente a partir de `X-Forwarded-For`, informa `https`
+à API e fecha `POST /api/auth/register` com 403. O `current.json` guarda
+`nginx_conf` e `proxy_bind`, então o rollback volta no mesmo modo. Releases
+gravados antes desses campos voltam no modo túnel, e o `compose.yml` deles não lê
+essas variáveis.
 
 Nginx mantém `/api` na URL upstream e os 404 da API; só rotas da SPA têm fallback
 para index.html. Limite: 10 requisições/s por IP, burst 20, excedentes retornam
 429; upload máximo 25 MiB; timeout API 30 s; SSE sem buffering. Não há header de
-origem obrigatório. Com SSM, usuários compartilham o IP do túnel no rate limit.
-index.html é servido sem cache. HTTPS externo não faz parte desta staging
-privada: o transporte até a instância usa o túnel autenticado/criptografado SSM.
+origem obrigatório no modo túnel. Com SSM, usuários compartilham o IP do túnel
+no rate limit. index.html é servido sem cache. No modo túnel, o transporte até a
+instância usa o túnel autenticado/criptografado SSM; no preview, o HTTPS termina
+no CloudFront e o trecho CloudFront → EC2 é HTTP.
 
 ## Recursos fornecidos pela #274
 
@@ -99,7 +118,7 @@ Cadastrar via console, sem valores em Git, histórico de shell ou logs:
 São credenciais diferentes: `llm_admin_email`/`llm_admin_password` autenticam o
 dashboard; `llm_encryption_key` protege as chaves no SQLite; as chaves dos
 provedores são cadastradas no dashboard; `llm_api_key` autentica o worker no
-roteador e vira `FREELLMAPI_API_KEY` em seu env file. Não colocar uma chave de
+roteador e vira `FREELLMAPI_API_KEY` nos env files da API e do worker. Não colocar uma chave de
 provedor diretamente em `llm_api_key`. O destinatário do Budget é independente
 do administrador do dashboard. Para testes locais, `FREELLMAPI_API_KEY` continua
 sendo lida do `.env` pelo Compose local.
@@ -108,8 +127,10 @@ O script gera quatro env files raw, separados por serviço, com modo 0600 em
 diretórios root 0700. A URL PostgreSQL usa **db:5432**, com senha percent-encoded;
 nenhum endpoint de emulador é utilizado. APP_ENV=production ativa a proteção JWT
 existente também na staging; APP_DEBUG=false impede logs SQL com valores.
-AI_PROVIDER=unavailable mantém embedding, chat e sugestões síncronas de IA degradados; worker usa
-FreeLLMAPI. O deploy ignora parâmetros provisórios da #274; os obrigatórios impedem o deploy até serem preenchidos. Sem token, o adaptador existente registra falha e a mensagem segue
+A API usa `AI_PROVIDER=freellmapi` para a sugestão de cadastro e o embedding da
+busca, chamando o gateway pela rede llm. O worker fica com `AI_PROVIDER=unavailable`
+e analisa as fotos com `AI_WORKER_PROVIDER=freellmapi`. Os dois recebem
+`FREELLMAPI_BASE_URL`, `FREELLMAPI_API_KEY` e `FREELLMAPI_MODEL=auto`. O deploy ignora parâmetros provisórios da #274; os obrigatórios impedem o deploy até serem preenchidos. Sem token, o adaptador existente registra falha e a mensagem segue
 retry/DLQ, sem derrubar a API. Nenhum health check invoca inferência.
 
 O arquivo `llm.env` também recebe `REQUEST_BODY_LIMIT_MB=40`. O adaptador aceita
@@ -291,10 +312,25 @@ API/worker e inacessíveis em proxy/db/FreeLLMAPI. Não imprimir credenciais.
   Após configurar os provedores e o token na AWS, exigir um job sintético pelo
   fluxo completo e conferir resultado, logs e fila/DLQ.
 
+## Contas e catálogo de demo
+
+Depois do deploy, com root na EC2, `scripts/infra/seed-demo.sh` (na pasta do
+release) cria o catálogo sintético (`app.seeds.lojas` e `app.seeds.pecas`) e as
+contas de demo pela própria API, de dentro do contêiner, sem passar pelo Nginx.
+Por isso o cadastro público pode ficar fechado no preview. As senhas vêm de
+`/vintex/staging/demo_buyer_password` e `/vintex/staging/demo_seller_password`
+(SecureString, criadas uma vez pelo responsável) e nunca são impressas. O script
+é idempotente.
+
+`scripts/infra/reset-demo.sh --yes` apaga **todos** os dados do banco
+(`alembic downgrade base` seguido de `upgrade head`) e roda o seed de novo. Sem
+`--yes`, ele não faz nada.
+
 ## Testes sem AWS
 
-- Pytest cobre parâmetros, proteção de arquivos, Compose renderizado, migrations,
-  sucesso/falha, rollback e limpeza seletiva. Compose CLI ausente pula apenas sua
+- Pytest cobre parâmetros, proteção de arquivos, Compose renderizado nos modos
+  túnel e preview, render do Nginx do preview, migrations, sucesso/falha,
+  rollback (inclusive a partir de um `current.json` antigo) e limpeza seletiva. Compose CLI ausente pula apenas sua
   validação; no CI Ubuntu e na validação local ela está disponível.
 - Nginx testado localmente com backend HTTP sintético (SPA, /api, 404 e rate limit).
 - Teste kernel IMDS em contêiner descartável sem rede externa. `--privileged` é
@@ -306,8 +342,8 @@ docker run --rm --privileged --network none vintex-staging-imds:test
 ```
 
 O teste permite API/worker e bloqueia proxy/db/FreeLLMAPI contra servidor metadata
-sintético; o worker tem as duas interfaces e o teste também força uma rota pela
-llm para confirmar o acesso do worker pelas duas interfaces. Também testa
+sintético; API e worker têm as duas interfaces e o teste também força uma rota
+pela llm para confirmar o acesso dos dois pelas duas interfaces. Também testa
 origens autorizadas pela bridge incorreta, que devem continuar bloqueadas. Um
 controle negativo, removendo o vínculo com a bridge apenas no teste descartável,
 confirma que esse cenário detecta a liberação indevida. Não acessa IMDS real nem

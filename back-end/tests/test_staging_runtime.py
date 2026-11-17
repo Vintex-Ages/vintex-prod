@@ -344,7 +344,9 @@ def test_guard_bootstrap_is_persistent_and_before_docker():
     assert "-i br-vintex-app -s 172.30.73.3 -j RETURN" in guard
     assert "-i br-vintex-app -s 172.30.73.4 -j RETURN" in guard
     assert "-i br-vintex-llm -s 172.30.74.2 -j RETURN" in guard
-    assert guard.count("-j RETURN") == 3
+    assert "-i br-vintex-llm -s 172.30.74.4 -j RETURN" in guard
+    assert "172.30.74.3" not in guard  # FreeLLMAPI never reaches IMDS.
+    assert guard.count("-j RETURN") == 4
     assert "-A VINTEX_IMDS -j DROP" in guard
     assert (
         "Before=docker.service" in (RUNTIME / "vintex-imds-guard.service").read_text()

@@ -18,9 +18,11 @@ services:
         awslogs-stream: "${RELEASE_SHA:?Release SHA required}-proxy"
     image: nginx:1.28.0-alpine@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284
     mem_limit: 64m
-    ports: ["127.0.0.1:80:80"]
+    # Túnel SSM: loopback e ./nginx.conf. Preview (CloudFront): 0.0.0.0 e o
+    # nginx.conf renderizado com o segredo de origem, fora do release.
+    ports: ["${PROXY_BIND:-127.0.0.1}:80:80"]
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${NGINX_CONF:-./nginx.conf}:/etc/nginx/conf.d/default.conf:ro
       - ${FRONTEND_DIR:?Frontend directory required}:/usr/share/nginx/html:ro
     networks:
       app: {ipv4_address: 172.30.73.2}
@@ -47,6 +49,8 @@ services:
         format: raw
     networks:
       app: {ipv4_address: 172.30.73.3}
+      # Sugestão de cadastro e embedding da busca chamam o gateway direto.
+      llm: {ipv4_address: 172.30.74.4}
     depends_on:
       db: {condition: service_healthy}
     healthcheck:

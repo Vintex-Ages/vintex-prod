@@ -61,7 +61,7 @@ def test_rendered_compose_isolated_and_pinned(tmp_path):
         )
         for port in service.get("ports", []):
             assert port["host_ip"] == "127.0.0.1"
-    assert services["api"]["networks"].keys() == {"app"}
+    assert services["api"]["networks"].keys() == {"app", "llm"}
     assert services["freellmapi"]["networks"].keys() == {"llm"}
     assert services["worker"]["networks"].keys() == {"app", "llm"}
     assert all(

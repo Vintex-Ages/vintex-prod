@@ -2,7 +2,8 @@
 set -euo pipefail
 # raw/PREROUTING sees container source IPs before NAT, even before Docker starts.
 # Only API and worker may reach IMDSv2, on their fixed bridge/address pairs.
-# Docker's default gateway may use either worker interface on Amazon Linux.
+# Docker's default gateway may use either interface of the API or the worker
+# on Amazon Linux; both also join llm to reach the gateway.
 iptables -w -t raw -N VINTEX_IMDS 2>/dev/null || true
 iptables-restore -w --noflush <<'RULES'
 *raw
@@ -10,6 +11,7 @@ iptables-restore -w --noflush <<'RULES'
 -A VINTEX_IMDS -i br-vintex-app -s 172.30.73.3 -j RETURN
 -A VINTEX_IMDS -i br-vintex-app -s 172.30.73.4 -j RETURN
 -A VINTEX_IMDS -i br-vintex-llm -s 172.30.74.2 -j RETURN
+-A VINTEX_IMDS -i br-vintex-llm -s 172.30.74.4 -j RETURN
 -A VINTEX_IMDS -j DROP
 COMMIT
 RULES
