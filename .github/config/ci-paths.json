@@ -1,0 +1,38 @@
+{
+  "components": {
+    "front-end": {
+      "paths": ["front-end/**"],
+      "requires": "front-end/package.json"
+    },
+    "back-end": {
+      "paths": ["back-end/**"],
+      "requires": "back-end/requirements.txt"
+    },
+    "infra": {
+      "paths": ["back-end/**"],
+      "requires": "back-end/Makefile",
+      "onlyPullRequestBaseRefs": ["qa"]
+    },
+    "automation": {
+      "paths": [".github/scripts/**", "config/**"]
+    },
+    "docs": {
+      "paths": ["documentation/**"]
+    }
+  },
+  "docsGlobs": [
+    "**/*.md",
+    "**/*.mdx",
+    "documentation/**",
+    "back-end/documentation/**",
+    "front-end/docs/**",
+    "docs/**"
+  ],
+  "frontEnd": {
+    "scopedPaths": ["front-end/src/**"],
+    "fullTestPaths": ["front-end/src/test/**"]
+  },
+  "runAllWhenChanged": [".github/workflows/**", ".github/config/**"],
+  "allModeEvents": ["push", "schedule", "workflow_dispatch"],
+  "allModeBaseRefs": ["qa", "main", "deploy"]
+}

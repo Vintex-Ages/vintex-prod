@@ -1,0 +1,116 @@
+name: CI infra
+
+# Roda só em PR para `qa` (decisão do `changes` em ci.yml; ver `infra` em
+# .github/config/ci-paths.json) e fica desligado enquanto back-end/Makefile não existir.
+# Reúne o que antes estava em back-end-ci.yml (runtime da staging, Terraform nos três
+# ambientes) e no antigo infra-gate.yml (infra completa local e validação da chave do gateway de IA).
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  staging-runtime:
+    name: infra staging runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: back-end
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test real Nginx against synthetic backend
+        run: python3 scripts/infra/test_staging_proxy.py
+      - name: Test IMDS guard in isolated container namespaces
+        run: |
+          docker build -f tests/staging/Dockerfile.imds -t vintex-staging-imds:test .
+          docker run --rm --privileged --network none vintex-staging-imds:test
+
+  terraform:
+    name: infra terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: back-end
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
+      - name: Check Terraform formatting
+        run: make terraform-fmt
+      # Nenhum destes alvos usa conta AWS (init -backend=false, planos mockados).
+      - name: Validate and test local, bootstrap and staging without credentials
+        run: |
+          for environment in local bootstrap staging; do
+            make terraform-validate "$environment"
+            make terraform-test "$environment"
+          done
+
+  complete:
+    name: infra complete (QA + local tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: back-end
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
+      # QA, sobe a infra local (LocalStack/MiniStack/Postgres), roda todos os testes e
+      # sempre derruba o ambiente ao final (scripts/infra/complete.sh).
+      - run: make infra-complete
+
+  llm-key:
+    name: infra llm key check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN_STAGING }}
+      STAGING_INSTANCE_ID: ${{ vars.STAGING_INSTANCE_ID }}
+      REQUIRE_LLM_CHECK: ${{ vars.REQUIRE_LLM_CHECK }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: config
+        name: Check AWS configuration
+        run: |
+          if [ -n "$AWS_ROLE_ARN" ] && [ -n "$STAGING_INSTANCE_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          msg="AWS não configurada (AWS_ROLE_ARN_STAGING / STAGING_INSTANCE_ID): a chave do gateway de IA NÃO foi validada."
+          printf '### LLM key check\n\n**NÃO EXECUTADO**: %s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$REQUIRE_LLM_CHECK" = "true" ]; then
+            echo "::error::$msg"
+            exit 1
+          fi
+          echo "::warning::$msg"
+      - if: steps.config.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      - if: steps.config.outputs.configured == 'true'
+        run: node .github/scripts/validate-llm-gateway.mjs
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+          LLM_PROBE_COMPLETION: ${{ vars.LLM_PROBE_COMPLETION }}

@@ -1,0 +1,28 @@
+name: Deploy staging
+
+# Merge em main -> deploy para a staging (AWS). Fica inativo (com aviso) até a variável de
+# repositório DEPLOY_STAGING_ENABLED ser 'true'. Só ligue depois de reconciliar os ajustes
+# manuais da EC2 (compose.yml, nginx.conf, deploy_staging.py) com o git: o deploy extrai o
+# release do repositório e não preserva edições feitas à mão no host.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-aws.yml
+    with:
+      environment: staging
+      enabled: ${{ vars.DEPLOY_STAGING_ENABLED == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
