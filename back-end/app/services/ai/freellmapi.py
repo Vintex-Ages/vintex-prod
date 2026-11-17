@@ -15,6 +15,7 @@ from app.services.ai.base import (
     ImageAnalysisProvider,
     ImageAnalysisResult,
 )
+from app.services.ai.etiqueta import RespostaDaFoto, analise_da_resposta
 from app.services.ai.media_urls import image_download_url
 
 _IMAGE_TIMEOUT_SECONDS = 10.0
@@ -73,7 +74,7 @@ class FreeLLMAPIProvider(ImageAnalysisProvider):
             answer = payload["choices"][0]["message"]["content"]
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("resposta vazia")
-            return ImageAnalysisResult.model_validate_json(answer)
+            return analise_da_resposta(RespostaDaFoto.model_validate_json(answer))
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
             raise AIProviderError(
                 "FreeLLMAPI falhou ou devolveu uma análise inválida."

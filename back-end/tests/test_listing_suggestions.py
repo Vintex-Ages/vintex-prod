@@ -318,7 +318,7 @@ def test_analyze_image_sucesso_usa_response_parsed(monkeypatch) -> None:
 
     result = provider.analyze_image(["https://cdn.test/foto.jpg"])
 
-    assert result is expected
+    assert result == expected
     assert len(models.calls) == 1
 
 
@@ -419,7 +419,7 @@ def test_analyze_image_bytes_monta_as_partes_sem_baixar_url(monkeypatch) -> None
 
     result = provider.analyze_image_bytes([ImagePhoto(b"foto-jpeg", "image/jpeg")])
 
-    assert result is expected
+    assert result == expected
     partes = models.calls[0]["contents"][0].parts
     assert len(partes) == 2, "o prompt e uma parte por foto"
     assert partes[1].inline_data.data == b"foto-jpeg"
@@ -460,5 +460,5 @@ def test_analyze_image_continua_baixando_e_delegando_aos_bytes(monkeypatch) -> N
 
     result = provider.analyze_image(["https://cdn.test/foto.jpg"])
 
-    assert result is expected
+    assert result == expected
     assert recebidas == [ImagePhoto(b"fake-image-bytes", "image/jpeg")]

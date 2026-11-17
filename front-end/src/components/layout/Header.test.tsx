@@ -21,6 +21,7 @@ type HeaderNotificationsValue = {
   pendingIds: string[];
   markingAll: boolean;
   retry: () => void;
+  refresh: () => void;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 };
@@ -40,6 +41,7 @@ const notificationSource = vi.hoisted(() => {
     pendingIds: [],
     markingAll: false,
     retry: vi.fn(),
+    refresh: vi.fn(),
     markAsRead,
     markAllAsRead,
   };
@@ -769,7 +771,6 @@ function headerNotification(id: string, isRead = false): Notification {
   return {
     id,
     type: 'sale',
-    recipientUserId: SAMPLE_USER.id,
     productName: `Peça fictícia ${id}`,
     createdAt: '2026-10-21T15:00:00.000Z',
     isRead,

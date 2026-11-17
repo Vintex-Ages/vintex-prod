@@ -132,10 +132,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
 
-      <div
-        className="pointer-events-none fixed inset-x-4 bottom-24 z-50 flex flex-col gap-2 web:inset-x-auto web:bottom-auto web:right-6 web:top-6 web:w-full web:max-w-md"
-        aria-label="Notificações"
-      >
+      <div className="pointer-events-none fixed inset-x-4 bottom-24 z-50 flex flex-col gap-2 web:inset-x-auto web:bottom-auto web:right-6 web:top-6 web:w-full web:max-w-md">
         {toasts.map((item) => (
           <div key={item.id} className="pointer-events-auto motion-reduce:transition-none">
             <Toast

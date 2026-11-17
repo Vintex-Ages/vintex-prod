@@ -1,12 +1,17 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import OrderLookSection from '@/components/orders/OrderLookSection';
 import OrderStatusTimeline from '@/components/orders/OrderStatusTimeline';
+import RateStoreDialog from '@/components/orders/RateStoreDialog';
+import ReportProblemDialog from '@/components/orders/ReportProblemDialog';
 import ProductImagePlaceholder from '@/components/product/ProductImagePlaceholder';
 import { useOrderDetail } from '@/hooks/useOrderDetail';
 import { orderPaymentPath, paths, productDetail, storeProfile } from '@/routes/paths';
+import { canReportOrder } from '@/services/reportService';
+import { canRateOrder } from '@/services/storeService';
 import type { Order, PaymentStatus } from '@/types/order';
 import { formatCentsToBRL } from '@/utils/format';
 
@@ -21,9 +26,22 @@ import { formatCentsToBRL } from '@/utils/format';
  * aguardando comprovante traz "Enviar comprovante" e o prazo (`expiresAt`);
  * expirado não oferece pagamento.
  *
+ * "Reportar problema" (#410, botão de contorno) aparece quando
+ * `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
+ * `ReportProblemDialog`; a Reclamação não aparece depois no Pedido (RN-78).
+ *
+ * "Avaliar loja" (#409, botão cheio) aparece quando `canRateOrder` deixa (só
+ * concluído, RN-82) e abre o `RateStoreDialog`. Avaliado (ou `409
+ * ALREADY_RATED`), o botão some; como a API do Pedido não diz se ele já tem
+ * nota, isso vale enquanto a página está aberta.
+ *
+ * Abaixo do comprovante, um `OrderLookSection` por peça comprada (FE-US030-2,
+ * #430): as peças que combinam com ela, cada seção com carga própria; sem
+ * combinação ou em erro, a seção some sem afetar o Pedido. Usa o carrinho e o
+ * toast do `App` para o "+ Adicionar".
+ *
  * Fica de fora, de propósito: a chave Pix da loja (é da tela de pagamento) e a
- * comissão (`platformFee`, é do vendedor); rastreio (RN-83); "Avaliar loja" e
- * "Reportar problema" (Sprint 4).
+ * comissão (`platformFee`, é do vendedor); rastreio (RN-83).
  *
  * Só apresentação: carga, recarga ao voltar à aba e o que oferecer para o
  * pagamento vêm do `useOrderDetail`.
@@ -178,6 +196,10 @@ export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { state, view, reload } = useOrderDetail(id);
+  const [reporting, setReporting] = useState(false);
+  const [rating, setRating] = useState(false);
+  // O id, e não um booleano: trocar de Pedido sem desmontar não herda a nota.
+  const [ratedId, setRatedId] = useState<string | null>(null);
 
   function content() {
     if (state.status === 'loading') {
@@ -203,13 +225,41 @@ export default function OrderDetail() {
     const createdAt = formatDate(order.createdAt, false);
     const deadline = formatDate(order.expiresAt);
     const goToPayment = () => navigate(orderPaymentPath(order.id));
+    const canRate = canRateOrder(order.status) && ratedId !== order.id;
+    const canReport = canReportOrder(order.status);
 
     return (
       <>
-        <p className="text-body text-texto-auxiliar">
-          {`Pedido #${order.id}`}
-          {createdAt ? ` · feito em ${createdAt}` : null}
-        </p>
+        <div className="flex flex-col gap-3 tablet:flex-row tablet:items-center tablet:justify-between">
+          <p className="text-body text-texto-auxiliar">
+            {`Pedido #${order.id}`}
+            {createdAt ? ` · feito em ${createdAt}` : null}
+          </p>
+          {canRate || canReport ? (
+            <div className="flex flex-col gap-2 tablet:flex-row">
+              {canRate ? <Button onClick={() => setRating(true)}>Avaliar loja</Button> : null}
+              {canReport ? (
+                <Button variant="outline" onClick={() => setReporting(true)}>
+                  Reportar problema
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        {reporting ? (
+          <ReportProblemDialog open orderId={order.id} onClose={() => setReporting(false)} />
+        ) : null}
+
+        {rating ? (
+          <RateStoreDialog
+            open
+            orderId={order.id}
+            store={order.store}
+            onRated={setRatedId}
+            onClose={() => setRating(false)}
+          />
+        ) : null}
 
         {view?.paymentAction === 'resend' ? (
           <div className="flex flex-col gap-3 border border-vermelho-escuro bg-vermelho-suave p-4 tablet:flex-row tablet:items-center tablet:justify-between">
@@ -258,6 +308,10 @@ export default function OrderDetail() {
             <ItemsSection order={order} />
             <AddressSection order={order} />
             <ReceiptSection order={order} />
+            {/* Uma seção por peça; sem combinação, a seção não renderiza nada. */}
+            {order.items.map((item) => (
+              <OrderLookSection key={item.productId} productId={item.productId} name={item.name} />
+            ))}
           </div>
         </div>
       </>

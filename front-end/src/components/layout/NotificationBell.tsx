@@ -17,7 +17,27 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeStyle: 'short',
 });
 
-/** Painel in-app controlado pelo Header; dados e operações pertencem ao provider. */
+function messageOf(item: Notification): string {
+  if (item.type === 'sale') return `Sua peça ${item.productName} foi vendida`;
+  if (item.type === 'favorite') return `Alguém favoritou sua peça ${item.productName}`;
+  return `Notificação sobre a peça ${item.productName}`;
+}
+
+/**
+ * Para onde a notificação leva, ou `null` se não tem destino. Venda vai para o
+ * painel do vendedor (onde a peça aparece Vendida); o `orderId` nunca vira link.
+ */
+function destinationOf(item: Notification): string | null {
+  if (item.type === 'sale') return paths.seller;
+  if (item.type === 'favorite' && item.productId) return productDetail(item.productId);
+  return null;
+}
+
+/**
+ * Painel in-app controlado pelo Header; dados e operações pertencem ao provider.
+ * Abrir o painel pede uma nova busca (`refresh`), sem polling de fundo.
+ * Notificação sem destino (tipo desconhecido, favorito sem peça) é só texto.
+ */
 export default function NotificationBell({ open, onToggle, onClose }: NotificationBellProps) {
   const {
     available,
@@ -26,6 +46,7 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
     loading,
     error,
     retry,
+    refresh,
     markAsRead,
     markAllAsRead,
     pendingIds,
@@ -50,6 +71,11 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
     };
   }, []);
 
+  // Busca ao abrir; com itens já carregados, a lista atual fica até a resposta.
+  useEffect(() => {
+    if (open) refresh();
+  }, [open, refresh]);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -65,14 +91,16 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
     return mounted.current && userId !== null && currentIdentity.current === userId;
   }
 
-  async function readAndOpen(item: Notification) {
+  async function readAndOpen(item: Notification, destination: string) {
     const userId = identity;
     setOperationError(null);
+
     try {
       if (!item.isRead) await markAsRead(item.id);
       if (!isCurrent(userId)) return;
+
       onClose();
-      navigate(item.type === 'favorite' ? productDetail(item.productId) : paths.seller);
+      navigate(destination);
     } catch {
       if (userId && isCurrent(userId)) {
         setOperationError({
@@ -86,6 +114,7 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
   async function readAll() {
     const userId = identity;
     setOperationError(null);
+
     try {
       await markAllAsRead();
     } catch {
@@ -135,9 +164,11 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
           </span>
         )}
       </button>
+
       <span id={`${id}-count`} className="sr-only">
         {unreadCount === 1 ? '1 notificação não lida' : `${unreadCount} notificações não lidas`}
       </span>
+
       {open && (
         <section
           id={`${id}-panel`}
@@ -157,11 +188,13 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
               {markingAll ? 'Marcando como lidas…' : 'Marcar todas como lidas'}
             </Button>
           </div>
+
           {loading && (
             <p role="status" className="p-4">
               Carregando notificações…
             </p>
           )}
+
           {error && (
             <div role="alert" className="p-4">
               <p>{error}</p>
@@ -170,40 +203,59 @@ export default function NotificationBell({ open, onToggle, onClose }: Notificati
               </Button>
             </div>
           )}
+
           {operationError?.userId === identity && (
             <p role="alert" className="p-4">
               {operationError.message}
             </p>
           )}
+
           {!loading && !error && items.length === 0 && (
             <p className="p-4">Nenhuma notificação por enquanto.</p>
           )}
+
           {items.length > 0 && (
             <ul className="divide-y divide-linha">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    disabled={markingAll || pendingIds.includes(item.id)}
-                    onClick={() => void readAndOpen(item)}
-                    className={`flex min-h-touch w-full flex-col gap-2 p-4 text-left transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta disabled:cursor-wait disabled:opacity-50 ${!item.isRead ? 'bg-papel/50' : ''}`}
-                  >
+              {items.map((item) => {
+                const destination = destinationOf(item);
+                const layout = `flex min-h-touch w-full flex-col gap-2 p-4 text-left ${!item.isRead ? 'bg-papel/50' : ''}`;
+                const content = (
+                  <>
                     <span className="w-full break-words [overflow-wrap:anywhere]">
-                      {item.type === 'sale'
-                        ? `Sua peça ${item.productName} foi vendida`
-                        : `Alguém favoritou sua peça ${item.productName}`}
+                      {messageOf(item)}
                     </span>
+
                     <span className="flex w-full flex-wrap items-center justify-between gap-2 text-label">
                       <time dateTime={item.createdAt} className="text-texto-auxiliar">
                         {dateFormatter.format(new Date(item.createdAt))}
                       </time>
+
                       {!item.isRead && (
                         <span className="font-semibold text-vermelho-escuro">Não lida</span>
                       )}
                     </span>
-                  </button>
-                </li>
-              ))}
+                  </>
+                );
+
+                return (
+                  <li key={item.id}>
+                    {destination ? (
+                      <button
+                        type="button"
+                        disabled={markingAll || pendingIds.includes(item.id)}
+                        onClick={() => void readAndOpen(item, destination)}
+                        className={`${layout} transition-colors hover:bg-papel-profundo focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta disabled:cursor-wait disabled:opacity-50`}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      // Sem destino: só texto, sem foco nem cursor de clique. Sai de
+                      // "Não lida" pelo "Marcar todas como lidas".
+                      <div className={layout}>{content}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

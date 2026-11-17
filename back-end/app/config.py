@@ -35,9 +35,24 @@ class Settings(BaseSettings):
 
     # Cota da busca conversacional (back-end#258), por dia UTC. O provedor
     # gratuito dá 50 requisições por dia para o projeto inteiro, e a mesma
-    # chave serve a sugestão de anúncio pela foto e o vetor da peça publicada:
-    # 40 para o chat deixa margem a eles. Pessoa logada conta pelo id;
-    # visitante, pela origem da requisição.
+    # chave serve a sugestão de anúncio pela foto e o vetor da peça publicada.
+    # Pessoa logada conta pelo id; visitante, pela origem da requisição.
+    #
+    # Esta conta não fecha, e não fechava antes da #329: a cota conta
+    # pergunta, e **cada pergunta são três chamadas ao provedor** desde a #329
+    # (a leitura da pergunta, o vetor e a fala sobre as peças), contra duas
+    # antes dela. São duas quando a fala não sai: pergunta que não é sobre
+    # roupa, ou busca que não achou peça.
+    #
+    # **E chamada não é requisição.** O `_gerar_com_fallback` troca de modelo
+    # quando o atual responde 429 ou 503 (`_e_indisponibilidade`, em
+    # `services/ai/google.py`), dentro de `_RODADAS = 3`: a cota estourada faz
+    # tentar o próximo. Então 40 perguntas pedem **ao menos** 120 requisições
+    # das 50 que a linha acima declara, e pedem mais justamente quando o teto
+    # já estourou. O valor que faria a conta fechar é 15 ou 16, e mudá-lo é
+    # decisão de produto, não de código. *(A versão anterior deste comentário
+    # dizia que "40 deixa margem", e depois que 120 era o teto. Os dois
+    # estavam errados: 120 é o piso.)*
     CHAT_QUOTA_PER_PERSON: int = Field(default=5, ge=1)
     CHAT_QUOTA_PER_DAY: int = Field(default=40, ge=1)
 

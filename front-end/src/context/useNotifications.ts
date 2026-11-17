@@ -11,6 +11,12 @@ export interface NotificationsContextValue {
   pendingIds: string[];
   markingAll: boolean;
   retry: () => void;
+  /**
+   * Busca de novo (ex.: ao abrir o sino). Com uma carga anterior bem-sucedida é
+   * silenciosa: não liga `loading`, não esvazia `items` e, se falhar, não muda
+   * `error`. Sem carga anterior, equivale a `retry`.
+   */
+  refresh: () => void;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 }

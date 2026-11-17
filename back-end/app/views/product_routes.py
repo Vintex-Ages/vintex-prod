@@ -16,6 +16,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.controllers.combination_controller import CombinationController
 from app.controllers.media_controller import ArquivoRecebido
 from app.controllers.product_controller import ProductController
 from app.core.current_user import get_current_user_id
@@ -28,6 +29,7 @@ from app.schemas.product_management_schema import (
     ProductManagementPage,
 )
 from app.schemas.product_schema import (
+    CombinationsResponse,
     FeedResponse,
     ProductAIStatusResponse,
     ProductDetailResponse,
@@ -70,10 +72,10 @@ def _filtros_do_catalogo(
     category: str | None,
     price_min: Decimal | None,
     price_max: Decimal | None,
-    size: str | None,
-    brand: str | None,
-    condition: str | None,
-    color: str | None,
+    size: list[str] | None,
+    brand: list[str] | None,
+    condition: list[str] | None,
+    color: list[str] | None,
     city: str | None,
     state: str | None,
     store_id: int | None = None,
@@ -104,14 +106,20 @@ def product_filters(
     category: str | None = Query(None),
     price_min: Decimal | None = Query(None),
     price_max: Decimal | None = Query(None),
-    size: str | None = Query(None),
-    brand: str | None = Query(None),
-    condition: str | None = Query(None),
-    color: str | None = Query(None),
+    size: list[str] | None = Query(None),
+    brand: list[str] | None = Query(None),
+    condition: list[str] | None = Query(None),
+    color: list[str] | None = Query(None),
     store_id: int | None = Query(None, gt=0),
     city: str | None = Query(None),
     state: str | None = Query(None),
 ) -> ProductFilters:
+    """Os filtros do catálogo como query (RN-40).
+
+    Tamanho, marca, conservação e cor aceitam o parâmetro repetido, que é como o
+    front manda o que a tela deixa marcar em mais de um valor: `size=M&size=G`
+    (back-end#351).
+    """
     return _filtros_do_catalogo(
         category=category,
         price_min=price_min,
@@ -130,10 +138,10 @@ def image_search_filters(
     category: str | None = Form(None),
     price_min: Decimal | None = Form(None, ge=0),
     price_max: Decimal | None = Form(None, ge=0),
-    size: str | None = Form(None),
-    brand: str | None = Form(None),
-    condition: str | None = Form(None),
-    color: str | None = Form(None),
+    size: list[str] | None = Form(None),
+    brand: list[str] | None = Form(None),
+    condition: list[str] | None = Form(None),
+    color: list[str] | None = Form(None),
     city: str | None = Form(None),
     state: str | None = Form(None),
 ) -> ProductFilters:
@@ -268,6 +276,26 @@ def get_product_detail(
     controller: ProductController = Depends(get_controller),
 ) -> ProductDetailResponse:
     return controller.get_detail(product_id)
+
+
+def get_combination_controller(
+    db: Session = Depends(get_db),
+) -> CombinationController:
+    return CombinationController(db)
+
+
+@router.get(
+    "/{product_id}/combinations",
+    response_model=CombinationsResponse,
+    summary="Peças de outras categorias que combinam com a peça",
+    responses={404: {"description": "PRODUCT_NOT_FOUND"}},
+)
+def get_product_combinations(
+    product_id: int,
+    controller: CombinationController = Depends(get_combination_controller),
+) -> CombinationsResponse:
+    """Pública, como o detalhe. A peça de origem pode estar vendida (RN-63)."""
+    return controller.combinations(product_id)
 
 
 @me_router.patch("/{product_id}", response_model=ProductDraftResponse)

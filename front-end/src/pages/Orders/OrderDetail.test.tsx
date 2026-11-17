@@ -1,15 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ToastProvider } from '@/context/ToastContext';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
+import { CartContext, type CartContextValue } from '@/context/useCart';
 import { paths, productDetail, storeProfile } from '@/routes/paths';
+import { CombinationError, getCombinations } from '@/services/combinationService';
 import { getOrder, OrderError } from '@/services/orderService';
+import { OrderReportError, reportOrder } from '@/services/reportService';
+import { rateStore, StoreError } from '@/services/storeService';
+import type { LookSuggestion } from '@/types/look';
 import type { Order, OrderStatus } from '@/types/order';
 import OrderDetail from './OrderDetail';
 
 vi.mock('@/services/orderService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/orderService')>()),
   getOrder: vi.fn(),
+}));
+
+vi.mock('@/services/reportService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/reportService')>()),
+  reportOrder: vi.fn(),
+}));
+
+vi.mock('@/services/storeService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storeService')>()),
+  rateStore: vi.fn(),
+}));
+
+/** Looks do Pedido (#430): a rota de combinações é sempre mockada aqui. */
+vi.mock('@/services/combinationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/combinationService')>()),
+  getCombinations: vi.fn(),
 }));
 
 /**
@@ -65,18 +87,65 @@ function makeOrder(overrides: Partial<Order> = {}): Order {
   };
 }
 
-function renderDetail() {
+function cartValue(overrides: Partial<CartContextValue> = {}): CartContextValue {
+  return {
+    cart: { groups: [] },
+    count: 0,
+    loading: false,
+    error: null,
+    add: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+/** Carrinho e toast vêm do `App`; aqui, para o "+ Adicionar" dos looks (#430). */
+function renderDetail(cart: CartContextValue = cartValue()) {
   return render(
     <MemoryRouter initialEntries={['/profile/orders/ped-1']}>
       <AuthContext.Provider value={AUTH}>
-        <Routes>
-          <Route path={paths.orderDetail} element={<OrderDetail />} />
-          <Route path={paths.orderPayment} element={<h1>Pagamento do pedido</h1>} />
-          <Route path={paths.orders} element={<h1>Meus pedidos</h1>} />
-        </Routes>
+        <CartContext.Provider value={cart}>
+          <ToastProvider>
+            <Routes>
+              <Route path={paths.orderDetail} element={<OrderDetail />} />
+              <Route path={paths.orderPayment} element={<h1>Pagamento do pedido</h1>} />
+              <Route path={paths.orders} element={<h1>Meus pedidos</h1>} />
+            </Routes>
+          </ToastProvider>
+        </CartContext.Provider>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
+}
+
+const EMPTY_LOOK: LookSuggestion = { pieces: [], matchType: 'exact', totalAmount: 0 };
+
+function lookCom(id: string, name: string, matchType: LookSuggestion['matchType'] = 'exact') {
+  return {
+    pieces: [
+      {
+        id,
+        name,
+        price: 90,
+        category: 'Acessórios',
+        coverImageUrl: null,
+        store: { id: '2', name: 'Brechó da Redenção' },
+      },
+    ],
+    matchType,
+    totalAmount: 90,
+  } satisfies LookSuggestion;
+}
+
+const tituloLook = (peca: string) => `Combine com ${peca} e monte o look`;
+
+/** A seção de look pela peça de origem (o título é o `h3` do `LookSuggestions`). */
+async function secaoLook(peca: string) {
+  const heading = await screen.findByRole('heading', { name: tituloLook(peca) });
+  const section = heading.closest('section');
+  if (!section) throw new Error(`seção do look de ${peca} não encontrada`);
+  return within(section);
 }
 
 async function pronto() {
@@ -91,6 +160,10 @@ function etapas() {
 
 beforeEach(() => {
   vi.mocked(getOrder).mockReset();
+  vi.mocked(reportOrder).mockReset();
+  vi.mocked(rateStore).mockReset();
+  // Padrão: sem combinações, nenhuma seção de look aparece nos demais testes.
+  vi.mocked(getCombinations).mockReset().mockResolvedValue(EMPTY_LOOK);
 });
 
 afterEach(cleanup);
@@ -252,8 +325,8 @@ describe('<OrderDetail />', () => {
     expect(container.textContent).not.toContain('R$ 14,40');
   });
 
-  // RN-83: sem rastreio de transportadora. "Avaliar loja"/"Reportar problema" são Sprint 4.
-  it('não mostra rastreio, avaliação nem reporte', async () => {
+  // RN-83: sem rastreio de transportadora. Enviado ainda não abre "Avaliar loja" (#409, RN-82).
+  it('não mostra rastreio nem avaliação', async () => {
     vi.mocked(getOrder).mockResolvedValue(
       makeOrder({
         status: 'enviado',
@@ -270,8 +343,195 @@ describe('<OrderDetail />', () => {
     await pronto();
 
     expect(container.textContent).not.toMatch(
-      /rastrei|rastreamento|transportadora|código de|avaliar|reportar/i,
+      /rastrei|rastreamento|transportadora|código de|avaliar/i,
     );
+  });
+
+  // #410 (FE-US025-1), teste 5: "Reportar problema" nos 4 status válidos (RN-77).
+  it.each(['confirmado', 'preparando', 'enviado', 'concluido'] as const)(
+    'Pedido %s tem "Reportar problema" no detalhe',
+    async (status) => {
+      vi.mocked(getOrder).mockResolvedValue(
+        makeOrder({ status, payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+      );
+      renderDetail();
+      await pronto();
+
+      expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+    },
+  );
+
+  // #410, teste 2: antes da confirmação ou expirado, sem o botão.
+  it.each([
+    ['aguardando_comprovante', null],
+    ['em_analise', { status: 'pendente' as const, receiptName: 'pix.pdf' }],
+    ['expirado', null],
+  ] as const)('Pedido %s não tem "Reportar problema"', async (status, payment) => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder({ status, payment }));
+    renderDetail();
+    await pronto();
+
+    expect(screen.queryByRole('button', { name: 'Reportar problema' })).not.toBeInTheDocument();
+  });
+
+  // #410, teste 1: fluxo completo no detalhe.
+  it('reporta um Pedido confirmado e vê só a confirmação', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'confirmado', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(reportOrder).mockResolvedValue({
+      id: 'r_1',
+      orderId: 'ped-1',
+      reason: 'danificado',
+      description: 'A manga veio rasgada.',
+      createdAt: '2026-10-29T12:00:00Z',
+    });
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Reportar problema' });
+    fireEvent.change(within(dialogo).getByRole('combobox', { name: 'Motivo' }), {
+      target: { value: 'danificado' },
+    });
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Descrição' }), {
+      target: { value: 'A manga veio rasgada.' },
+    });
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar reclamação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(
+      /enviada à administradora/i,
+    );
+    expect(reportOrder).toHaveBeenCalledWith('ped-1', 'danificado', 'A manga veio rasgada.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Entendi' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // RN-78: nada da Reclamação fica exposto no Pedido.
+    expect(screen.queryByText('A manga veio rasgada.')).not.toBeInTheDocument();
+  });
+
+  // #410, teste 4: erro do back no detalhe, sem quebrar a página.
+  it('erro do back ao reportar mostra a mensagem dele e a página continua', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'enviado', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(reportOrder).mockRejectedValue(
+      new OrderReportError('INTERNAL_ERROR', 'Erro ao processar a Reclamação.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Reportar problema' });
+    fireEvent.change(within(dialogo).getByRole('combobox', { name: 'Motivo' }), {
+      target: { value: 'nao_recebido' },
+    });
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Descrição' }), {
+      target: { value: 'Não chegou.' },
+    });
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar reclamação' }));
+
+    expect(await within(dialogo).findByRole('alert')).toHaveTextContent(
+      'Erro ao processar a Reclamação.',
+    );
+    expect(screen.getByRole('region', { name: 'Andamento do pedido' })).toBeInTheDocument();
+  });
+
+  // #409 (FE-US026-1): "Avaliar loja" só no concluído (RN-82).
+  it('Pedido concluído tem "Avaliar loja" no detalhe', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    renderDetail();
+    await pronto();
+
+    expect(screen.getByRole('button', { name: 'Avaliar loja' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['aguardando_comprovante', null],
+    ['em_analise', { status: 'pendente' as const, receiptName: 'pix.pdf' }],
+    ['confirmado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['preparando', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['enviado', { status: 'aprovado' as const, receiptName: 'pix.pdf' }],
+    ['expirado', null],
+  ] as const)('Pedido %s não tem "Avaliar loja"', async (status, payment) => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder({ status, payment }));
+    renderDetail();
+    await pronto();
+
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+  });
+
+  it('avalia a loja no detalhe: só a nota vai, e o botão some', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockResolvedValue({
+      id: 'r_1',
+      storeId: '5',
+      orderId: 'ped-1',
+      score: 4,
+      createdAt: '2026-11-15T12:00:00Z',
+    });
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    expect(within(dialogo).queryByRole('textbox')).not.toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '4 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent('Avaliação enviada');
+    expect(rateStore).toHaveBeenCalledWith('5', 'ped-1', 4);
+
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Entendi' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+  });
+
+  it('409 ALREADY_RATED no detalhe vira "já avaliado" e tira o botão', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockRejectedValue(
+      new StoreError('ALREADY_RATED', 'Este pedido já foi avaliado.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '5 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('status')).toHaveTextContent(/já avaliou/i);
+    expect(within(dialogo).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Avaliar loja' })).not.toBeInTheDocument();
+  });
+
+  it('403 RATING_NOT_ALLOWED no detalhe mostra a mensagem do back e a página continua', async () => {
+    vi.mocked(getOrder).mockResolvedValue(
+      makeOrder({ status: 'concluido', payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+    );
+    vi.mocked(rateStore).mockRejectedValue(
+      new StoreError('RATING_NOT_ALLOWED', 'Só quem recebeu um pedido desta loja pode avaliá-la.'),
+    );
+    renderDetail();
+    await pronto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avaliar loja' }));
+    const dialogo = screen.getByRole('dialog', { name: 'Avaliar loja' });
+    fireEvent.click(within(dialogo).getByRole('radio', { name: '3 de 5 estrelas' }));
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Enviar avaliação' }));
+
+    expect(await within(dialogo).findByRole('alert')).toHaveTextContent(
+      'Só quem recebeu um pedido desta loja pode avaliá-la.',
+    );
+    expect(screen.getByRole('region', { name: 'Andamento do pedido' })).toBeInTheDocument();
   });
 
   it('Pedido inexistente ou de outro usuário mostra o ErrorState, sem tentar de novo', async () => {
@@ -330,5 +590,146 @@ describe('<OrderDetail />', () => {
     await pronto();
 
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
+  });
+
+  describe('looks por peça comprada (FE-US030-2, #430)', () => {
+    // Teste 1.
+    it('uma seção por peça, com o nome da peça de origem no título', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        Promise.resolve(
+          productId === '5'
+            ? lookCom('7', 'Bolsa baú de couro caramelo')
+            : lookCom('9', 'Lenço de seda estampado'),
+        ),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Calça jeans reta')).getByText('Bolsa baú de couro caramelo'),
+      ).toBeInTheDocument();
+      expect(
+        (await secaoLook('Blusa de linho')).getByText('Lenço de seda estampado'),
+      ).toBeInTheDocument();
+      expect(getCombinations).toHaveBeenCalledTimes(2);
+      expect(getCombinations).toHaveBeenCalledWith('5');
+      expect(getCombinations).toHaveBeenCalledWith('8');
+    });
+
+    // Teste 2.
+    it('com combinação, vazia e falha: só a seção com peças aparece e o Pedido fica inteiro', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) => {
+        if (productId === '5') return Promise.resolve(lookCom('7', 'Bolsa baú de couro caramelo'));
+        if (productId === '8') return Promise.resolve(EMPTY_LOOK);
+        return Promise.reject(new CombinationError('INTERNAL_ERROR', 'falhou'));
+      });
+      vi.mocked(getOrder).mockResolvedValue(
+        makeOrder({
+          items: [
+            { productId: '5', name: 'Calça jeans reta', price: 119.9, coverImageUrl: null },
+            { productId: '8', name: 'Blusa de linho', price: 40.1, coverImageUrl: null },
+            { productId: '9', name: 'Saia midi plissada', price: 60, coverImageUrl: null },
+          ],
+        }),
+      );
+      renderDetail();
+
+      await secaoLook('Calça jeans reta');
+      await waitFor(() => expect(getCombinations).toHaveBeenCalledTimes(3));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(screen.queryByRole('heading', { name: tituloLook('Blusa de linho') })).toBeNull();
+      expect(screen.queryByRole('heading', { name: tituloLook('Saia midi plissada') })).toBeNull();
+      expect(screen.getAllByText('Curadoria da IA Vintex')).toHaveLength(1);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      for (const regiao of ['Andamento do pedido', 'Peças', 'Endereço de entrega', 'Comprovante']) {
+        expect(screen.getByRole('region', { name: regiao })).toBeInTheDocument();
+      }
+      expect(screen.getByRole('link', { name: 'Saia midi plissada' })).toBeInTheDocument();
+    });
+
+    // Teste 3.
+    it('uma seção lenta não bloqueia a outra', async () => {
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        productId === '5'
+          ? new Promise(() => {})
+          : Promise.resolve(lookCom('9', 'Lenço de seda estampado')),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Blusa de linho')).getByText('Lenço de seda estampado'),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: tituloLook('Calça jeans reta') })).toBeNull();
+    });
+
+    // Teste 4: no Pedido, a peça de origem já foi reservada ou vendida.
+    it.each(['confirmado', 'concluido'] as const)(
+      'Pedido %s (peças reservadas/vendidas) mostra a seção',
+      async (status) => {
+        vi.mocked(getCombinations).mockResolvedValue(lookCom('7', 'Bolsa baú de couro caramelo'));
+        vi.mocked(getOrder).mockResolvedValue(
+          makeOrder({ status, payment: { status: 'aprovado', receiptName: 'pix.pdf' } }),
+        );
+        renderDetail();
+
+        expect(await secaoLook('Calça jeans reta')).toBeTruthy();
+      },
+    );
+
+    // Teste 5.
+    it('fallback mostra a linha de alternativa', async () => {
+      vi.mocked(getCombinations).mockResolvedValue(
+        lookCom('7', 'Bolsa baú de couro caramelo', 'fallback'),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail();
+
+      expect(
+        (await secaoLook('Calça jeans reta')).getByText(/estas são alternativas próximas/),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 6 (integração; os casos de sacola estão no teste do OrderLookSection).
+    it('"+ Adicionar" põe a peça sugerida na sacola e mostra o toast', async () => {
+      const add = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(getCombinations).mockImplementation((productId) =>
+        Promise.resolve(
+          productId === '5' ? lookCom('7', 'Bolsa baú de couro caramelo') : EMPTY_LOOK,
+        ),
+      );
+      vi.mocked(getOrder).mockResolvedValue(makeOrder());
+      renderDetail(cartValue({ add }));
+
+      fireEvent.click(
+        (await secaoLook('Calça jeans reta')).getByRole('button', {
+          name: /Adicionar Bolsa baú de couro caramelo à sacola/,
+        }),
+      );
+
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      expect(add).toHaveBeenCalledWith('7');
+    });
+
+    // Teste 7.
+    it('Pedido carregando não chama getCombinations', () => {
+      vi.mocked(getOrder).mockReturnValue(new Promise(() => {}));
+      renderDetail();
+
+      expect(screen.getByRole('status')).toHaveTextContent('Carregando o pedido...');
+      expect(getCombinations).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['não encontrado', new OrderError('ORDER_NOT_FOUND', 'não encontrado')],
+      ['com erro', new Error('rede')],
+    ])('Pedido %s não chama getCombinations', async (_caso, erro) => {
+      vi.mocked(getOrder).mockRejectedValue(erro);
+      renderDetail();
+
+      await screen.findByRole('alert');
+      expect(getCombinations).not.toHaveBeenCalled();
+    });
   });
 });

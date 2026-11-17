@@ -19,6 +19,8 @@ class NotificationRow(TypedDict):
     product_id: int
     product_name: str
     order_id: int | None
+    # Só na suspensão: o motivo que a administradora gravou (RN-80).
+    moderation_reason: str | None
     created_at: datetime
     read_at: datetime | None
 
@@ -47,6 +49,55 @@ class NotificationRepository:
             )
         )
         self.db.flush()
+
+    def add_moderation(self, user_id: int, product_id: int, reason: str) -> None:
+        """Aviso da suspensão ao vendedor, com o motivo (RN-80, back-end#327).
+
+        Grava no mesmo commit da suspensão, como o aviso da venda: não pode
+        existir peça fora do ar sem o vendedor saber por quê. O motivo fica na
+        linha, e não só na peça: devolver a peça à vitrine apaga o motivo dela,
+        e o aviso continua dizendo o que aconteceu. Não duplica dentro da mesma
+        suspensão porque quem chama só avisa na primeira vez — suspender de novo
+        atualiza o motivo pelo `update_moderation_reason`. Devolvida à vitrine e
+        suspensa outra vez, é outro aviso: a suspensão anterior fica no
+        histórico com a data dela.
+        """
+        self.db.add(
+            Notification(
+                user_id=user_id,
+                type="moderation",
+                product_id=product_id,
+                moderation_reason=reason,
+                created_at=utcnow_naive(),
+            )
+        )
+        self.db.flush()
+
+    def update_moderation_reason(
+        self, user_id: int, product_id: int, reason: str
+    ) -> None:
+        """Troca o motivo do aviso da suspensão em curso, sem criar outro (RN-80).
+
+        Suspender de novo a mesma peça muda a explicação ao vendedor; dois
+        avisos da mesma suspensão só repetiriam o sino. A linha que muda é a
+        mais recente da peça: depois de devolvê-la à vitrine, a suspensão
+        seguinte é outro episódio, com o seu próprio aviso, e sem esta restrição
+        o UPDATE reescreveria o motivo dos dois — apagando o histórico do
+        primeiro.
+        """
+        da_peca = (
+            Notification.user_id == user_id,
+            Notification.product_id == product_id,
+            Notification.type == "moderation",
+        )
+        mais_recente = (
+            select(func.max(Notification.id)).where(*da_peca).scalar_subquery()
+        )
+        self.db.execute(
+            update(Notification)
+            .where(Notification.id == mais_recente)
+            .values(moderation_reason=reason)
+        )
 
     def add_favorite(self, user_id: int, product_id: int, actor_id: int) -> None:
         """Aviso do favorito, uma vez por peça e por quem favoritou.
@@ -93,6 +144,7 @@ class NotificationRepository:
                     Notification.product_id,
                     Product.name.label("product_name"),
                     Notification.order_id,
+                    Notification.moderation_reason,
                     Notification.created_at,
                     Notification.read_at,
                 )

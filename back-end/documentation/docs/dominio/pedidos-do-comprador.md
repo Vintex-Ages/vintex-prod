@@ -15,6 +15,20 @@ Um pedido é a compra das peças de **uma loja só**: o comprador paga direto na
 | `GET /api/users/me/orders` | "Meus pedidos", paginado, mais recente primeiro |
 | `GET /api/users/me/orders/{order_id}` | detalhe, com a chave Pix e a linha do tempo |
 
+## Para onde vai o dinheiro, antes de confirmar
+
+O carrinho (`/api/users/me/cart`) é separado por loja, e cada grupo traz, além do selo, os dados que a tela de checkout precisa para mostrar o destino do Pix antes de a pessoa confirmar (RN-19) ([#259](https://github.com/Vintex-Ages/back-end/issues/259)):
+
+| Campo da loja no grupo | Observação |
+| --- | --- |
+| `pix_key` | a chave Pix do vendedor (RN-18) |
+| `city` | a cidade do endereço da loja |
+| `logo_url` | a logo da loja |
+
+- **A chave Pix tem schema próprio** (`CartStoreInfo`). O `FeedStoreResponse` é público e não pode expor a chave; por isso o carrinho não reaproveita o schema do feed.
+- **Loja sem chave, sem logo ou sem endereço devolve `null`** nesses campos e continua no carrinho. O carrinho só aparece para quem está logado, mas a chave nunca sai do feed público.
+- Antes, a chave só aparecia depois do pedido criado, e a tela não conseguia dizer para onde o dinheiro iria.
+
 ## Lista e detalhe
 
 - **A lista não traz `pix_key` nem `history`.** Só o detalhe traz; ele é a única rota que devolve a chave Pix ao comprador.

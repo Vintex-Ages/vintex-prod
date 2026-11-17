@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -16,7 +16,6 @@ vi.mock('@/services/notificationService', () => ({
   listNotifications: vi.fn(),
   markAsRead: vi.fn(),
   markAllAsRead: vi.fn(),
-  countUnread: (items: Notification[]) => items.filter((item) => !item.isRead).length,
 }));
 
 const USER: AuthUser = {
@@ -36,7 +35,6 @@ function fixtures(): Notification[] {
     {
       id: 'favorito-341',
       type: 'favorite',
-      recipientUserId: USER.id,
       productId: 'produto-favorito-341',
       productName: 'Bolsa fictícia 341',
       createdAt: '2026-10-21T15:00:00.000Z',
@@ -45,7 +43,6 @@ function fixtures(): Notification[] {
     {
       id: 'venda-341',
       type: 'sale',
-      recipientUserId: USER.id,
       productName: 'Jaqueta fictícia 341',
       createdAt: '2026-10-20T15:00:00.000Z',
       isRead: false,
@@ -53,12 +50,23 @@ function fixtures(): Notification[] {
     {
       id: 'venda-lida-341',
       type: 'sale',
-      recipientUserId: USER.id,
       productName: 'Casaco fictício 341',
       createdAt: '2026-10-19T15:00:00.000Z',
       isRead: true,
     },
   ];
+}
+
+type NotificationPage = Awaited<ReturnType<typeof listNotifications>>;
+
+function pageFor(items: Notification[]): NotificationPage {
+  return {
+    items,
+    page: 1,
+    pageSize: items.length,
+    total: items.length,
+    unreadCount: items.filter((item) => !item.isRead).length,
+  };
 }
 
 let notifications: Notification[];
@@ -148,30 +156,31 @@ function notificationButton(message: string) {
 
 beforeEach(() => {
   notifications = fixtures();
+
   vi.mocked(listNotifications)
     .mockReset()
     .mockImplementation(async (userId) =>
-      userId === USER.id
-        ? structuredClone(notifications)
-        : [
-            {
-              ...fixtures()[0],
-              id: 'favorito-exclusivo-b',
-              recipientUserId: userId,
-              productName: 'Peça exclusiva B',
-            },
-          ],
+      pageFor(
+        userId === USER.id
+          ? structuredClone(notifications)
+          : [
+              {
+                ...fixtures()[0],
+                id: 'favorito-exclusivo-b',
+                productName: 'Peça exclusiva B',
+              },
+            ],
+      ),
     );
+
   vi.mocked(markAsRead)
     .mockReset()
     .mockImplementation(async (_userId, id) => {
       const item = notifications.find((entry) => entry.id === id);
       if (!item) throw new Error('Notificação inexistente');
-      return { ...item, isRead: true };
     });
-  vi.mocked(markAllAsRead)
-    .mockReset()
-    .mockImplementation(async () => notifications.map((item) => ({ ...item, isRead: true })));
+
+  vi.mocked(markAllAsRead).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -273,32 +282,34 @@ describe('NotificationBell — painel e acessibilidade', () => {
   });
 
   it('mostra loading enquanto a lista está pendente', async () => {
-    const request = deferred<Notification[]>();
+    const request = deferred<NotificationPage>();
     vi.mocked(listNotifications).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel();
 
     expect(within(panel).getByRole('status')).toHaveTextContent(/carregando/i);
     expect(within(panel).queryAllByRole('listitem')).toHaveLength(0);
-    await act(async () => request.resolve(fixtures()));
+    await act(async () => request.resolve(pageFor(fixtures())));
   });
 
   it('falha de carregamento mostra erro e retry recupera a lista', async () => {
     const user = userEvent.setup();
-    vi.mocked(listNotifications).mockRejectedValueOnce(new Error('Falha controlada'));
+    // Falha a busca do login e a de abrir o sino (#411); o retry é a terceira.
+    vi.mocked(listNotifications)
+      .mockRejectedValueOnce(new Error('Falha controlada'))
+      .mockRejectedValueOnce(new Error('Falha controlada'));
     renderBell();
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(1));
     const panel = await openPanel(user);
     expect(await within(panel).findByRole('alert')).toBeInTheDocument();
 
     await user.click(within(panel).getByRole('button', { name: /tentar (de novo|novamente)/i }));
 
     expect(await findMessage(panel, FAVORITE_MESSAGE)).toBeInTheDocument();
-    expect(listNotifications).toHaveBeenCalledTimes(2);
+    expect(listNotifications).toHaveBeenCalledTimes(3);
     expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  // Sem rota no back (back-end#261), o service avisa INTEGRATION_UNAVAILABLE:
-  // o sino some em vez de mostrar um erro que nenhum "tentar de novo" resolve.
   it('esconde o sino quando a integração de notificações não existe', async () => {
     vi.mocked(listNotifications).mockRejectedValue(
       Object.assign(new Error('indisponível'), { code: 'INTEGRATION_UNAVAILABLE' }),
@@ -387,7 +398,7 @@ describe('NotificationBell — painel e acessibilidade', () => {
 describe('NotificationBell — leitura e navegação confirmadas', () => {
   it('favorito confirma leitura antes de atualizar, fechar e navegar à peça', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification>();
+    const request = deferred<void>();
     vi.mocked(markAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -399,7 +410,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('2');
     expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
     expect(panel).toBeInTheDocument();
-    await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+    await act(async () => request.resolve());
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('1');
     expect(screen.getByLabelText('Rota atual')).toHaveTextContent(
       productDetail('produto-favorito-341'),
@@ -439,7 +450,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
   it('não duplica leitura enquanto a primeira operação está pendente', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification>();
+    const request = deferred<void>();
     vi.mocked(markAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -451,7 +462,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     await user.click(button);
 
     expect(markAsRead).toHaveBeenCalledTimes(1);
-    await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+    await act(async () => request.resolve());
   });
 
   it('falha individual preserva não lida, contador e rota, permitindo nova tentativa', async () => {
@@ -500,7 +511,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
   it('lote pendente não zera antecipadamente nem dispara operações repetidas', async () => {
     const user = userEvent.setup();
-    const request = deferred<Notification[]>();
+    const request = deferred<void>();
     vi.mocked(markAllAsRead).mockReturnValue(request.promise);
     renderBell();
     const panel = await openPanel(user);
@@ -514,7 +525,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
 
     expect(markAllAsRead).toHaveBeenCalledTimes(1);
     expect(markAsRead).not.toHaveBeenCalled();
-    await act(async () => request.resolve(fixtures().map((item) => ({ ...item, isRead: true }))));
+    await act(async () => request.resolve());
     expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('0');
   });
 
@@ -571,7 +582,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
     'confirmação atrasada após %s não navega nem restaura o conteúdo anterior',
     async (change) => {
       const user = userEvent.setup();
-      const request = deferred<Notification>();
+      const request = deferred<void>();
       vi.mocked(markAsRead).mockReturnValue(request.promise);
       renderBell();
       const panel = await openPanel(user);
@@ -583,7 +594,7 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
         }),
       );
 
-      await act(async () => request.resolve({ ...fixtures()[0], isRead: true }));
+      await act(async () => request.resolve());
 
       expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
       expect(
@@ -594,4 +605,234 @@ describe('NotificationBell — leitura e navegação confirmadas', () => {
       }
     },
   );
+});
+
+describe('NotificationBell — sino ligado à API (FE-US036-2, #411)', () => {
+  const UNKNOWN_MESSAGE = 'Notificação sobre a peça Saia fictícia 411';
+
+  function unknownItem(overrides: Partial<Notification> = {}): Notification {
+    return {
+      id: 'desconhecida-411',
+      type: 'price_drop',
+      productId: 'produto-desconhecido-411',
+      productName: 'Saia fictícia 411',
+      createdAt: '2026-10-22T15:00:00.000Z',
+      isRead: false,
+      ...overrides,
+    };
+  }
+
+  // Teste 1: textos certos e a contagem é a do back, não a da página.
+  it('lista venda e favorito com os textos certos e a contagem do back', async () => {
+    vi.mocked(listNotifications).mockResolvedValue({
+      ...pageFor(structuredClone(notifications)),
+      unreadCount: 7,
+    });
+    renderBell();
+    const panel = await openPanel();
+
+    expect(await findMessage(panel, FAVORITE_MESSAGE)).toBeInTheDocument();
+    expect(notificationButton(SALE_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('7');
+    expect(screen.getByRole('button', { name: 'Notificações' })).toHaveAccessibleDescription(
+      '7 notificações não lidas',
+    );
+  });
+
+  // Teste 2: o orderId da venda nunca vira link.
+  it('venda com orderId marca como lida e vai para /seller, sem link para o pedido', async () => {
+    notifications = [{ ...fixtures()[1], orderId: 'pedido-411' }];
+    const user = userEvent.setup();
+    renderBell();
+    const panel = await openPanel(user);
+    await findMessage(panel, SALE_MESSAGE);
+
+    expect(within(panel).queryByRole('link')).not.toBeInTheDocument();
+    expect(panel.innerHTML).not.toContain('pedido-411');
+
+    await user.click(notificationButton(SALE_MESSAGE));
+
+    expect(markAsRead).toHaveBeenCalledExactlyOnceWith(USER.id, 'venda-341');
+    await waitFor(() =>
+      expect(screen.getByLabelText('Rota atual')).toHaveTextContent(paths.seller),
+    );
+    expect(screen.getByLabelText('Rota atual')).not.toHaveTextContent('/profile/orders');
+  });
+
+  // Teste 3 (parte 2): favorito sem productId não tem destino.
+  it('favorito sem productId aparece sem ação e não navega', async () => {
+    const semPeca = { ...fixtures()[0], productId: undefined };
+    notifications = [semPeca, fixtures()[1]];
+    const user = userEvent.setup();
+    renderBell();
+    const panel = await openPanel(user);
+    await findMessage(panel, SALE_MESSAGE);
+
+    const item = within(panel).getByText(FAVORITE_MESSAGE).closest('li');
+    if (!item) throw new Error('item do favorito não encontrado');
+    expect(within(item).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(item).queryByRole('link')).not.toBeInTheDocument();
+
+    await user.click(within(panel).getByText(FAVORITE_MESSAGE));
+
+    expect(markAsRead).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
+    expect(screen.getByRole('region', { name: 'Notificações' })).toBeInTheDocument();
+  });
+
+  // Teste 4: "Marcar todas" não recarrega a lista.
+  it('marcar todas chama a rota de todas e zera sem nova busca', async () => {
+    const user = userEvent.setup();
+    renderBell();
+    const panel = await openPanel(user);
+    await findMessage(panel, FAVORITE_MESSAGE);
+    const buscas = vi.mocked(listNotifications).mock.calls.length;
+
+    await user.click(within(panel).getByRole('button', { name: 'Marcar todas como lidas' }));
+
+    expect(markAllAsRead).toHaveBeenCalledExactlyOnceWith(USER.id);
+    await waitFor(() =>
+      expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('0'),
+    );
+    expect(listNotifications).toHaveBeenCalledTimes(buscas);
+  });
+
+  // Teste 5: tipo desconhecido não quebra a lista e não tem destino.
+  it('tipo desconhecido aparece com nome e data, sem link, e as outras seguem', async () => {
+    notifications = [unknownItem(), ...fixtures()];
+    const user = userEvent.setup();
+    renderBell();
+    const panel = await openPanel(user);
+    await findMessage(panel, FAVORITE_MESSAGE);
+
+    const items = within(panel).getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    const unknown = items[0];
+    expect(unknown).toHaveTextContent(UNKNOWN_MESSAGE);
+    expect(unknown).not.toHaveTextContent(/favoritou|vendida/i);
+    expect(unknown.querySelector('time')).toHaveAttribute('datetime', '2026-10-22T15:00:00.000Z');
+    expect(within(unknown).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(unknown).queryByRole('link')).not.toBeInTheDocument();
+    expect(within(unknown).getByText('Não lida', { exact: true })).toBeInTheDocument();
+
+    await user.click(within(unknown).getByText(UNKNOWN_MESSAGE));
+
+    expect(markAsRead).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Rota atual')).toHaveTextContent(INITIAL_PATH);
+    expect(notificationButton(FAVORITE_MESSAGE)).toBeEnabled();
+    expect(notificationButton(SALE_MESSAGE)).toBeEnabled();
+  });
+
+  // Teste 6.
+  it('lista vazia mostra o texto de vazio', async () => {
+    notifications = [];
+    renderBell();
+    const panel = await openPanel();
+
+    expect(await within(panel).findByText('Nenhuma notificação por enquanto.')).toBeInTheDocument();
+  });
+
+  // Teste 7: o sino fica silencioso; o erro só existe dentro do painel aberto.
+  it('falha na busca não mostra erro fora do painel; dentro dele, erro com retry', async () => {
+    vi.mocked(listNotifications).mockRejectedValue(new Error('Falha controlada'));
+    const user = userEvent.setup();
+    renderBell();
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/não foi possível/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Notificações' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('0');
+
+    const panel = await openPanel(user);
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar as notificações.',
+    );
+    expect(within(panel).getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+  });
+
+  // Teste 8: abrir o sino busca de novo, sem piscar nem esvaziar a lista.
+  it('abrir o sino dispara nova busca sem "Carregando…" nem lista vazia', async () => {
+    const user = userEvent.setup();
+    renderBell();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('2'),
+    );
+    expect(listNotifications).toHaveBeenCalledTimes(1);
+
+    const refresh = deferred<NotificationPage>();
+    vi.mocked(listNotifications).mockReturnValueOnce(refresh.promise);
+    const panel = await openPanel(user);
+
+    expect(listNotifications).toHaveBeenCalledTimes(2);
+    expect(listNotifications).toHaveBeenLastCalledWith(USER.id);
+    expect(within(panel).queryByRole('status')).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/carregando/i)).not.toBeInTheDocument();
+    expect(within(panel).queryByText(/nenhuma notificação/i)).not.toBeInTheDocument();
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(3);
+
+    await act(async () => refresh.resolve(pageFor([unknownItem(), ...fixtures()])));
+
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(panel).getByText(UNKNOWN_MESSAGE)).toBeInTheDocument();
+    expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('3');
+  });
+
+  it('falha da busca ao abrir, com itens, mantém a lista e não mostra erro', async () => {
+    const user = userEvent.setup();
+    renderBell();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('2'),
+    );
+
+    vi.mocked(listNotifications).mockRejectedValueOnce(new Error('Falha controlada'));
+    const panel = await openPanel(user);
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+
+    expect(within(panel).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(panel).getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('2');
+  });
+
+  it('leitura já confirmada não reacende com a busca ao reabrir o sino', async () => {
+    const user = userEvent.setup();
+    renderBell();
+    const panel = await openPanel(user);
+    await findMessage(panel, SALE_MESSAGE);
+
+    await user.click(notificationButton(SALE_MESSAGE));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('1'),
+    );
+
+    // O back ainda devolve a venda como não lida (dado velho), com 2 não lidas.
+    const buscas = vi.mocked(listNotifications).mock.calls.length;
+    const reopened = await openPanel(user);
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(buscas + 1));
+    await act(async () => {});
+
+    expect(screen.getByLabelText('Não lidas no estado')).toHaveTextContent('1');
+    expect(within(reopened).getAllByText('Não lida', { exact: true })).toHaveLength(1);
+  });
+
+  it('fechar o painel não dispara busca e não há polling de fundo', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderBell();
+      await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(1));
+      await openPanel(user);
+      await user.click(screen.getByRole('button', { name: 'Notificações' }));
+      expect(listNotifications).toHaveBeenCalledTimes(2);
+
+      await act(async () => vi.advanceTimersByTime(10 * 60 * 1000));
+
+      expect(listNotifications).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

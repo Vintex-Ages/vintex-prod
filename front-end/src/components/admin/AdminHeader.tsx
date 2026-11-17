@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import logo from '@/assets/images/logo-vintex.svg';
 import { useAuth } from '@/context/useAuth';
 import { paths } from '@/routes/paths';
@@ -10,8 +11,8 @@ import { paths } from '@/routes/paths';
  *   iniciais de quem está logado.
  * - **Tablet e web:** barra vermelha com a marca, o rótulo "Painel
  *   administrativo" e o nome de quem está logado.
- * - **Abaixo, em ambos:** a única aba por ora, "Comprovantes" (as demais abas
- *   do Figma ficam fora do escopo).
+ * - **Abaixo, em ambos:** quatro abas determinadas pela URL, com rolagem
+ *   horizontal quando não couberem na largura disponível.
  *
  * Precisa estar dentro do `AuthProvider`. Sem regra de negócio.
  *
@@ -19,6 +20,24 @@ import { paths } from '@/routes/paths';
  *   import { AdminHeader } from '@/components/admin/AdminHeader';
  *   <AdminHeader />
  */
+
+const ADMIN_TABS = [
+  { to: paths.adminReceipts, label: 'Comprovantes' },
+  { to: paths.adminDashboard, label: 'Painel geral' },
+  { to: paths.adminModeration, label: 'Anúncios suspensos' },
+  { to: paths.adminReports, label: 'Reclamações' },
+];
+
+function revealLink(navigation: HTMLDivElement, link: HTMLAnchorElement): void {
+  const container = navigation.getBoundingClientRect();
+  const target = link.getBoundingClientRect();
+
+  if (target.left < container.left) {
+    navigation.scrollLeft -= Math.ceil(container.left - target.left);
+  } else if (target.right > container.right) {
+    navigation.scrollLeft += Math.ceil(target.right - container.right);
+  }
+}
 
 /** "Eva Vieira" → "EV"; "Cris" → "C". */
 function initials(name: string): string {
@@ -48,6 +67,27 @@ function UserIcon() {
 
 export function AdminHeader() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
+  const navigationRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const revealActiveLink = () => {
+      const navigation = navigationRef.current;
+      const activeLink = navigation?.querySelector<HTMLAnchorElement>('[aria-current="page"]');
+      if (navigation && activeLink) revealLink(navigation, activeLink);
+    };
+
+    revealActiveLink();
+    // A fonte pode mudar a largura das abas depois da primeira medição.
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) revealActiveLink();
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   return (
     <header>
@@ -97,14 +137,30 @@ export function AdminHeader() {
         aria-label="Área administrativa"
         className="border-b border-linha bg-papel tablet:bg-branco-quente"
       >
-        <div className="mx-auto flex w-full max-w-[1440px] px-4 tablet:px-10 web:px-20">
-          <Link
-            to={paths.adminReceipts}
-            aria-current="page"
-            className="inline-flex min-h-touch items-center border-b-2 border-vermelho-escuro px-1 font-ui text-body-sm font-semibold text-tinta focus:outline-none focus-visible:ring-2 focus-visible:ring-tinta tablet:border-vermelhao"
-          >
-            Comprovantes
-          </Link>
+        <div
+          ref={navigationRef}
+          className="hide-scrollbar mx-auto flex w-full max-w-[1440px] flex-nowrap gap-6 overflow-x-auto px-4 tablet:px-10 web:px-20"
+        >
+          {ADMIN_TABS.map(({ to, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end
+              onFocus={(event) => {
+                const navigation = navigationRef.current;
+                if (navigation) revealLink(navigation, event.currentTarget);
+              }}
+              className={({ isActive }) =>
+                `inline-flex min-h-touch shrink-0 items-center whitespace-nowrap border-b-2 px-1 font-ui text-body-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tinta ${
+                  isActive
+                    ? 'border-vermelho-escuro text-tinta tablet:border-vermelhao'
+                    : 'border-transparent text-texto-auxiliar'
+                }`
+              }
+            >
+              {label}
+            </NavLink>
+          ))}
         </div>
       </nav>
     </header>

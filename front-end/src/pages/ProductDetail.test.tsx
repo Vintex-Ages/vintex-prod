@@ -1,7 +1,7 @@
 ﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { ProductGrid } from '@/components/product/ProductGrid';
 import { AuthProvider } from '@/context/AuthContext';
@@ -11,15 +11,23 @@ import { NotificationsProvider } from '@/context/NotificationsContext';
 import { ToastProvider } from '@/context/ToastContext';
 import { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from '@/context/useAuth';
 import { useAuth } from '@/context/useAuth';
+import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { useFavorites } from '@/context/useFavorites';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { PENDING_ACTION_STORAGE_KEY } from '@/hooks/useProtectedAction';
 import { paths } from '@/routes/paths';
 import * as catalogService from '@/services/catalogService';
+import { AdminModerationError, suspendProduct } from '@/services/adminModerationService';
+import type { ModerationResult } from '@/types/adminModeration';
 import type { AuthUser } from '@/types/auth';
 import type { Cart } from '@/types/cart';
 import type { ProductDetail as ProductDetailData } from '@/types/product';
 import ProductDetail from './ProductDetail';
+
+vi.mock('@/services/adminModerationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/adminModerationService')>()),
+  suspendProduct: vi.fn(),
+}));
 
 vi.mock('@/services/cartService', () => ({
   getCart: vi.fn(),
@@ -42,8 +50,16 @@ vi.mock('@/services/favoriteService', async (importOriginal) => {
   };
 });
 
+/** Combine e monte o look (#412): a rota de combinações é sempre mockada aqui. */
+vi.mock('@/services/combinationService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/combinationService')>()),
+  getCombinations: vi.fn(),
+}));
+
 import { addItem, getCart, removeItem } from '@/services/cartService';
+import { CombinationError, getCombinations } from '@/services/combinationService';
 import { addFavorite, listFavoriteIds, removeFavorite } from '@/services/favoriteService';
+import type { LookSuggestion } from '@/types/look';
 
 const mockedGetCart = vi.mocked(getCart);
 const mockedAddItem = vi.mocked(addItem);
@@ -51,6 +67,34 @@ const mockedRemoveItem = vi.mocked(removeItem);
 const mockedAddFavorite = vi.mocked(addFavorite);
 const mockedListFavoriteIds = vi.mocked(listFavoriteIds);
 const mockedRemoveFavorite = vi.mocked(removeFavorite);
+const mockedGetCombinations = vi.mocked(getCombinations);
+
+const LOOK: LookSuggestion = {
+  pieces: [
+    {
+      id: '7',
+      name: 'Bolsa baú de couro caramelo',
+      price: 90,
+      category: 'Acessórios',
+      coverImageUrl: null,
+      store: { id: '2', name: 'Brechó da Redenção' },
+    },
+    {
+      id: '8',
+      name: 'Lenço de seda estampado',
+      price: 35.5,
+      category: 'Acessórios',
+      coverImageUrl: null,
+      store: { id: '3', name: 'Garimpo Serrano' },
+    },
+  ],
+  matchType: 'exact',
+  totalAmount: 125.5,
+};
+
+const EMPTY_LOOK: LookSuggestion = { pieces: [], matchType: 'exact', totalAmount: 0 };
+
+const LOOK_TITLE = 'Combine esta peça e monte o look';
 
 afterEach(() => {
   cleanup();
@@ -228,6 +272,8 @@ beforeEach(() => {
   mockedGetCart.mockResolvedValue(EMPTY_CART);
   mockedAddItem.mockResolvedValue(CART_WITH_PRODUCT);
   mockedRemoveItem.mockResolvedValue(EMPTY_CART);
+  // Padrão: sem peças que combinem, a seção não aparece e não interfere nos demais testes.
+  mockedGetCombinations.mockResolvedValue(EMPTY_LOOK);
 });
 
 describe('<ProductDetail />', () => {
@@ -248,21 +294,252 @@ describe('<ProductDetail />', () => {
     expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeTruthy();
   });
 
-  it('mostra a curadoria do Figma e alterna o item localmente no look', async () => {
-    const user = userEvent.setup();
-    renderAt('/product/1');
+  describe('Combine e monte o look (FE-US030-1, #412)', () => {
+    const BOLSA = /Adicionar Bolsa baú de couro caramelo à sacola/;
 
-    await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
-    expect(screen.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Bolsa Baú de Couro Caramelo' })).toBeInTheDocument();
+    async function secaoDoLook() {
+      return screen.findByRole('region', { name: LOOK_TITLE });
+    }
 
-    const addToLook = screen.getByRole('button', { name: '+ Adicionar' });
-    await user.click(addToLook);
+    /** Deixa as promessas pendentes (getCombinations) resolverem. */
+    async function flush() {
+      await waitFor(() => expect(mockedGetCombinations).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
 
-    expect(screen.getByRole('button', { name: '✓ Adicionada ao look' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // Teste 1.
+    it('mostra título, peças, loja, preço e total', async () => {
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1');
+
+      const secao = within(await secaoDoLook());
+      expect(secao.getByText('Curadoria da IA Vintex')).toBeInTheDocument();
+      expect(secao.getByText('Bolsa baú de couro caramelo')).toBeInTheDocument();
+      expect(secao.getByText('Brechó da Redenção')).toBeInTheDocument();
+      expect(secao.getByText('R$ 90,00')).toBeInTheDocument();
+      expect(secao.getByText('Lenço de seda estampado')).toBeInTheDocument();
+      expect(secao.getByText('Total do conjunto')).toBeInTheDocument();
+      expect(secao.getByText('R$ 125,50')).toBeInTheDocument();
+      expect(mockedGetCombinations).toHaveBeenCalledWith('1');
+      // O placeholder fixo saiu.
+      expect(screen.queryByRole('img', { name: /Bolsa Baú de Couro/ })).not.toBeInTheDocument();
+    });
+
+    // Teste 2.
+    it('fallback mostra a linha de alternativa', async () => {
+      mockedGetCombinations.mockResolvedValue({ ...LOOK, matchType: 'fallback' });
+      renderAt('/product/1');
+
+      expect(
+        within(await secaoDoLook()).getByText(/estas são alternativas próximas/),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 3.
+    it('sem peças, a seção não aparece, nem o título', async () => {
+      mockedGetCombinations.mockResolvedValue(EMPTY_LOOK);
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+      await flush();
+      expect(screen.queryByText(LOOK_TITLE)).not.toBeInTheDocument();
+      expect(screen.queryByText('Curadoria da IA Vintex')).not.toBeInTheDocument();
+    });
+
+    // Teste 4.
+    it('falha da rota não derruba o detalhe e a seção não aparece', async () => {
+      mockedGetCombinations.mockRejectedValue(new CombinationError('INTERNAL_ERROR', 'falhou'));
+      renderAt('/product/1');
+
+      await screen.findByRole('heading', { name: 'Jaqueta jeans vintage clara' });
+      await flush();
+      expect(screen.queryByRole('region', { name: LOOK_TITLE })).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+      expect(screen.getByText(/Jaqueta jeans garimpada em brechó/)).toBeInTheDocument();
+    });
+
+    // Teste 5.
+    describe('só carrega depois da peça principal', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('não chama getCombinations enquanto a peça principal carrega', async () => {
+        const real = await catalogService.getProduct('1');
+        let resolveProduct: (value: ProductDetailData) => void = () => {};
+        vi.spyOn(catalogService, 'getProduct').mockReturnValue(
+          new Promise((resolve) => (resolveProduct = resolve)),
+        );
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/1');
+
+        expect(screen.getByRole('status')).toHaveTextContent('Carregando produto...');
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+
+        resolveProduct(real);
+        expect(await secaoDoLook()).toBeInTheDocument();
+        expect(mockedGetCombinations).toHaveBeenCalledOnce();
+        expect(mockedGetCombinations).toHaveBeenCalledWith('1');
+      });
+
+      it('peça não encontrada não chama getCombinations', async () => {
+        renderAt('/product/inexistente');
+
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/não encontrada/i));
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+      });
+
+      it('erro ao carregar a peça não chama getCombinations', async () => {
+        vi.spyOn(catalogService, 'getProduct').mockRejectedValue(new Error('rede'));
+        renderAt('/product/1');
+
+        await waitFor(() =>
+          expect(screen.getByRole('alert')).toHaveTextContent(/Não foi possível carregar/),
+        );
+        expect(mockedGetCombinations).not.toHaveBeenCalled();
+      });
+    });
+
+    // Teste 6.
+    it('logado: "+ Adicionar" põe a peça sugerida na sacola e mostra o toast', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { authenticated: true, cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      await waitFor(() => expect(add).toHaveBeenCalledWith('7'));
+      expect(add).toHaveBeenCalledOnce();
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Ver carrinho' })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('logado: falha ao adicionar a peça sugerida mostra o toast de erro', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockRejectedValue(new Error('falhou'));
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { authenticated: true, cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      expect(
+        await screen.findByText('Não foi possível adicionar ao carrinho. Tente novamente.'),
+      ).toBeInTheDocument();
+    });
+
+    // Teste 7.
+    it('deslogado: abre o LoginInterceptor sem chamar add e guarda a peça clicada', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(add).not.toHaveBeenCalled();
+      const pending = JSON.parse(
+        window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY) ?? '{}',
+      ) as { returnTo?: string; intent?: { payload?: Record<string, unknown> } };
+      expect(pending.returnTo).toBe('/product/1');
+      expect(pending.intent?.payload).toEqual({ productId: '1', pieceId: '7' });
+    });
+
+    it('deslogado: depois do login, a peça clicada é adicionada uma única vez', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await user.click(await screen.findByRole('button', { name: 'Entrar' }));
+      await user.click(await screen.findByRole('button', { name: 'Concluir login' }));
+
+      await waitFor(() => expect(add).toHaveBeenCalledWith('7'));
+      expect(await screen.findByText('Adicionada ao carrinho')).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(add).toHaveBeenCalledOnce();
+      expect(window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY)).toBeNull();
+    });
+
+    it('deslogado: "Agora não" cancela e o login depois não adiciona nada', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', { cartValue: createCartValue({ add }) });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await user.click(await screen.findByRole('button', { name: 'Agora não' }));
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(window.sessionStorage.getItem(PENDING_ACTION_STORAGE_KEY)).toBeNull();
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    // Teste 8.
+    describe('peça de origem indisponível continua mostrando a seção', () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      it('reservada', async () => {
+        const real = await catalogService.getProduct('1');
+        vi.spyOn(catalogService, 'getProduct').mockResolvedValue({ ...real, status: 'reservado' });
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/1');
+
+        expect(await secaoDoLook()).toBeInTheDocument();
+      });
+
+      it('vendida', async () => {
+        mockedGetCombinations.mockResolvedValue(LOOK);
+        renderAt('/product/4');
+
+        expect(await secaoDoLook()).toBeInTheDocument();
+        expect(mockedGetCombinations).toHaveBeenCalledWith('4');
+      });
+    });
+
+    // Teste 9.
+    it('peça sugerida já na sacola não é adicionada de novo, sem erro', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn().mockResolvedValue(undefined);
+      const cartComBolsa: Cart = {
+        groups: [
+          {
+            store: { id: '2', name: 'Brechó da Redenção', city: 'Porto Alegre' },
+            items: [
+              {
+                product: {
+                  id: '7',
+                  name: 'Bolsa baú de couro caramelo',
+                  price: 90,
+                  coverImageUrl: null,
+                  store: { id: '2', name: 'Brechó da Redenção', city: 'Porto Alegre' },
+                },
+                addedAt: '2026-09-26T12:00:00Z',
+              },
+            ],
+            subtotalCents: 9000,
+          },
+        ],
+      };
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/1', {
+        authenticated: true,
+        cartValue: createCartValue({ cart: cartComBolsa, count: 1, add }),
+      });
+
+      await user.click(within(await secaoDoLook()).getByRole('button', { name: BOLSA }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(add).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Não foi possível adicionar/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('mostra a trilha de navegação (início / cidade / loja / produto)', async () => {
@@ -935,5 +1212,316 @@ describe('<ProductDetail />', () => {
     expect(await screen.findByRole('button', { name: 'No carrinho' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sacola (1)' })).toBeInTheDocument();
     expect(mockedAddItem).toHaveBeenCalledWith(SAMPLE_USER.id, '1');
+  });
+});
+
+/** #414 RED: fixtures próprias, independentes dos IDs dos dois mocks reais. */
+const MODERATION_ADMIN: AuthUser = {
+  id: '414-admin',
+  name: 'Admin de teste',
+  email: 'admin@example.test',
+  is_admin: true,
+  is_seller: false,
+};
+const MODERATION_OWNER: AuthUser = {
+  id: '414-owner',
+  name: 'Dona do Brechó Aurora',
+  email: 'owner@example.test',
+  is_admin: false,
+  is_seller: true,
+};
+const MODERATION_PRODUCT: ProductDetailData = {
+  id: '41401',
+  name: 'Jaqueta do fluxo de moderação',
+  price: 120,
+  coverImageUrl: null,
+  store: { id: '414-store', name: 'Brechó Aurora' },
+  category: 'Roupas',
+  size: 'M',
+  color: 'Preto',
+  brand: 'Vintage',
+  condition: 'Usado',
+  description: 'Peça da proprietária 414-owner.',
+  status: 'ativo',
+  media: [],
+};
+const MODERATION_REASON = 'As fotos não correspondem à peça.';
+const MODERATION_RESULT: ModerationResult = {
+  productId: MODERATION_PRODUCT.id,
+  status: 'despublicado',
+  moderationReason: MODERATION_REASON,
+  moderatedAt: '2026-11-14T12:00:00',
+};
+
+function moderationAuth(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
+  return {
+    user: MODERATION_ADMIN,
+    token: 'test-token',
+    isAuthenticated: true,
+    loading: false,
+    login: () => {},
+    logout: () => {},
+    refreshUser: async () => {},
+    ...overrides,
+  };
+}
+
+function renderModerationDetail(auth = moderationAuth(), cartValue = createCartValue()) {
+  return render(
+    <MemoryRouter initialEntries={['/product/41401']}>
+      <AuthContext.Provider value={auth}>
+        <FavoritesProvider>
+          <CartContext.Provider value={cartValue}>
+            <ToastProvider>
+              <Link to="/product/41402">Outra peça do catálogo</Link>
+              <Routes>
+                <Route path={paths.product} element={<ProductDetail />} />
+                <Route path={paths.checkout} element={<CheckoutDestination />} />
+              </Routes>
+            </ToastProvider>
+          </CartContext.Provider>
+        </FavoritesProvider>
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  );
+}
+
+async function submitModerationReason() {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: 'Suspender anúncio' }));
+  const dialog = screen.getByRole('dialog', { name: /suspender anúncio/i });
+  const field = within(dialog).getByRole('textbox', { name: /motivo|justificativa/i });
+  await user.type(field, MODERATION_REASON);
+  await user.click(within(dialog).getByRole('button', { name: /confirmar suspensão/i }));
+  return { user, dialog, field };
+}
+
+describe('#414 — suspensão administrativa no detalhe público', () => {
+  beforeEach(() => {
+    vi.spyOn(catalogService, 'getProduct').mockImplementation(async (id) => ({
+      ...MODERATION_PRODUCT,
+      id,
+      name: id === '41401' ? MODERATION_PRODUCT.name : 'Outra peça ativa',
+      store: { ...MODERATION_PRODUCT.store },
+      media: [],
+    }));
+    vi.mocked(suspendProduct).mockReset().mockResolvedValue(MODERATION_RESULT);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('admin vê Suspender anúncio na página pública já existente', async () => {
+    renderModerationDetail();
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+    expect(catalogService.getProduct).toHaveBeenCalledExactlyOnceWith('41401');
+  });
+
+  it.each([
+    { role: 'comprador', auth: moderationAuth({ user: SAMPLE_USER }) },
+    {
+      role: 'vendedor',
+      auth: moderationAuth({ user: { ...SAMPLE_USER, id: '414-other-seller', is_seller: true } }),
+    },
+    { role: 'vendedor proprietário', auth: moderationAuth({ user: MODERATION_OWNER }) },
+    {
+      role: 'visitante',
+      auth: moderationAuth({ user: null, token: null, isAuthenticated: false }),
+    },
+    { role: 'auth loading com admin disponível', auth: moderationAuth({ loading: true }) },
+  ])('$role não vê ação administrativa nem dispara suspensão', async ({ auth }) => {
+    renderModerationDetail(auth);
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('admin sem sessão autenticada não vê a ação, mesmo com user preenchido', async () => {
+    renderModerationDetail(moderationAuth({ isAuthenticated: false, token: null }));
+    await screen.findByRole('heading', { name: MODERATION_PRODUCT.name });
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+  });
+
+  it('admin não recebe ação antes da carga do produto', async () => {
+    let resolve!: (value: ProductDetailData) => void;
+    vi.mocked(catalogService.getProduct).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    renderModerationDetail();
+    expect(screen.getByRole('status')).toHaveTextContent(/Carregando produto/);
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    await act(async () => resolve({ ...MODERATION_PRODUCT }));
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('produto não encontrado não oferece suspensão', async () => {
+    vi.mocked(catalogService.getProduct).mockRejectedValue(
+      new catalogService.CatalogError('PRODUCT_NOT_FOUND', 'Peça não encontrada.'),
+    );
+    renderModerationDetail();
+    expect(await screen.findByText('Peça não encontrada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('falha no detalhe preserva o erro existente sem ação administrativa', async () => {
+    vi.mocked(catalogService.getProduct).mockRejectedValue(new Error('rede'));
+    renderModerationDetail();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar esta peça agora.',
+    );
+    expect(screen.queryByRole('button', { name: 'Suspender anúncio' })).not.toBeInTheDocument();
+    expect(suspendProduct).not.toHaveBeenCalled();
+  });
+
+  it('suspensão confirmada bloqueia compra e carrinho da peça atual sem refetch obrigatório', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    renderModerationDetail(moderationAuth(), createCartValue({ add }));
+    const buy = await screen.findByRole('button', { name: /Comprar Agora/ });
+    const cart = screen.getByRole('button', { name: 'Adicionar ao carrinho' });
+    expect(buy).toBeEnabled();
+    const { user } = await submitModerationReason();
+    expect(suspendProduct).toHaveBeenCalledExactlyOnceWith('41401', MODERATION_REASON);
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((node) => /suspens|suspenso/i.test(node.textContent ?? '')),
+    ).toBe(true);
+    expect(buy).toBeDisabled();
+    expect(cart).toBeDisabled();
+    fireEvent.click(cart);
+    fireEvent.click(buy);
+    expect(add).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Checkout' })).not.toBeInTheDocument();
+    const repeatedAction = screen.queryByRole('button', { name: 'Suspender anúncio' });
+    if (repeatedAction) await user.click(repeatedAction);
+    expect(suspendProduct).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(catalogService.getProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      status: 'vendido' as const,
+      code: 'PRODUCT_SOLD',
+      message: 'Peça vendida não pode ser suspensa.',
+      expected: /vendida/i,
+    },
+    {
+      status: 'reservado' as const,
+      code: 'PRODUCT_NOT_EDITABLE',
+      message: 'O estado atual da peça não permite suspensão.',
+      expected: /reservad|pedido em aberto/i,
+    },
+    {
+      status: 'ativo' as const,
+      code: 'CONFLICT',
+      message: 'O estado atual impede a suspensão.',
+      expected: /estado atual|situação atual/i,
+    },
+  ])(
+    '409 de $status não altera a peça nem as ações existentes',
+    async ({ status, code, message, expected }) => {
+      vi.mocked(catalogService.getProduct).mockResolvedValue({ ...MODERATION_PRODUCT, status });
+      vi.mocked(suspendProduct).mockRejectedValue(
+        new AdminModerationError(code, message, 409, code),
+      );
+      renderModerationDetail();
+      const buy = await screen.findByRole('button', { name: /Comprar Agora/ });
+      const wasDisabled = buy.hasAttribute('disabled');
+      const { dialog, field } = await submitModerationReason();
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(expected);
+      expect(field).toHaveValue(MODERATION_REASON);
+      expect(buy.hasAttribute('disabled')).toBe(wasDisabled);
+      expect(screen.queryByText(/anúncio suspenso com sucesso/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: MODERATION_PRODUCT.name })).toBeInTheDocument();
+      if (code === 'CONFLICT')
+        expect(within(dialog).getByRole('alert')).not.toHaveTextContent(/vendida|reservada/i);
+    },
+  );
+
+  it('falha genérica mantém anúncio ativo e contexto para corrigir ou tentar novamente', async () => {
+    vi.mocked(suspendProduct).mockRejectedValue(new Error('rede'));
+    renderModerationDetail();
+    const { dialog, field } = await submitModerationReason();
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      /suspender|conexão|tente novamente/i,
+    );
+    expect(field).toHaveValue(MODERATION_REASON);
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeEnabled();
+  });
+
+  it('suspensão local não bloqueia a próxima peça navegada no mesmo componente', async () => {
+    renderModerationDetail();
+    const { user } = await submitModerationReason();
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeDisabled();
+    await user.click(screen.getByRole('link', { name: 'Outra peça do catálogo' }));
+    await screen.findByRole('heading', { name: 'Outra peça ativa' });
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Adicionar ao carrinho' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('suspensão pendente de outra peça não aplica estado à peça recém-navegada', async () => {
+    let resolve!: (value: ModerationResult) => void;
+    vi.mocked(suspendProduct).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    renderModerationDetail();
+    const { user } = await submitModerationReason();
+    await user.click(screen.getByRole('link', { name: 'Outra peça do catálogo' }));
+    await screen.findByRole('heading', { name: 'Outra peça ativa' });
+    await act(async () => resolve(MODERATION_RESULT));
+    expect(screen.getByRole('button', { name: /Comprar Agora/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Suspender anúncio' })).toBeEnabled();
+  });
+
+  it('sucesso preserva sugestões de looks e navegação da loja', async () => {
+    mockedGetCombinations.mockResolvedValue(LOOK);
+    renderModerationDetail();
+    await screen.findByRole('heading', { name: LOOK_TITLE });
+    await submitModerationReason();
+    expect(screen.getByRole('heading', { name: LOOK_TITLE })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Adicionar.*Bolsa baú/i })).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Brechó Aurora.*Ver loja/i })).toHaveAttribute(
+      'href',
+      '/store/414-store',
+    );
+  });
+});
+
+// #415: o vídeo cadastrado pelo vendedor chega ao detalhe pelo `Gallery`, sem mudar a galeria.
+describe('#415 — vídeo curto no detalhe público', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a peça com vídeo mostra o player do Gallery com o vídeo da peça', async () => {
+    const real = await catalogService.getProduct('1');
+    const fotos = real.media.filter((item) => item.type === 'image');
+    vi.spyOn(catalogService, 'getProduct').mockResolvedValue({
+      ...real,
+      media: [
+        ...fotos,
+        {
+          type: 'video',
+          url: 'https://api.test/api/media/products/videos/v1',
+          position: fotos.length,
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt('/product/1');
+
+    const total = fotos.length + 1;
+    await user.click(await screen.findByRole('button', { name: `Ver vídeo ${total} de ${total}` }));
+
+    const player = screen.getByLabelText(`${real.name} — vídeo ${total} de ${total}`);
+    expect(player.tagName).toBe('VIDEO');
+    expect(player).toHaveAttribute('src', 'https://api.test/api/media/products/videos/v1');
   });
 });

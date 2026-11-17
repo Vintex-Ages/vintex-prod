@@ -36,7 +36,7 @@ Sem token, as três respondem `401 AUTH_REQUIRED`.
       "product_id": 7,
       "product_name": "Jaqueta jeans",
       "order_id": 31,
-      "created_at": "2026-10-28T14:03:11",
+      "created_at": "2026-10-28T14:03:11Z",
       "is_read": false
     }
   ],

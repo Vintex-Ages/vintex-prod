@@ -110,6 +110,9 @@ def test_favoritar_e_listar_devolve_a_peca_no_formato_do_feed(
                 "id": cenario["jaqueta"].id,
                 "name": "Jaqueta jeans",
                 "price": 159.9,
+                "category": None,
+                "size": None,
+                "condition": None,
                 "cover_image_url": None,
                 "status": "ativo",
                 "store": {

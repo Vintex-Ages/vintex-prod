@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -5,9 +6,14 @@ import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
 import OrderCard from '@/components/orders/OrderCard';
 import { OrderCardSkeleton } from '@/components/orders/OrderCardSkeleton';
+import RateStoreDialog from '@/components/orders/RateStoreDialog';
+import ReportProblemDialog from '@/components/orders/ReportProblemDialog';
 import { useMyOrders } from '@/hooks/useMyOrders';
 import type { PaymentAction } from '@/hooks/useOrderDetail';
 import { orderDetailPath, orderPaymentPath, paths } from '@/routes/paths';
+import { canReportOrder } from '@/services/reportService';
+import { canRateOrder } from '@/services/storeService';
+import type { OrderSummary } from '@/types/order';
 
 /**
  * "Meus pedidos" (FE-US023-1, #321; VS-023 "Lista consolidada"), em
@@ -21,8 +27,18 @@ import { orderDetailPath, orderPaymentPath, paths } from '@/routes/paths';
  * carregar, `ErrorState` com retry, `EmptyState` sem pedidos e "Carregar
  * mais" enquanto houver.
  *
- * Fica de fora: rastreio e "tempo médio" (RN-83/RN-21), "Avaliar loja" e
- * "Reportar problema" (Sprint 4).
+ * "Reportar problema" (#410) vai no `afterSaleActions.secondary` do cartão
+ * quando `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
+ * `ReportProblemDialog` sem sair da lista.
+ *
+ * "Avaliar loja" (#409) vai no `afterSaleActions.primary` quando
+ * `canRateOrder` deixa (só concluído, RN-82) e abre o `RateStoreDialog`. Depois
+ * de avaliar, o botão some daquele Pedido. A API do Pedido não diz se ele já
+ * tem nota, então isso vale na sessão: recarregada a página, o botão volta, e o
+ * segundo envio recebe `409 ALREADY_RATED`, que o diálogo trata como "já
+ * avaliado".
+ *
+ * Fica de fora: rastreio e "tempo médio" (RN-83/RN-21).
  *
  * Só apresentação: carga, paginação e qual ação cada Pedido tem vêm do
  * `useMyOrders`.
@@ -39,6 +55,25 @@ const ACTION_LABEL: Record<Exclude<PaymentAction, null>, string> = {
 export default function Orders() {
   const navigate = useNavigate();
   const { state, entries, hasMore, loadingMore, loadMoreError, loadMore, retry } = useMyOrders();
+  const [reportingId, setReportingId] = useState<string | null>(null);
+  const [rating, setRating] = useState<OrderSummary | null>(null);
+  const [ratedIds, setRatedIds] = useState<ReadonlySet<string>>(new Set());
+
+  function markRated(orderId: string) {
+    setRatedIds((current) => new Set(current).add(orderId));
+  }
+
+  function afterSaleActionsOf(order: OrderSummary) {
+    const canRate = canRateOrder(order.status) && !ratedIds.has(order.id);
+    const canReport = canReportOrder(order.status);
+    if (!canRate && !canReport) return undefined;
+    return {
+      primary: canRate ? { label: 'Avaliar loja', onClick: () => setRating(order) } : undefined,
+      secondary: canReport
+        ? { label: 'Reportar problema', onClick: () => setReportingId(order.id) }
+        : undefined,
+    };
+  }
 
   function content() {
     if (state.status === 'loading') return <OrderCardSkeleton />;
@@ -77,10 +112,33 @@ export default function Orders() {
                       }
                     : undefined
                 }
+                afterSaleActions={afterSaleActionsOf(order)}
               />
             </li>
           ))}
         </ul>
+
+        {/* `key`: cada Pedido abre sem nota escolhida. */}
+        {rating ? (
+          <RateStoreDialog
+            key={rating.id}
+            open
+            orderId={rating.id}
+            store={rating.store}
+            onRated={markRated}
+            onClose={() => setRating(null)}
+          />
+        ) : null}
+
+        {/* `key`: cada Pedido abre o formulário vazio. */}
+        {reportingId ? (
+          <ReportProblemDialog
+            key={reportingId}
+            open
+            orderId={reportingId}
+            onClose={() => setReportingId(null)}
+          />
+        ) : null}
 
         {loadMoreError ? (
           <p role="alert" className="text-body-sm text-vermelho-escuro">

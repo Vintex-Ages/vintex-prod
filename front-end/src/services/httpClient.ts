@@ -105,7 +105,17 @@ export function getAuthToken(): string | null | undefined {
  */
 export function handleAuthRequired(from: string): void {
   try {
-    window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, from);
+    if (from === LOGIN_ROUTE) {
+      // A origem é o próprio login: não é destino de retorno. Dois 401 em
+      // paralelo chegam em ordem arbitrária; o segundo costuma ser avaliado
+      // depois de a tela já estar no login e, se fosse gravado, mandaria o
+      // usuário de volta ao login logo depois de autenticar.
+      if (window.sessionStorage.getItem(REDIRECT_STORAGE_KEY) === LOGIN_ROUTE) {
+        window.sessionStorage.removeItem(REDIRECT_STORAGE_KEY);
+      }
+    } else {
+      window.sessionStorage.setItem(REDIRECT_STORAGE_KEY, from);
+    }
   } catch {
     // Storage indisponível: o fluxo ainda pode continuar via handler.
   }
