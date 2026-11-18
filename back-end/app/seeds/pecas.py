@@ -693,7 +693,9 @@ def atualizar_fotos(session: Session) -> int:
         ):
             continue
         modelo = next((m for m in modelos if product.name.startswith(m.nome)), None)
-        foto = _foto_real(modelo, index) if modelo else None
+        if modelo is None or product.condition is None:
+            continue
+        foto = _foto_real(modelo, index)
         if foto is None:
             continue
         product.images.clear()
