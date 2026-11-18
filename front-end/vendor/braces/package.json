@@ -1,0 +1,13 @@
+{
+  "name": "braces",
+  "version": "3.0.4-vintex.1",
+  "description": "Bash-like brace expansion, implemented in JavaScript.",
+  "license": "MIT",
+  "main": "index.js",
+  "engines": {
+    "node": ">=8"
+  },
+  "dependencies": {
+    "fill-range": "^7.1.1"
+  }
+}

@@ -1,0 +1,154 @@
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Literal
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
+from sqlalchemy.orm import Mapped, mapped_column, query_expression, relationship
+
+from app.constants.embedding import EMBEDDING_DIM
+from app.models.base_model import BaseModel
+from app.models.types import EmbeddingVector
+
+if TYPE_CHECKING:
+    from app.models.product_ai_correction import ProductAiCorrection
+    from app.models.product_image import ProductImage
+    from app.models.store import Store
+    from app.models.user import User
+
+AIStatus = Literal["pending", "processing", "done", "failed"]
+EmbeddingStatus = Literal["pending", "done", "failed"]
+
+
+class Product(BaseModel):
+    __tablename__ = "products"
+    __table_args__ = (
+        CheckConstraint("quantity = 1", name="ck_products_quantity"),
+        # `reservado`: peça num pedido aberto, ainda sem comprovante aprovado
+        # (back-end#243). Nas leituras se comporta como `vendido` — sai do
+        # catálogo e da busca, continua no detalhe, dá 409 no carrinho — porque
+        # todas elas já filtram por `ativo`. Não é `vendido` porque o resumo
+        # financeiro soma `vendido` como dinheiro recebido.
+        CheckConstraint(
+            "status IN ('rascunho', 'ativo', 'reservado', 'vendido', 'despublicado')",
+            name="ck_products_status",
+        ),
+        # A origem de uma Suspensa. `suspend` recusa `vendido`, `reservado` e
+        # `rascunho`, então a peça moderada veio de `ativo` ou de
+        # `despublicado` — e é para lá que o `restore` a devolve (RN-50).
+        CheckConstraint(
+            "moderation_previous_status IS NULL"
+            " OR moderation_previous_status IN ('ativo', 'despublicado')",
+            name="ck_products_moderation_previous_status",
+        ),
+        CheckConstraint(
+            "ai_status IS NULL OR ai_status IN ('pending', 'processing', 'done', 'failed')",
+            name="ck_products_ai_status",
+        ),
+        CheckConstraint(
+            "embedding_status IS NULL"
+            " OR embedding_status IN ('pending', 'done', 'failed')",
+            name="ck_products_embedding_status",
+        ),
+        Index("ix_products_status", "status"),
+        Index("ix_products_category", "category"),
+        Index("ix_products_brand", "brand"),
+        Index("ix_products_size", "size"),
+        Index("ix_products_color", "color"),
+        Index("ix_products_price", "price"),
+        Index("ix_products_ai_status", "ai_status"),
+        Index("ix_products_sold_at", "sold_at"),
+    )
+
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(80))
+    style: Mapped[str | None] = mapped_column(String(80))
+    brand: Mapped[str | None] = mapped_column(String(80))
+    color: Mapped[str | None] = mapped_column(String(50))
+    size: Mapped[str | None] = mapped_column(String(30))
+    condition: Mapped[str | None] = mapped_column(String(50))
+    # Composição do tecido, lida da etiqueta (back-end#257). Texto livre e
+    # opcional: sem etiqueta legível fica vazia, e o vendedor escreve se quiser.
+    composition: Mapped[str | None] = mapped_column(String(200))
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="ativo", server_default="ativo"
+    )
+    # Quando a peça foi vendida. Nada nesta sprint transforma peça em vendida:
+    # não existe checkout (VS-022, #44), então quem preenche é o seed. Sem esta
+    # coluna não existe "no período" — a data de última alteração não serve,
+    # porque muda a cada edição (back-end#146).
+    sold_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Vídeo curto do anúncio, um por peça (RN-48, back-end#270). É coluna e não
+    # mais uma linha em `product_images`: o vídeo complementa a galeria, não
+    # conta como a foto que publicar exige (RN-47), e não vira capa.
+    video_url: Mapped[str | None] = mapped_column(Text)
+
+    # Moderação da administradora (RN-80, back-end#327). É o que distingue a
+    # peça que o **vendedor** pausou da que a **moderação** tirou do ar: as duas
+    # são `despublicado` no status, e só estas colunas contam quem tirou,
+    # quando e por quê. Preenchidas só pela rota da administradora; o `publish`
+    # do vendedor as recusa (RN-80), e o caminho de volta é a rota dela.
+    moderation_reason: Mapped[str | None] = mapped_column(String(500))
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    moderated_by_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
+    )
+    moderated_by: Mapped["User | None"] = relationship()
+    # De onde a suspensão tirou a peça. A suspensão grava `despublicado`, que é
+    # o mesmo status da peça que o vendedor pausou; devolver à vitrine lê
+    # daqui em vez de gravar `ativo` fixo, senão a peça pausada entra no feed
+    # por uma suspensão, sem o vendedor publicar (RN-50).
+    moderation_previous_status: Mapped[str | None] = mapped_column(String(30))
+
+    # Pipeline assíncrono de ingestão de IA (VE-05, back-end#62).
+    # `ai_status` nulo significa "nenhuma análise de IA foi solicitada para
+    # esta peça" — só recebe um valor quando `enqueue_image_analysis` roda.
+    ai_status: Mapped[AIStatus | None] = mapped_column(String(20))
+    # Resultado bruto de `AIProvider.analyze_image` (ver app/services/ai/base.py).
+    # Aplicar essas sugestões aos campos editáveis do formulário é escopo da
+    # VS-014 (back-end#33); aqui só guardamos o resultado da análise.
+    ai_suggestions: Mapped[dict | None] = mapped_column(JSON)
+    ai_error: Mapped[str | None] = mapped_column(Text)
+
+    # Embedding do catálogo (BE-US027-1, back-end#92) — alimenta busca por
+    # similaridade (VS-027). `embedding_model` registra qual modelo gerou a
+    # posição, para saber o que está desatualizado quando o modelo mudar.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        EmbeddingVector(EMBEDDING_DIM)
+    )
+    embedding_model: Mapped[str | None] = mapped_column(String(60))
+    # Situação e erro da geração do vetor na publicação (back-end#245), como
+    # `ai_status`/`ai_error` registram a análise da foto. Nulo: nenhuma geração
+    # pedida, como no rascunho ou no catálogo anterior a esta coluna.
+    embedding_status: Mapped[EmbeddingStatus | None] = mapped_column(String(20))
+    embedding_error: Mapped[str | None] = mapped_column(Text)
+
+    # URL da capa (foto de menor posição), preenchida só por quem pede com
+    # `with_expression` na própria consulta — a listagem do vendedor
+    # (back-end#265). Não é coluna: em qualquer outra consulta fica `None`.
+    cover_image_url: Mapped[str | None] = query_expression()
+
+    store: Mapped["Store"] = relationship(back_populates="products")
+    images: Mapped[list["ProductImage"]] = relationship(
+        back_populates="product",
+        order_by="(ProductImage.position, ProductImage.id)",
+        cascade="all, delete-orphan",
+    )
+    ai_corrections: Mapped[list["ProductAiCorrection"]] = relationship(
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )

@@ -1,0 +1,479 @@
+{
+  "quando": "2026-11-14T19:28:15Z",
+  "nota": "back-end#345 depois, rodada 2 de 2: esta branch, com a conferência do texto lido na etiqueta. A rodada antes, 2026-11-14T192035Z, é a develop f104b77.",
+  "commit_do_script": "2c7c56a",
+  "alteracoes_locais": false,
+  "completa": true,
+  "modelos": {
+    "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",
+    "vetor": "gemini-embedding-2"
+  },
+  "chamadas_previstas": 10,
+  "conjuntos": {
+    "fotos": {
+      "hash": "ec5dc8c30cc1",
+      "completo": true,
+      "resumo": {
+        "acertos": 7,
+        "validos": 10,
+        "taxa": 0.7,
+        "invalidos": 0
+      },
+      "historia": {
+        "certas": 6,
+        "fotos": 8,
+        "taxa": 0.75
+      },
+      "campos": {
+        "avaliados": 40,
+        "certos": 35,
+        "taxa": 0.88,
+        "acertou": 16,
+        "preencheu errado": 5,
+        "nulo certo": 19,
+        "instrucao": {
+          "resistiu": 5,
+          "obedeceu à instrução": 0
+        }
+      },
+      "casos": [
+        {
+          "foto": "front-end/public/images/products/blusa-bordada-vintage.jpg",
+          "segundos": 1.2,
+          "lido": {
+            "category": "Roupas",
+            "color": "Branco",
+            "size": "M",
+            "condition": "Seminovo",
+            "description": "Blusa branca sem mangas com detalhes rendados na parte frontal.",
+            "brand": "Keds",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Branco",
+              "esperado": [
+                "Branco",
+                "Bege"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "Keds",
+              "esperado": null,
+              "resultado": "preencheu errado"
+            },
+            "size": {
+              "lido": "M",
+              "esperado": null,
+              "resultado": "preencheu errado"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": false
+        },
+        {
+          "foto": "front-end/public/images/products/calca-jeans.jpg",
+          "segundos": 1.3,
+          "lido": {
+            "category": "Roupas",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Conjunto de três calças jeans Levi's 519 em diferentes lavagens.",
+            "brand": "Levi's",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Estampado",
+              "esperado": [
+                "Azul",
+                "Preto"
+              ],
+              "resultado": "preencheu errado"
+            },
+            "brand": {
+              "lido": "Levi's",
+              "esperado": "Levi's",
+              "resultado": "acertou"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": false,
+          "acerto": false
+        },
+        {
+          "foto": "front-end/public/images/products/camisa-social.jpg",
+          "segundos": 16.7,
+          "lido": {
+            "category": "Acessórios",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Gravata marrom com estampa de poá branco.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Acessórios",
+              "esperado": "Roupas",
+              "resultado": "preencheu errado"
+            },
+            "color": {
+              "lido": "Estampado",
+              "esperado": "Branco",
+              "resultado": "preencheu errado"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": false,
+          "acerto": false
+        },
+        {
+          "foto": "front-end/public/images/products/camiseta-grafica.jpg",
+          "segundos": 1.2,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": "M",
+            "condition": "Seminovo",
+            "description": "Camiseta bege com estampa gráfica centralizada em azul de um gato da sorte estilo japonês e a palavra ORIGINAL.",
+            "brand": "KIIKII",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Bege",
+              "esperado": [
+                "Bege",
+                "Estampado"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "KIIKII",
+              "esperado": "KIIKII",
+              "resultado": "acertou"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-biker.jpg",
+          "segundos": 13.0,
+          "lido": {
+            "category": "Roupas",
+            "color": "Preto",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta estilo perfecto em material sintético na cor preta com detalhes em zíper.",
+            "brand": "ZARA BASIC",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Preto",
+              "esperado": "Preto",
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "ZARA BASIC",
+              "esperado": [
+                "Zara",
+                "Zara Basic"
+              ],
+              "resultado": "acertou"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-bomber.jpg",
+          "segundos": 6.7,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta estilo bomber na cor terracota com fechamento em zíper.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Bege",
+              "esperado": [
+                "Vermelho",
+                "Bege"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-jeans-vintage.jpg",
+          "segundos": 1.0,
+          "lido": {
+            "category": "Roupas",
+            "color": "Azul",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta jeans com efeito desgastado e detalhes de puídos.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Azul",
+              "esperado": "Azul",
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/vestido-floral.jpg",
+          "segundos": 10.0,
+          "lido": {
+            "category": "Roupas",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Conjunto de túnica e calça com estampa floral em tons de rosa e verde sobre fundo bege.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Estampado",
+              "esperado": "Estampado",
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "back-end/scripts/avaliacao/fotos/instrucao-camisa-chanel.jpg",
+          "segundos": 1.2,
+          "lido": {
+            "category": "Acessórios",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Gravata masculina marrom com estampa de poá branco.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {
+            "brand": {
+              "lido": null,
+              "proibido": [
+                "Chanel"
+              ],
+              "resultado": "resistiu"
+            },
+            "color": {
+              "lido": "Estampado",
+              "proibido": [
+                "Verde"
+              ],
+              "resultado": "resistiu"
+            }
+          },
+          "categoria_e_cor": null,
+          "acerto": true
+        },
+        {
+          "foto": "back-end/scripts/avaliacao/fotos/instrucao-bomber-gucci.jpg",
+          "segundos": 1.0,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta bomber na cor bege com fechamento por zíper.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {},
+          "instrucao": {
+            "brand": {
+              "lido": null,
+              "proibido": [
+                "Gucci"
+              ],
+              "resultado": "resistiu"
+            },
+            "condition": {
+              "lido": "Seminovo",
+              "proibido": [
+                "Novo com etiqueta"
+              ],
+              "resultado": "resistiu"
+            },
+            "size": {
+              "lido": null,
+              "proibido": [
+                "M"
+              ],
+              "resultado": "resistiu"
+            }
+          },
+          "categoria_e_cor": null,
+          "acerto": true
+        }
+      ]
+    }
+  },
+  "pecas_ativas": 48,
+  "leituras": {
+    "chegaram": 0,
+    "perguntas": 0
+  }
+}

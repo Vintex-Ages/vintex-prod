@@ -1,0 +1,173 @@
+name: Deploy AWS (reutilizável)
+
+# Build do front-end e do back-end, publicação no ECR/S3 e deploy na EC2 via SSM.
+# Autenticação por OIDC: nenhuma chave de longa duração. Chamado por deploy-staging.yml
+# (merge em main) e deploy-prod.yml (merge em deploy).
+#
+# Variáveis esperadas no Environment (não no código): AWS_ROLE_ARN, DEPLOY_BUCKET,
+# INSTANCE_ID, PUBLIC_BASE_URL (opcional, para o smoke test) e AWS_REGION (opcional).
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment do GitHub (staging ou production)
+        type: string
+        required: true
+      enabled:
+        description: Liga o deploy (var de repositório DEPLOY_*_ENABLED)
+        type: boolean
+        required: true
+      deploy_script:
+        description: Caminho do script de deploy dentro do release
+        type: string
+        default: scripts/infra/deploy_staging.py
+      state_config:
+        description: Arquivo de configuração do ambiente no host
+        type: string
+        default: /etc/vintex/staging.json
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      front_end: ${{ steps.sources.outputs.front_end }}
+      back_end: ${{ steps.sources.outputs.back_end }}
+      run: ${{ steps.sources.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: sources
+        env:
+          ENABLED: ${{ inputs.enabled }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          front=false; back=false
+          [ -f front-end/package.json ] && front=true
+          [ -f back-end/requirements.txt ] && back=true
+          echo "front_end=$front" >> "$GITHUB_OUTPUT"
+          echo "back_end=$back" >> "$GITHUB_OUTPUT"
+          if [ "$ENABLED" != "true" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            msg="Deploy $ENVIRONMENT NÃO executado: variável de repositório DEPLOY_*_ENABLED não está 'true'."
+            echo "::warning::$msg"
+            printf '### Deploy %s\n\n**NÃO EXECUTADO**: %s\n' "$ENVIRONMENT" "$msg" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$front" != true ] || [ "$back" != true ]; then
+            # O deploy_staging.py exige imagem do back-end e frontend/index.html: sem os dois
+            # componentes não há release válido.
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            msg="Deploy $ENVIRONMENT NÃO executado: o release exige front-end/ e back-end/ neste repositório (front-end=$front, back-end=$back)."
+            echo "::warning::$msg"
+            printf '### Deploy %s\n\n**NÃO EXECUTADO**: %s\n' "$ENVIRONMENT" "$msg" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy (${{ inputs.environment }})
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+      DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
+      RELEASE_SHA: ${{ github.sha }}
+      INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+    steps:
+      - name: Require environment configuration
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          for name in AWS_ROLE_ARN DEPLOY_BUCKET INSTANCE_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Variável $name não definida no Environment ${{ inputs.environment }}."
+              missing=1
+            fi
+          done
+          test -z "${missing:-}"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 11.28.4
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: front-end/pnpm-lock.yaml
+      - name: Build front-end
+        working-directory: front-end
+        env:
+          # Sem `false` o build sai com os mocks (o padrão do front é usá-los).
+          VITE_USE_MOCKS: "false"
+          VITE_API_BASE_URL: /api
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Package release
+        run: |
+          mkdir -p out
+          tar -czf out/front-end.tar.gz -C front-end/dist .
+          git archive --format=tar.gz --prefix= -o out/back-end.tar.gz "${RELEASE_SHA}:back-end"
+          test -f "front-end/dist/index.html"
+          tar -tzf out/back-end.tar.gz > out/back-end.list
+          grep -qx "${{ inputs.deploy_script }}" out/back-end.list
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - name: Build and push back-end image (linux/arm64)
+        run: |
+          account=$(aws sts get-caller-identity --query Account --output text)
+          registry="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+          # Tags imutáveis: re-run do mesmo SHA reaproveita a imagem já publicada.
+          if aws ecr describe-images --repository-name vintex-backend --image-ids "imageTag=${RELEASE_SHA}" >/dev/null 2>&1; then
+            echo "Imagem ${RELEASE_SHA} já está no ECR; build pulado."
+          else
+            docker buildx build --platform linux/arm64 --push \
+              -t "${registry}/vintex-backend:${RELEASE_SHA}" back-end
+          fi
+      - name: Upload release artifacts
+        run: |
+          aws s3 cp out/front-end.tar.gz "s3://${DEPLOY_BUCKET}/releases/${RELEASE_SHA}/front-end.tar.gz"
+          aws s3 cp out/back-end.tar.gz "s3://${DEPLOY_BUCKET}/releases/${RELEASE_SHA}/back-end.tar.gz"
+      - name: Ensure the EC2 host is running
+        id: instance
+        run: node .github/scripts/ensure-instance.mjs start
+      - name: Deploy on the EC2 host (SSM)
+        run: node .github/scripts/deploy-release.mjs
+        env:
+          DEPLOY_SCRIPT: ${{ inputs.deploy_script }}
+          STATE_CONFIG: ${{ inputs.state_config }}
+      - name: Smoke test
+        env:
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+        run: |
+          if [ -z "$PUBLIC_BASE_URL" ]; then
+            echo "::warning::PUBLIC_BASE_URL não definida: smoke test público NÃO executado."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-connrefused \
+            --max-time 20 "${PUBLIC_BASE_URL%/}/health" > /dev/null
+          echo "Smoke test ok: ${PUBLIC_BASE_URL%/}/health"
+      - name: Stop the EC2 host again (it was stopped before the deploy)
+        if: always() && steps.instance.outputs.was_stopped == 'true'
+        run: node .github/scripts/ensure-instance.mjs stop

@@ -1,0 +1,104 @@
+{
+  "pecas": {
+    "jaqueta-jeans-trucker-anos-90": [
+      {
+        "key": "products/photos/seed/jaqueta-jeans-trucker-anos-90-1.webp",
+        "source_url": "https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9zdGF0aWMvaW1hZ2Uvd2Vic2l0ZS8yMDIyLTA0L2xyL2Zyc3BsaXRzaGlyZTAwMjkzLWltYWdlLWt3dnd2d3M3LmpwZw.jpg",
+        "landing_url": "https://www.rawpixel.com/image/5917605/hands-crossed-free-public-domain-cc0-photo",
+        "license": "cc0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "author": "sem autor informado (rawpixel)",
+        "title": "Hands crossed",
+        "sha256": "6c3ec94981cc51bc950f9459cd4118210a5a5baa8275cf002a5100cc3af764e9",
+        "cor": "Azul"
+      }
+    ],
+    "tenis-cano-alto-classico": [
+      {
+        "key": "products/photos/seed/tenis-cano-alto-classico-1.webp",
+        "source_url": "https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIzLTA0L2JzMTUyLWltYWdlLmpwZw.jpg",
+        "landing_url": "https://www.rawpixel.com/image/11524261/one-red-high-top-shoe-with-blue-led-lights",
+        "license": "cc0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "author": "sem autor informado (rawpixel)",
+        "title": "One red high top shoe",
+        "sha256": "689c14c80354fb5dbb345befc8145b2852d45982495766fa3f840e12ed7822ca",
+        "cor": "Vermelho"
+      }
+    ],
+    "moletom-oversized-com-capuz": [
+      {
+        "key": "products/photos/seed/moletom-oversized-com-capuz-1.webp",
+        "source_url": "https://images.rawpixel.com/editor_1024/czNmcy1wcml2YXRlL3Jhd3BpeGVsX2ltYWdlcy93ZWJzaXRlX2NvbnRlbnQvbHIvZmw0MjU4MjUzMTcwNS1pbWFnZS1reWJlaXRlYi5qcGc.jpg",
+        "landing_url": "https://www.rawpixel.com/image/6042652/photo-image-face-public-domain-person",
+        "license": "cc0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "author": "sem autor informado (rawpixel)",
+        "title": "Empty man hoodie",
+        "sha256": "ee4dca27f0417173cbc962221f1650c5b0a921ba1e2df950a2a1cf72981f543d",
+        "cor": "Azul"
+      }
+    ],
+    "tenis-de-basquete-cano-medio": [
+      {
+        "key": "products/photos/seed/tenis-de-basquete-cano-medio-1.webp",
+        "source_url": "https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9zdGF0aWMvaW1hZ2Uvd2Vic2l0ZS8yMDIyLTA0L2xyL2lzMTQzNTAtaW1hZ2Uta3oyZTd2djcuanBn.jpg",
+        "landing_url": "https://www.rawpixel.com/image/6113073/nike-air-jordan-shoes-unknown-date-location",
+        "license": "cc0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "author": "sem autor informado (rawpixel)",
+        "title": "Nike Air Jordan shoes -",
+        "sha256": "bc8fbd9f0ed5206aa64861b088427c046edbbd25dbabe0ab271c453b44dd5b91",
+        "cor": "Branco"
+      }
+    ],
+    "vestido-midi-de-renda": [
+      {
+        "key": "products/photos/seed/vestido-midi-de-renda-1.jpg",
+        "source_url": "https://live.staticflickr.com/65535/55182357318_2ce2c7f3c3_b.jpg",
+        "landing_url": "https://www.flickr.com/photos/199607778@N03/55182357318",
+        "license": "pdm",
+        "license_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+        "author": "Amber Weston QOS",
+        "title": "Amber on the Night Shift",
+        "sha256": "b9814e934499deb99df549ac21059dfd6809637a184607203174ca9c7441051f",
+        "cor": "Preto"
+      }
+    ]
+  },
+  "consulta": [
+    {
+      "key": "products/photos/seed/consulta-jaqueta-jeans.jpg",
+      "source_url": "https://cdn.stocksnap.io/img-thumbs/960w/G9806H14HK.jpg",
+      "landing_url": "https://stocksnap.io/photo/people-girl-G9806H14HK",
+      "license": "cc0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "author": "Matheus Ferrero",
+      "title": "People Girl",
+      "sha256": "9431df77362a771d69125511bf73e6444c0590854848cac3ded5444b96d18593",
+      "cor": ""
+    },
+    {
+      "key": "products/photos/seed/consulta-tenis-vermelho.webp",
+      "source_url": "https://images.rawpixel.com/editor_1024/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIzLTA0L2JzNzMtaW1hZ2UuanBn.jpg",
+      "landing_url": "https://www.rawpixel.com/image/11524408/photo-image-public-domain-black-products",
+      "license": "cc0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "author": "sem autor informado (rawpixel)",
+      "title": "Front view close man adjusting",
+      "sha256": "d9ba54362fd2612607682286bff49efb30b26b28f5214be517be80aded2d8244",
+      "cor": ""
+    },
+    {
+      "key": "products/photos/seed/consulta-bolsa-couro.jpg",
+      "source_url": "https://live.staticflickr.com/65535/53097411519_42d7b84168_b.jpg",
+      "landing_url": "https://www.flickr.com/photos/198895458@N04/53097411519",
+      "license": "cc0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "author": "personalgraphic.official",
+      "title": "Stylish Brown Leather Handbag Isolated On White Background jpg",
+      "sha256": "c2d738e362b363d78ba95b98a73e63ea35bf847acbfd36bcc377ccf433c412ba",
+      "cor": ""
+    }
+  ]
+}

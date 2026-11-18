@@ -1,0 +1,34 @@
+name: Deploy produção
+
+# Merge em deploy (PR main -> deploy) -> deploy para a produção real (AWS). Protegido pelo
+# Environment `production` (revisores obrigatórios). Fica inativo (com aviso) até
+# DEPLOY_PRODUCTION_ENABLED ser 'true'.
+#
+# ATENÇÃO: o ambiente de produção ainda não existe no Terraform do back-end (só
+# local/shared/staging). O script de deploy abaixo (scripts/infra/deploy_production.py)
+# também ainda não existe: o job de build falha de propósito se ele não estiver no release,
+# em vez de reaproveitar o deploy_staging.py, que valida conta e fila da staging.
+
+on:
+  push:
+    branches: [deploy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-aws.yml
+    with:
+      environment: production
+      enabled: ${{ vars.DEPLOY_PRODUCTION_ENABLED == 'true' }}
+      deploy_script: scripts/infra/deploy_production.py
+      state_config: /etc/vintex/production.json
+    permissions:
+      contents: read
+      id-token: write

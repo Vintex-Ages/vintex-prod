@@ -1,0 +1,15 @@
+{
+  "_fonte": "back-end#236 (commit 2a7b042), tests/test_user_preferences_routes.py::test_put_grava_e_get_devolve_na_mesma_ordem — corpo do PUT e resposta de GET/PUT (PreferencesRequest/PreferencesResponse em app/schemas/user_schema.py). Copiado do back, não escrito a partir do front.",
+  "request": {
+    "preferences": [
+      { "type": "estilo", "value": "y2k" },
+      { "type": "estilo", "value": "streetwear" }
+    ]
+  },
+  "response": {
+    "preferences": [
+      { "type": "estilo", "value": "y2k" },
+      { "type": "estilo", "value": "streetwear" }
+    ]
+  }
+}
