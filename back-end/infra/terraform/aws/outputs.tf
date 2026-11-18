@@ -73,3 +73,13 @@ output "preview_origin_verify_parameter" {
   description = "Nome do parâmetro com o segredo de origem; o valor nunca é exibido."
   value       = one(module.preview[*].origin_verify_parameter)
 }
+
+output "deploy_role_arn" {
+  description = "AWS_ROLE_ARN do Environment staging no GitHub."
+  value       = module.github_deploy.role_arn
+}
+
+output "deploy_bucket" {
+  description = "DEPLOY_BUCKET do Environment staging no GitHub."
+  value       = module.github_deploy.bucket
+}

@@ -121,6 +121,12 @@ resource "aws_iam_role_policy" "runtime" {
         Effect   = "Allow"
         Action   = ["logs:DescribeLogStreams"]
         Resource = [for arn in var.log_group_arns : "${trimsuffix(arn, ":*")}:*"]
+      },
+      {
+        Sid      = "ReadReleaseArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::${var.deploy_bucket}/releases/*"
       }
     ]
   })

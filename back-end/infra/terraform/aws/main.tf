@@ -49,6 +49,7 @@ module "host" {
   log_group_arns      = module.services.log_group_arns
   depends_on          = [module.network]
   ecr_repository_arns = [for repository in module.registry.repositories : repository.arn]
+  deploy_bucket       = "vintex-deploy-staging-${var.expected_account_id}"
 
   public_http_from_cloudfront = var.public_preview
 }
@@ -58,6 +59,14 @@ module "scheduler" {
   account_id   = var.expected_account_id
   instance_id  = module.host.instance_id
   instance_arn = module.host.instance_arn
+}
+
+# Deploy automático pelo GitHub Actions (OIDC, sem chave de acesso).
+module "github_deploy" {
+  source                 = "../modules/github_deploy"
+  account_id             = var.expected_account_id
+  backend_repository_arn = module.registry.repositories["vintex-backend"].arn
+  instance_arn           = module.host.instance_arn
 }
 
 module "preview" {
