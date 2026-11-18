@@ -22,12 +22,18 @@ elif [ -e "$DIR" ]; then
   echo "Release $SHA existe mas está incompleta: remova $DIR manualmente e repita." >&2
   exit 1
 else
-  install -d -m 0755 "$DIR" "$DIR/frontend"
-  aws s3 cp --region "$DEPLOY_REGION" "$SRC/back-end.tar.gz" - | tar -xz -C "$DIR" --no-same-owner
-  aws s3 cp --region "$DEPLOY_REGION" "$SRC/front-end.tar.gz" - | tar -xz -C "$DIR/frontend" --no-same-owner
-  find "$DIR" -type d -exec chmod 0755 {} +
-  find "$DIR" -type f -exec chmod 0644 {} +
-  touch "$DIR/.complete"
+  # Extrai numa pasta temporária e só então renomeia: falha no download não deixa
+  # uma release incompleta com o nome do SHA travando o próximo deploy.
+  TMP="$(mktemp -d "/opt/vintex/releases/.partial-${SHA}-XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  install -d -m 0755 "$TMP/frontend"
+  aws s3 cp --region "$DEPLOY_REGION" "$SRC/back-end.tar.gz" - | tar -xz -C "$TMP" --no-same-owner
+  aws s3 cp --region "$DEPLOY_REGION" "$SRC/front-end.tar.gz" - | tar -xz -C "$TMP/frontend" --no-same-owner
+  find "$TMP" -type d -exec chmod 0755 {} +
+  find "$TMP" -type f -exec chmod 0644 {} +
+  touch "$TMP/.complete"
+  mv -T "$TMP" "$DIR"
+  trap - EXIT
 fi
 
 test -f "$DIR/frontend/index.html" || { echo "frontend/index.html ausente"; exit 1; }

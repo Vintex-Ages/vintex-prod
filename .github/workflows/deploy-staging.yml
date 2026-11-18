@@ -1,9 +1,9 @@
 name: Deploy staging
 
 # Merge em main -> deploy para a staging (AWS). Fica inativo (com aviso) até a variável de
-# repositório DEPLOY_STAGING_ENABLED ser 'true'. Só ligue depois de reconciliar os ajustes
-# manuais da EC2 (compose.yml, nginx.conf, deploy_staging.py) com o git: o deploy extrai o
-# release do repositório e não preserva edições feitas à mão no host.
+# repositório DEPLOY_STAGING_ENABLED ser 'true'. O release sai inteiro do repositório
+# (runtime, modo preview e IA): edições feitas à mão no host não sobrevivem ao deploy.
+# Fora do horário o deploy liga a EC2 e a desliga de novo no fim.
 
 on:
   push:
