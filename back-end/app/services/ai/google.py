@@ -131,11 +131,24 @@ def modelo_de_embedding() -> str:
     `find_similar` filtra. Lista separada por vírgula é recusada: gravaria a
     lista inteira na coluna e compararia vetores de espaços diferentes.
     """
-    nome = settings.GOOGLE_EMBEDDING_MODEL.strip()
+    # O nome acompanha o provider que gera os vetores: com o gateway interno,
+    # os vetores vêm de outro modelo, e compará-los com os do Google seria
+    # medir distância entre espaços diferentes.
+    if settings.AI_PROVIDER == "freellmapi":
+        variavel, configurado = (
+            "FREELLMAPI_EMBEDDING_MODEL",
+            settings.FREELLMAPI_EMBEDDING_MODEL,
+        )
+    else:
+        variavel, configurado = (
+            "GOOGLE_EMBEDDING_MODEL",
+            settings.GOOGLE_EMBEDDING_MODEL,
+        )
+    nome = configurado.strip()
     if not nome or "," in nome:
         raise AIProviderError(
-            "GOOGLE_EMBEDDING_MODEL aceita um nome de modelo só, sem lista: "
-            f"recebeu {settings.GOOGLE_EMBEDDING_MODEL!r}."
+            f"{variavel} aceita um nome de modelo só, sem lista: "
+            f"recebeu {configurado!r}."
         )
     return nome
 

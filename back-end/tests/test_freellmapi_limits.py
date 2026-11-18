@@ -70,5 +70,5 @@ def test_excess_image_bytes_are_rejected_before_post(gateway, sizes, message):
 @pytest.mark.parametrize("status", [401, 413, 429, 503])
 def test_gateway_failures_remain_provider_errors(gateway, status):
     gateway["status"] = status
-    with pytest.raises(AIProviderError, match="análise inválida"):
+    with pytest.raises(AIProviderError, match=f"HTTP {status}"):
         FreeLLMAPIProvider().analyze_image(["https://image.test/64"])

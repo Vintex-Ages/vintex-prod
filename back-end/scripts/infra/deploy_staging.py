@@ -1,4 +1,4 @@
-"""Manual EC2 staging deploy; run as root on the host, never in CI."""
+"""EC2 staging deploy; runs as root on the host (by hand or via SSM), never in CI."""
 
 from __future__ import annotations
 
@@ -19,6 +19,9 @@ import boto3
 REGION = "us-east-2"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 LLM_DIGEST = "1942b1437628deb70699d7371dab3cb7e65c296c4e1db345218b4de2102149eb"
+PREVIEW_URL = re.compile(r"https://[a-z0-9]{8,20}\.cloudfront\.net")
+ORIGIN_VERIFY = re.compile(r"[A-Za-z0-9]{32,128}")
+ORIGIN_PLACEHOLDER = "__ORIGIN_VERIFY__"
 
 
 class RuntimeCompatibilityError(ValueError):
@@ -116,21 +119,25 @@ def render_secrets(
         "DATABASE_URL": database_url,
         "JWT_SECRET": values["jwt_secret"],
         "AWS_REGION": REGION,
-        "AI_PROVIDER": "unavailable",
         "AI_ANALYSIS_QUEUE_URL": config["queue_url"],
         "MEDIA_BUCKET": config["media_bucket"],
         "PUBLIC_BASE_URL": config["public_base_url"],
         "MEDIA_INTERNAL_BASE_URL": "http://api:8000",
         "CORS_ORIGINS": config["public_base_url"],
     }
+    gateway = {
+        "FREELLMAPI_BASE_URL": "http://freellmapi:3001/v1",
+        "FREELLMAPI_API_KEY": values.get("llm_api_key", ""),
+        "FREELLMAPI_MODEL": "auto",
+    }
     files = {
-        "api.env": common,
+        # A API usa o gateway para sugestão de cadastro e embedding da busca.
+        "api.env": {**common, "AI_PROVIDER": "freellmapi", **gateway},
         "worker.env": {
             **common,
+            "AI_PROVIDER": "unavailable",
             "AI_WORKER_PROVIDER": "freellmapi",
-            "FREELLMAPI_BASE_URL": "http://freellmapi:3001/v1",
-            "FREELLMAPI_API_KEY": values.get("llm_api_key", ""),
-            "FREELLMAPI_MODEL": "auto",
+            **gateway,
         },
         "db.env": {
             "POSTGRES_USER": "postgres",
@@ -180,8 +187,36 @@ def validate_config(config: dict[str, str]) -> None:
         config["queue_url"],
     ):
         raise ValueError("Queue must belong to the staging account in Ohio")
-    if not re.fullmatch(r"http://localhost:\d{2,5}", config["public_base_url"]):
-        raise ValueError("Use the localhost URL of the SSM forward")
+    if not re.fullmatch(r"http://localhost:\d{2,5}", config["public_base_url"]) and (
+        not is_preview(config)
+    ):
+        raise ValueError(
+            "Use the localhost URL of the SSM forward or the CloudFront preview URL"
+        )
+
+
+def is_preview(config: dict[str, str]) -> bool:
+    return PREVIEW_URL.fullmatch(config["public_base_url"]) is not None
+
+
+def render_proxy(
+    values: dict[str, str], directory: Path, config: dict[str, str]
+) -> dict[str, str]:
+    """Return the proxy fields of the release; preview renders the origin secret."""
+    runtime = Path(config["runtime_dir"]).resolve()
+    if not is_preview(config):
+        return {"nginx_conf": str(runtime / "nginx.conf"), "proxy_bind": "127.0.0.1"}
+    secret = values.get("origin_verify", "")
+    if not ORIGIN_VERIFY.fullmatch(secret):
+        raise ValueError("Preview requires a valid origin_verify parameter")
+    template = (runtime / "nginx.preview.conf").read_text()
+    if template.count(ORIGIN_PLACEHOLDER) < 3:
+        raise ValueError("Preview Nginx template lost the origin check")
+    target = directory / "nginx.conf"
+    # The rendered file holds the secret: keep it with the env files, not the release.
+    private_write(target, template.replace(ORIGIN_PLACEHOLDER, secret))
+    # The security group only admits CloudFront on port 80.
+    return {"nginx_conf": str(target), "proxy_bind": "0.0.0.0"}
 
 
 class Deployment:
@@ -198,6 +233,12 @@ class Deployment:
                 "FREELLMAPI_IMAGE": release["llm_image"],
                 "FRONTEND_DIR": release["frontend_dir"],
                 "SECRETS_DIR": release["secrets_dir"],
+                # Releases recorded before these fields keep the tunnel defaults;
+                # their compose.yml does not read either variable.
+                "NGINX_CONF": release.get(
+                    "nginx_conf", str(Path(release["runtime_dir"]) / "nginx.conf")
+                ),
+                "PROXY_BIND": release.get("proxy_bind", "127.0.0.1"),
             }
         )
         # Never load a developer's .env or persistent AWS keys into Compose.
@@ -371,7 +412,9 @@ def main() -> None:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         directory = root / "releases" / f"{config['sha']}-{time.time_ns()}"
         directory.mkdir(parents=True, mode=0o700)
-        render_secrets(read_parameters(session.client("ssm")), directory, config)
+        values = read_parameters(session.client("ssm"))
+        render_secrets(values, directory, config)
+        proxy = render_proxy(values, directory, config)
         registry = f"{config['account_id']}.dkr.ecr.{REGION}.amazonaws.com"
         login_ecr(session.client("ecr"), registry)
         release = {
@@ -381,6 +424,7 @@ def main() -> None:
             "runtime_dir": str(Path(config["runtime_dir"]).resolve()),
             "frontend_dir": str(Path(config["frontend_dir"]).resolve()),
             "secrets_dir": str(directory),
+            **proxy,
         }
         if not (Path(release["frontend_dir"]) / "index.html").is_file():
             raise ValueError("Missing frontend index.html")

@@ -17,6 +17,7 @@ variables {
   queue_arn           = "arn:aws:sqs:us-east-2:123456789012:vintex-ai-staging"
   ecr_repository_arns = ["arn:aws:ecr:us-east-2:123456789012:repository/vintex-backend", "arn:aws:ecr:us-east-2:123456789012:repository/freellmapi"]
   log_group_arns      = ["arn:aws:logs:us-east-2:123456789012:log-group:/vintex/staging/api"]
+  deploy_bucket       = "vintex-deploy-staging-123456789012"
 }
 
 run "host_arm64_sem_ingress" {
@@ -72,7 +73,7 @@ run "iam_isola_staging_inclusive_policy_ssm" {
     error_message = "Negação explícita precisa limitar também o GetParameter irrestrito da policy gerenciada SSM."
   }
   assert {
-    condition     = jsondecode(aws_iam_role_policy.runtime.policy).Statement[7].Resource == ["arn:aws:logs:us-east-2:123456789012:log-group:/vintex/staging/api:log-stream:*"] && !strcontains(aws_iam_role_policy.runtime.policy, "vintex-prod") && !strcontains(aws_iam_role_policy.runtime.policy, "ecr:PutImage") && !strcontains(aws_iam_role_policy.runtime.policy, "iam:PassRole")
+    condition     = jsondecode(aws_iam_role_policy.runtime.policy).Statement[7].Resource == ["arn:aws:logs:us-east-2:123456789012:log-group:/vintex/staging/api:log-stream:*"] && !strcontains(aws_iam_role_policy.runtime.policy, "vintex-prod") && !strcontains(aws_iam_role_policy.runtime.policy, "ecr:PutImage") && !strcontains(aws_iam_role_policy.runtime.policy, "iam:PassRole") && jsondecode(aws_iam_role_policy.runtime.policy).Statement[9].Resource == "arn:aws:s3:::${var.deploy_bucket}/releases/*" && jsondecode(aws_iam_role_policy.runtime.policy).Statement[9].Action == ["s3:GetObject"]
     error_message = "Logs restritos e sem poderes de produção, push de imagem ou IAM."
   }
 }

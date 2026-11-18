@@ -114,6 +114,10 @@ jobs:
           cache-dependency-path: front-end/pnpm-lock.yaml
       - name: Build front-end
         working-directory: front-end
+        env:
+          # Sem `false` o build sai com os mocks (o padrão do front é usá-los).
+          VITE_USE_MOCKS: "false"
+          VITE_API_BASE_URL: /api
         run: |
           pnpm install --frozen-lockfile
           pnpm build
@@ -123,7 +127,8 @@ jobs:
           tar -czf out/front-end.tar.gz -C front-end/dist .
           git archive --format=tar.gz --prefix= -o out/back-end.tar.gz "${RELEASE_SHA}:back-end"
           test -f "front-end/dist/index.html"
-          tar -tzf out/back-end.tar.gz | grep -qx "${{ inputs.deploy_script }}"
+          tar -tzf out/back-end.tar.gz > out/back-end.list
+          grep -qx "${{ inputs.deploy_script }}" out/back-end.list
       - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
         with:
           platforms: arm64
@@ -133,12 +138,20 @@ jobs:
           account=$(aws sts get-caller-identity --query Account --output text)
           registry="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
           aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
-          docker buildx build --platform linux/arm64 --push \
-            -t "${registry}/vintex-backend:${RELEASE_SHA}" back-end
+          # Tags imutáveis: re-run do mesmo SHA reaproveita a imagem já publicada.
+          if aws ecr describe-images --repository-name vintex-backend --image-ids "imageTag=${RELEASE_SHA}" >/dev/null 2>&1; then
+            echo "Imagem ${RELEASE_SHA} já está no ECR; build pulado."
+          else
+            docker buildx build --platform linux/arm64 --push \
+              -t "${registry}/vintex-backend:${RELEASE_SHA}" back-end
+          fi
       - name: Upload release artifacts
         run: |
           aws s3 cp out/front-end.tar.gz "s3://${DEPLOY_BUCKET}/releases/${RELEASE_SHA}/front-end.tar.gz"
           aws s3 cp out/back-end.tar.gz "s3://${DEPLOY_BUCKET}/releases/${RELEASE_SHA}/back-end.tar.gz"
+      - name: Ensure the EC2 host is running
+        id: instance
+        run: node .github/scripts/ensure-instance.mjs start
       - name: Deploy on the EC2 host (SSM)
         run: node .github/scripts/deploy-release.mjs
         env:
@@ -155,3 +168,6 @@ jobs:
           curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-connrefused \
             --max-time 20 "${PUBLIC_BASE_URL%/}/health" > /dev/null
           echo "Smoke test ok: ${PUBLIC_BASE_URL%/}/health"
+      - name: Stop the EC2 host again (it was stopped before the deploy)
+        if: always() && steps.instance.outputs.was_stopped == 'true'
+        run: node .github/scripts/ensure-instance.mjs stop
