@@ -5,10 +5,18 @@ e a rodada usada como base da comparação."""
 import json
 import urllib.error
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 import scripts.avaliar_ia as avaliar
+
+# As fotos do conjunto ficam na raiz do monorepo (back-end/ e front-end/). A
+# imagem do `make infra-complete` só tem o back-end: lá estes testes pulam.
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "front-end").is_dir(),
+    reason="exige o checkout do monorepo (fotos em front-end/)",
+)
 
 _LEITURA = {
     "type": "interpreted",

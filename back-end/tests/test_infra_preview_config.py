@@ -25,7 +25,12 @@ def test_public_preview_is_off_by_default_and_wired_through_one_module():
 def test_edge_resources_exist_only_in_the_preview_module():
     forbidden = ("aws_eip", "aws_cloudfront_distribution", "aws_cloudfront_function")
     for path in TF.rglob("*.tf"):
-        if ".terraform" in path.parts or path.is_relative_to(PREVIEW):
+        # A produção (ADR 0003) tem CloudFront próprio, fora da staging.
+        if (
+            ".terraform" in path.parts
+            or path.is_relative_to(PREVIEW)
+            or path.is_relative_to(TF / "aws-production")
+        ):
             continue
         source = path.read_text()
         for resource in forbidden:
