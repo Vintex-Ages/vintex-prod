@@ -14,7 +14,16 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[2] / "infra/terraform"
 REGION = "us-east-2"
 LAYOUT = "staging-complete-v1"
-ENVIRONMENTS = ("bootstrap", "staging")
+ENVIRONMENTS = ("bootstrap", "staging", "production")
+# `make infra-deploy staging` conduz só estas etapas; a produção é sempre à parte.
+STAGING_STAGES = ("bootstrap", "staging")
+# Root Terraform de cada ambiente; cada um tem state próprio no bucket.
+ROOTS = {
+    "local": "envs/local",
+    "bootstrap": "bootstrap",
+    "staging": "aws",
+    "production": "aws-production",
+}
 ACTIONS = ("init", "plan", "apply", "output", "show", "validate", "test", "deploy")
 
 
@@ -96,15 +105,8 @@ def check_configuration(environment: str, action: str, base: Path) -> None:
     """Backend-free QA never reads account configuration or operational metadata."""
     check_overrides()
     if environment not in (*ENVIRONMENTS, "local"):
-        raise ValueError("Use local, bootstrap ou staging.")
-    root = (
-        base
-        / {
-            "local": "envs/local",
-            "bootstrap": "bootstrap",
-            "staging": "aws",
-        }[environment]
-    )
+        raise ValueError("Use local, bootstrap, staging ou production.")
+    root = base / ROOTS[environment]
     runtime = base / ".terraform/qa" / environment
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     env = dict(os.environ, TF_DATA_DIR=str(runtime / "data"), TF_WORKSPACE="default")
@@ -254,7 +256,7 @@ def execute(environment: str, action: str, account_path: Path, base: Path = BASE
     if environment not in ENVIRONMENTS or action not in ACTIONS:
         raise ValueError(
             "Ambiente ou comando Terraform não suportado. Para AWS use staging "
-            "(exemplo: make terraform-plan staging)."
+            "ou production (exemplo: make terraform-plan staging)."
         )
     check_overrides()
     (base / "state").mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -270,7 +272,7 @@ def execute(environment: str, action: str, account_path: Path, base: Path = BASE
     runtime = base / ".terraform" / environment
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(runtime, 0o700)
-    root = base / ("bootstrap" if environment == "bootstrap" else "aws")
+    root = base / ROOTS[environment]
     env = dict(os.environ, TF_DATA_DIR=str(runtime / "data"), TF_WORKSPACE="default")
     command = ["terraform", f"-chdir={root}"]
     backend = backend_config(environment, account, base)
@@ -402,7 +404,7 @@ def deploy(account_path: Path, base: Path = BASE) -> None:
     ):
         raise ValueError("O arquivo de ambiente não corresponde à staging.")
     print("[infra] Validando bootstrap e staging sem acessar a conta AWS.", flush=True)
-    for environment in ENVIRONMENTS:
+    for environment in STAGING_STAGES:
         check_configuration(environment, "validate", base)
     exists = inspect_aws(account, base, allow_missing=True)
     if exists:
@@ -427,7 +429,7 @@ def deploy(account_path: Path, base: Path = BASE) -> None:
         f"[infra] staging | conta {account['expected_account_id']} | {REGION}",
         flush=True,
     )
-    for environment in ENVIRONMENTS:
+    for environment in STAGING_STAGES:
         print(
             f"[infra] Etapa: {environment}. Revise o plano antes de confirmar.",
             flush=True,

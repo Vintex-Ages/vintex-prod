@@ -6,6 +6,9 @@ contra o banco (RN-65) e a conta da taxa.
 """
 
 from decimal import Decimal
+from pathlib import Path
+
+import pytest
 
 from scripts.avaliar_ia import (
     casa,
@@ -13,6 +16,13 @@ from scripts.avaliar_ia import (
     filtros_fora_do_vocabulario,
     resumo,
     tipo_do_nome,
+)
+
+# As fotos do conjunto ficam na raiz do monorepo (back-end/ e front-end/). A
+# imagem do `make infra-complete` só tem o back-end: lá estes testes pulam.
+pytestmark = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[2] / "front-end").is_dir(),
+    reason="exige o checkout do monorepo (fotos em front-end/)",
 )
 
 

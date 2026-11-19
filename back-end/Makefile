@@ -18,7 +18,7 @@ QA_RUN := docker run --rm --network none \
 # explicit, finite set and reject typos before running any Terraform command.
 TF_ACTIONS := terraform-init terraform-validate terraform-test terraform-plan terraform-show terraform-apply terraform-output infra-deploy
 TF_GOALS := $(filter $(TF_ACTIONS),$(MAKECMDGOALS))
-TF_ENV_GOALS := $(filter local bootstrap staging,$(MAKECMDGOALS))
+TF_ENV_GOALS := $(filter local bootstrap staging production,$(MAKECMDGOALS))
 TF_SELECTED_ENV := $(if $(TF_ENV_GOALS),$(TF_ENV_GOALS),local)
 ifneq ($(strip $(TF_ENV_GOALS)),)
 ifeq ($(strip $(TF_GOALS)),)
@@ -34,7 +34,7 @@ ifneq ($(words $(TF_ENV_GOALS)),1)
 $(error Informe um único ambiente: make terraform-validate staging ou make terraform-validate local)
 endif
 endif
-ifneq ($(strip $(filter-out $(TF_ACTIONS) local bootstrap staging,$(MAKECMDGOALS))),)
+ifneq ($(strip $(filter-out $(TF_ACTIONS) local bootstrap staging production,$(MAKECMDGOALS))),)
 $(error Comando/ambiente inválido. Use make terraform-validate staging ou make infra-deploy staging)
 endif
 endif
@@ -42,8 +42,8 @@ TF_DIR := infra/terraform/envs/local
 AWS_TF := python3 scripts/infra/terraform_env.py
 TF := terraform -chdir=$(TF_DIR)
 
-.PHONY: local bootstrap staging
-local bootstrap staging:
+.PHONY: local bootstrap staging production
+local bootstrap staging production:
 ifeq ($(strip $(TF_GOALS)),)
 	@echo "Informe o comando: make terraform-validate $@ ou make infra-deploy staging" >&2
 	@exit 2

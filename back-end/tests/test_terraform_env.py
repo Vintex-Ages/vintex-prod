@@ -17,10 +17,17 @@ INSPECT_AWS = tf.inspect_aws
 @pytest.fixture
 def setup_runner(tmp_path, monkeypatch):
     base = tmp_path / "infra/terraform"
-    for name in ("aws", "bootstrap", "modules", "config", "envs/local"):
+    for name in (
+        "aws",
+        "aws-production",
+        "bootstrap",
+        "modules",
+        "config",
+        "envs/local",
+    ):
         (base / name).mkdir(parents=True)
     (base / "aws/main.tf").write_text("# test\n")
-    for name in ("staging",):
+    for name in ("staging", "production"):
         (base / f"config/{name}.tfvars").write_text(f'deployment = "{name}"\n')
     account = base / "account.tfvars.json"
     tf.write_private(
@@ -69,7 +76,7 @@ def test_backend_and_plan_are_selected_by_environment(setup_runner, environment)
         assert config["region"] == "us-east-2"
         assert config["allowed_account_ids"] == ["123456789012"]
         assert config["encrypt"] and config["use_lockfile"]
-        assert f"-chdir={base / 'aws'}" in calls[0][0]
+        assert f"-chdir={base / tf.ROOTS[environment]}" in calls[0][0]
         assert f"-var-file={base / f'config/{environment}.tfvars'}" in calls[1][0]
     assert (runtime.stat().st_mode & 0o777) == 0o700
     marker = (
@@ -613,3 +620,9 @@ def test_region_is_consistent_in_all_providers_and_backend():
         )["region"]
         == tf.REGION
     )
+
+
+def test_staging_deploy_never_touches_production():
+    """`make infra-deploy staging` conduz bootstrap e staging; produção é à parte."""
+    assert tf.STAGING_STAGES == ("bootstrap", "staging")
+    assert "production" in tf.ENVIRONMENTS
