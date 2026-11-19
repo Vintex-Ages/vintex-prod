@@ -15,6 +15,8 @@ BASE = Path(__file__).resolve().parents[2] / "infra/terraform"
 REGION = "us-east-2"
 LAYOUT = "staging-complete-v1"
 ENVIRONMENTS = ("bootstrap", "staging", "production")
+# `make infra-deploy staging` conduz só estas etapas; a produção é sempre à parte.
+STAGING_STAGES = ("bootstrap", "staging")
 # Root Terraform de cada ambiente; cada um tem state próprio no bucket.
 ROOTS = {
     "local": "envs/local",
@@ -402,7 +404,7 @@ def deploy(account_path: Path, base: Path = BASE) -> None:
     ):
         raise ValueError("O arquivo de ambiente não corresponde à staging.")
     print("[infra] Validando bootstrap e staging sem acessar a conta AWS.", flush=True)
-    for environment in ENVIRONMENTS:
+    for environment in STAGING_STAGES:
         check_configuration(environment, "validate", base)
     exists = inspect_aws(account, base, allow_missing=True)
     if exists:
@@ -427,7 +429,7 @@ def deploy(account_path: Path, base: Path = BASE) -> None:
         f"[infra] staging | conta {account['expected_account_id']} | {REGION}",
         flush=True,
     )
-    for environment in ENVIRONMENTS:
+    for environment in STAGING_STAGES:
         print(
             f"[infra] Etapa: {environment}. Revise o plano antes de confirmar.",
             flush=True,
