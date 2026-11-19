@@ -1,4 +1,7 @@
 mock_provider "aws" {
+  mock_resource "aws_sns_topic" {
+    defaults = { arn = "arn:aws:sns:us-east-2:123456789012:test" }
+  }
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::123456789012:role/test" }
   }
@@ -211,4 +214,12 @@ override_resource {
   target          = aws_cloudfront_function.spa
   override_during = apply
   values          = { arn = "arn:aws:cloudfront::123456789012:function/vintex-production-spa" }
+}
+
+run "alarmes_de_operacao" {
+  command = apply
+  assert {
+    condition     = toset(keys(aws_cloudwatch_metric_alarm.ops)) == toset(["api-5xx", "dlq-com-mensagem", "rds-pouco-espaco"]) && alltrue([for a in aws_cloudwatch_metric_alarm.ops : a.alarm_actions == toset([aws_sns_topic.alarms.arn])])
+    error_message = "Alarmes de 5xx, DLQ e espaço do RDS avisando pelo SNS."
+  }
 }
