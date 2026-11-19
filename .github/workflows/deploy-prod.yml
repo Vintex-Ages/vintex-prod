@@ -1,0 +1,144 @@
+name: Deploy produção
+
+# Merge em deploy (PR main -> deploy) promove para a produção (ECS/Fargate) o mesmo
+# SHA que a staging já recebeu: sem novo build (ADR 0003). Inativo até a variável de
+# repositório DEPLOY_PRODUCTION_ENABLED ser 'true'.
+#
+# Environment `production`: AWS_ROLE_ARN, PUBLIC_BASE_URL e PRODUCTION_CONFIG (o JSON
+# do output `deploy_config` do Terraform aws-production; sem segredos).
+
+on:
+  push:
+    branches: [deploy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Gate de promoção
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      sha: ${{ steps.find.outputs.sha }}
+      run: ${{ steps.find.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: find
+        env:
+          ENABLED: ${{ vars.DEPLOY_PRODUCTION_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$ENABLED" != "true" ]; then
+            echo "::warning::Deploy produção NÃO executado: DEPLOY_PRODUCTION_ENABLED não está 'true'."
+            echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # A deploy recebe a main por merge: o commit promovido é o da main com a
+          # mesma árvore do HEAD da deploy.
+          tree=$(git rev-parse "HEAD^{tree}")
+          sha=$(git log origin/main --format='%H %T' -n 200 | awk -v t="$tree" '$2==t {print $1; exit}')
+          if [ -z "$sha" ]; then
+            echo "::error::A deploy não corresponde a nenhum commit recente da main. Promova a main sem mudanças extras."
+            exit 1
+          fi
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=staging&sha=${sha}" --jq '.[0].id // empty')
+          state=""
+          [ -n "$id" ] && state=$(gh api "repos/${GITHUB_REPOSITORY}/deployments/${id}/statuses" --jq '.[0].state // empty')
+          if [ "$state" != "success" ]; then
+            echo "::error::O SHA ${sha} não tem deploy de staging com sucesso (estado: ${state:-nenhum})."
+            exit 1
+          fi
+          echo "Promovendo ${sha}, saudável na staging."
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy (production)
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-2
+      SHA: ${{ needs.gate.outputs.sha }}
+      CONFIG: ${{ vars.PRODUCTION_CONFIG }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+    steps:
+      - name: Require environment configuration
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          for name in AWS_ROLE_ARN CONFIG PUBLIC_BASE_URL; do
+            [ -n "${!name}" ] || { echo "::error::Variável $name não definida no Environment production."; missing=1; }
+          done
+          test -z "${missing:-}"
+          echo "$CONFIG" | jq -e '.cluster and .api_family and .worker_family and .web_bucket and .distribution_id' >/dev/null
+      - uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Load configuration
+        run: |
+          for key in cluster api_service worker_service api_family worker_family api_security_group web_bucket distribution_id staging_bucket backend_repository; do
+            echo "$(echo "$key" | tr '[:lower:]' '[:upper:]')=$(echo "$CONFIG" | jq -r ".$key")" >> "$GITHUB_ENV"
+          done
+          echo "SUBNETS=$(echo "$CONFIG" | jq -r '.subnets | join(",")')" >> "$GITHUB_ENV"
+      - name: Promoted image exists
+        run: aws ecr describe-images --repository-name vintex-backend --image-ids "imageTag=${SHA}" >/dev/null
+      - name: Register task definitions with the promoted image
+        run: |
+          image="${BACKEND_REPOSITORY}:${SHA}"
+          register() { # $1 família, $2 contêiner que recebe a imagem
+            aws ecs describe-task-definition --task-definition "$1" --query taskDefinition \
+              | jq --arg c "$2" --arg i "$image" '
+                  .containerDefinitions |= map(if .name == $c then .image = $i else . end)
+                  | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+              > td.json
+            aws ecs register-task-definition --cli-input-json file://td.json --query taskDefinition.taskDefinitionArn --output text
+          }
+          echo "API_TD=$(register "$API_FAMILY" api)" >> "$GITHUB_ENV"
+          echo "WORKER_TD=$(register "$WORKER_FAMILY" worker)" >> "$GITHUB_ENV"
+      - name: Run database migrations
+        run: |
+          task=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$API_TD" --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${API_SECURITY_GROUP}],assignPublicIp=ENABLED}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["alembic","upgrade","head"]}]}' \
+            --query 'tasks[0].taskArn' --output text)
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task"
+          code=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task" --query "tasks[0].containers[?name=='api'].exitCode | [0]" --output text)
+          echo "alembic upgrade head terminou com código $code"
+          test "$code" = "0"
+      - name: Update services
+        run: |
+          aws ecs update-service --cluster "$CLUSTER" --service "$API_SERVICE" --task-definition "$API_TD" >/dev/null
+          aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SERVICE" --task-definition "$WORKER_TD" >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$API_SERVICE"
+      - name: Publish the front-end tested on staging
+        run: |
+          mkdir -p web
+          aws s3 cp "s3://${STAGING_BUCKET}/releases/${SHA}/front-end.tar.gz" - | tar -xz -C web
+          test -f web/index.html
+          aws s3 sync web "s3://${WEB_BUCKET}" --delete --exclude index.html --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp web/index.html "s3://${WEB_BUCKET}/index.html" --cache-control "no-store"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/index.html" "/" >/dev/null
+      - name: Smoke test
+        run: |
+          base="${PUBLIC_BASE_URL%/}"
+          curl --fail --silent --show-error --retry 6 --retry-delay 10 --max-time 20 "$base/health" > /dev/null
+          curl --fail --silent --show-error --retry 6 --retry-delay 10 --max-time 20 "$base/" | grep -qi '<div id="root"'
+          echo "Smoke test ok: $base"

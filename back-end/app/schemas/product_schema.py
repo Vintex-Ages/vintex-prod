@@ -1,0 +1,454 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import TYPE_CHECKING, Annotated, Literal
+
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
+
+from app.services.ai.base import ImageAnalysisResult
+
+if TYPE_CHECKING:
+    # Só para tipagem: `product_repository` importa `ProductFilters` daqui,
+    # então um import de verdade em tempo de execução criaria um ciclo.
+    from app.repositories.product_repository import ProductFeedRow
+
+ProductAIStatusValue = Literal[
+    "not_requested", "pending", "processing", "done", "failed"
+]
+
+
+def _lista_de_filtro(valor: object) -> object:
+    """Por dentro, filtro de múltipla escolha é sempre lista (back-end#351).
+
+    Entra string de quem manda um valor só: a sugestão de preço monta
+    `ProductFilters(**valores)` com os campos do pedido. E entra lista de quem
+    manda o parâmetro repetido, que é como o front manda os filtros marcados
+    (`catalogService.ts`, `size=M&size=G`).
+    """
+    if isinstance(valor, str):
+        return [valor]
+    if isinstance(valor, list) and not valor:
+        return None
+    return valor
+
+
+FiltroMultivalor = Annotated[list[str] | None, BeforeValidator(_lista_de_filtro)]
+"""Filtro que a tela deixa marcar em mais de um valor (RN-40)."""
+
+
+class ProductFilters(BaseModel):
+    category: str | None = None
+    price_min: Decimal | None = Field(default=None, ge=0)
+    price_max: Decimal | None = Field(default=None, ge=0)
+    size: FiltroMultivalor = None
+    brand: FiltroMultivalor = None
+    condition: FiltroMultivalor = None
+    color: FiltroMultivalor = None
+    store_id: int | None = Field(default=None, gt=0)
+    city: str | None = None
+    state: str | None = None
+
+    @model_validator(mode="after")
+    def validate_price_range(self) -> "ProductFilters":
+        if (
+            isinstance(self.price_min, Decimal)
+            and isinstance(self.price_max, Decimal)
+            and self.price_min > self.price_max
+        ):
+            raise ValueError("price_min deve ser menor ou igual a price_max")
+        return self
+
+    def applied(self) -> dict[str, str | float | int | list[str]]:
+        """Os filtros que de fato entraram, para a resposta ecoar.
+
+        `Decimal` dentro de dict nao passa por `field_serializer`: sairia como
+        string ao lado de um `price` numerico, na mesma resposta. Era a ultima
+        ponta da `#212` -- `GET /api/products?price_min=100.50` devolvia
+        `"price": 246.7` e `"price_min": "100.50"` no mesmo JSON.
+
+        Filtro de múltipla escolha com um valor só ecoa string, e não lista de
+        um elemento: quem manda `size=M` recebe o mesmo `applied_filters` de
+        antes da `#351`.
+        """
+        aplicados: dict[str, str | float | int | list[str]] = {}
+        for key, value in self.model_dump().items():
+            if value is None:
+                continue
+            if isinstance(value, Decimal):
+                aplicados[key] = float(value)
+            elif isinstance(value, list):
+                aplicados[key] = value[0] if len(value) == 1 else value
+            else:
+                aplicados[key] = value
+        return aplicados
+
+
+class FeedStoreResponse(BaseModel):
+    id: int
+    name: str
+    verified: bool
+
+
+class ProductFeedItemResponse(BaseModel):
+    """Uma peça em qualquer listagem: feed, favoritos, recomendação, busca por
+    foto e as peças que o chat devolve.
+
+    `category`, `size` e `condition` são o que o cartão do catálogo mostra
+    (back-end#352). A **RN-39** declara foto, título, preço e loja; estes três
+    são atributos da peça pela **RN-49**, e estão aqui porque sem eles o front
+    buscava o detalhe de cada peça da página só para desenhar o cartão.
+
+    Os três são anuláveis e **sem default**, como o `cover_image_url`: assim
+    entram no `required` do contrato, e quem lê a resposta tem um vazio só, o
+    `null`, em vez de "chave ausente ou nula". É o mesmo cuidado que a
+    `InterpretedPhotoResponse` toma com `""`.
+    """
+
+    id: int
+    name: str
+    price: Decimal
+    category: str | None
+    size: str | None
+    condition: str | None
+    cover_image_url: str | None
+    store: FeedStoreResponse
+    status: str
+
+    @classmethod
+    def from_row(cls, row: ProductFeedRow) -> "ProductFeedItemResponse":
+        """Monta a partir de uma `ProductFeedRow` (feed, busca por similaridade)."""
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            price=row["price"],
+            category=row["category"],
+            size=row["size"],
+            condition=row["condition"],
+            cover_image_url=row["cover_image_url"],
+            status=row["status"],
+            store=FeedStoreResponse(
+                id=row["store_id"],
+                name=row["store_name"],
+                verified=row["store_verified"],
+            ),
+        )
+
+    @field_serializer("price")
+    def serializar_preco(self, price: Decimal) -> float:
+        return float(price)
+
+
+class SuggestionsResponse(BaseModel):
+    reason: str
+    items: list[ProductFeedItemResponse]
+
+
+class InterpretedPhotoResponse(BaseModel):
+    """O que a análise leu da foto (BE-US031-1, back-end#255).
+
+    Devolver isto é o que faz a busca parecer inteligente em vez de mágica,
+    o mesmo princípio dos chips do chat. `""` quando a IA não reconheceu
+    aquele atributo — e não `None`, para o front não ter dois vazios.
+    """
+
+    category: str = ""
+    color: str = ""
+    brand: str = ""
+
+
+class ProductImageSearchItem(ProductFeedItemResponse):
+    """Item do feed mais a distância até a foto da busca (back-end#255).
+
+    `distance` é `None` quando a peça não veio da comparação vetorial: é o
+    catálogo devolvido no lugar de lista vazia (RN-61), e não houve
+    distância para calcular. 0 é a peça idêntica; quanto maior, menos
+    parecida.
+    """
+
+    distance: float | None = None
+
+    @classmethod
+    def from_row(
+        cls, row: ProductFeedRow, distance: float | None = None
+    ) -> "ProductImageSearchItem":
+        """Monta a partir de uma linha do feed ou da busca por semelhança."""
+        item = ProductFeedItemResponse.from_row(row)
+        return cls(**item.model_dump(), distance=distance)
+
+
+class ProductImageSearchResponse(BaseModel):
+    """`POST /api/products/search-by-image` (BE-US031-1, back-end#255).
+
+    O formato é o do feed paginado, com a distância em cada item, mais o
+    que a IA leu da foto. `page_size` não é campo do formulário: a busca por
+    foto devolve 20 por página, como o feed.
+    """
+
+    items: list[ProductImageSearchItem]
+    interpreted: InterpretedPhotoResponse
+    page: int
+    page_size: int
+    total: int
+
+
+class FeedResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[ProductFeedItemResponse]
+    page: int
+    page_size: int
+    total: int
+    # `int` na união para o `store_id` ecoar `7`, e não `7.0`: sem ele o
+    # inteiro era empurrado para float (back-end#352). O que conserta é ele
+    # estar na união, não a posição: medido nas duas ordens, no pydantic 2.14.
+    applied_filters: dict[str, str | int | float | list[str]] = Field(
+        default_factory=dict
+    )
+    match_type: Literal["exact", "fallback"] = "exact"
+    suggestions: SuggestionsResponse | None = None
+
+
+class RecommendationsResponse(BaseModel):
+    """O "Garimpados para Você" (back-end#253). O item é o mesmo do feed.
+
+    `personalized: false` quando a lista é o feed genérico: sem perfil de
+    estilo (RN-38), ou sem como recomendar ainda. Nunca é erro.
+    """
+
+    items: list[ProductFeedItemResponse]
+    personalized: bool
+    page: int
+    page_size: int
+    total: int
+
+
+class CombinationStoreResponse(BaseModel):
+    id: int
+    name: str
+
+
+class CombinationItemResponse(BaseModel):
+    """Uma peça que combina com a peça aberta (back-end#328)."""
+
+    id: int
+    name: str
+    price: Decimal
+    category: str
+    cover_image_url: str | None
+    store: CombinationStoreResponse
+
+    @classmethod
+    def from_row(cls, row: ProductFeedRow) -> "CombinationItemResponse":
+        return cls(
+            id=row["id"],
+            name=row["name"],
+            price=row["price"],
+            category=row["category"] or "",
+            cover_image_url=row["cover_image_url"],
+            store=CombinationStoreResponse(id=row["store_id"], name=row["store_name"]),
+        )
+
+    @field_serializer("price")
+    def serializar_preco(self, price: Decimal) -> float:
+        return float(price)
+
+
+class CombinationsResponse(BaseModel):
+    """`GET /api/products/{id}/combinations` (BE-US030-1, back-end#328).
+
+    `match_type` tem o sentido do feed e da conversa: `fallback` quando as
+    peças não vieram da semelhança, e sim do catálogo de outras categorias.
+    `total_amount` é a soma dos preços de `pieces`.
+    """
+
+    pieces: list[CombinationItemResponse]
+    match_type: Literal["exact", "fallback"]
+    total_amount: Decimal
+
+    @field_serializer("total_amount")
+    def serializar_total(self, total_amount: Decimal) -> float:
+        return float(total_amount)
+
+
+class ProductMediaResponse(BaseModel):
+    type: str = "image"
+    url: str
+    position: int
+
+
+class ProductDetailStoreResponse(FeedStoreResponse):
+    logo_url: str | None
+    verified: bool
+
+
+class ProductDetailResponse(BaseModel):
+    id: int
+    name: str
+    description: str = ""
+    category: str = ""
+    style: str = ""
+    brand: str = ""
+    color: str = ""
+    size: str = ""
+    condition: str = ""
+    composition: str = ""
+    price: Decimal
+    status: str
+    city: str = ""
+    state: str = ""
+    media: list[ProductMediaResponse]
+    store: ProductDetailStoreResponse
+
+    @field_serializer("price")
+    def serializar_preco(self, price: Decimal) -> float:
+        return float(price)
+
+
+class AiCorrectionInput(BaseModel):
+    """Uma correção do vendedor sobre uma sugestão da IA, enviada pelo front."""
+
+    field: str
+    suggested: str | None = None
+    final: str
+
+
+class AiCorrectionResponse(BaseModel):
+    field: str
+    suggested: str | None
+    final: str
+
+
+class ProductDraftCreate(BaseModel):
+    """Corpo de `POST /api/products`. Não tem `store_id` nem `quantity`:
+    a loja vem de quem está criando, a quantidade é sempre 1."""
+
+    name: str
+    description: str | None = None
+    category: str | None = None
+    style: str | None = None
+    brand: str | None = None
+    color: str | None = None
+    size: str | None = None
+    condition: str | None = None
+    # O limite é o da coluna: sem ele, texto maior viraria 500 no commit.
+    composition: str | None = Field(default=None, max_length=200)
+    price: Decimal
+    images: list[str] = Field(default_factory=list)
+    # URL devolvida por `POST /api/users/me/media` com `kind=video` (back-end#270).
+    video_url: str | None = None
+    ai_corrections: list[AiCorrectionInput] = Field(default_factory=list)
+
+
+class ProductDraftUpdate(BaseModel):
+    """Corpo de `PATCH /api/users/me/products/{id}` — edita rascunho e peça
+    publicada. Todo campo é opcional — só o que for enviado é alterado (ver
+    `exclude_unset` no controller). Limites espelham as colunas de `products`."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    description: str | None = None
+    category: str | None = Field(default=None, max_length=80)
+    style: str | None = Field(default=None, max_length=80)
+    brand: str | None = Field(default=None, max_length=80)
+    color: str | None = Field(default=None, max_length=50)
+    size: str | None = Field(default=None, max_length=30)
+    condition: str | None = Field(default=None, max_length=50)
+    composition: str | None = Field(default=None, max_length=200)
+    price: Decimal | None = Field(default=None, gt=0, decimal_places=2)
+    images: list[str] | None = None
+    # Ausente mantém o vídeo; outra URL troca; `null` remove (back-end#270).
+    video_url: str | None = None
+    ai_corrections: list[AiCorrectionInput] = Field(default_factory=list)
+
+    @field_validator("name", "price")
+    @classmethod
+    def _reject_explicit_null(cls, value: object) -> object:
+        """`name`/`price` são NOT NULL no banco: aceitamos o campo ausente
+        (não altera nada), mas não `null` explícito (limparia um campo
+        obrigatório e quebraria no commit)."""
+        if value is None:
+            raise ValueError("Este campo não pode ser definido como nulo.")
+        return value
+
+
+class ProductStoreResponse(BaseModel):
+    id: int
+    name: str
+    city: str | None
+
+
+class ProductDraftResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    category: str | None
+    style: str | None
+    brand: str | None
+    color: str | None
+    size: str | None
+    condition: str | None
+    composition: str | None = None
+    price: Decimal
+    quantity: int
+    status: str
+    store: ProductStoreResponse
+    images: list[str]
+    video_url: str | None = None
+    ai_corrections: list[AiCorrectionResponse]
+
+    @field_serializer("price")
+    def serializar_preco(self, price: Decimal) -> float:
+        return float(price)
+
+
+class SalesSummaryResponse(BaseModel):
+    """Resumo financeiro do vendedor no período (back-end#146).
+
+    `gross`, `commission` e `net` saem como número em reais, não string:
+    o front faz `Number(...)` mas a tela mostra o valor direto, e string
+    com casa decimal já quebrou o painel antes (back-end#214).
+    """
+
+    period: Literal["month", "30d", "all"]
+    sold_count: int
+    gross: Decimal
+    commission: Decimal
+    net: Decimal
+
+    @field_serializer("gross", "commission", "net")
+    def serializar_valor(self, valor: Decimal) -> float:
+        return float(valor)
+
+
+class ProductAIStatusResponse(BaseModel):
+    """Status da análise de IA da peça (VE-05, back-end#62).
+
+    `not_requested` significa que a peça nunca teve fotos enviadas para
+    análise; os demais valores refletem `Product.ai_status`.
+    """
+
+    status: ProductAIStatusValue
+    error: str | None = None
+    suggestions: ImageAnalysisResult | None = None
+
+
+class ListingSuggestionsRequest(BaseModel):
+    """`POST /api/ai/listing-suggestions` (BE-US014-2, back-end#150).
+
+    `max_length` no número de fotos: sem isso, nada impede uma lista enorme
+    de URLs — cada uma baixada e mandada pra API de IA (revisão da
+    Adrielle no PR #200).
+    """
+
+    image_urls: list[str] = Field(max_length=8)
+    # Foto da etiqueta, à parte das fotos da peça (back-end#257): sobe com
+    # `kind=label` e entra só na análise, nunca na galeria. Fora do limite de
+    # oito porque é uma foto a mais, e opcional.
+    label_image_url: str | None = None

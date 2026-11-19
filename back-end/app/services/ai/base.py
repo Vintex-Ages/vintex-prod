@@ -1,0 +1,250 @@
+"""Abstração do provedor de IA (VE-06).
+
+Nenhuma feature deve chamar um SDK de IA diretamente: toda integração passa
+por `AIProvider`. Trocar de fornecedor é implementar uma nova subclasse e
+apontar `AI_PROVIDER` (`app/config.py`) para ela — nenhuma feature muda.
+
+Só cobre os usos já confirmados por uma issue em andamento (análise de
+imagem para VS-014, busca conversacional para VS-027, a fala da assistente
+para VS-028). Recomendação e sugestão de preço entram na interface quando a
+issue correspondente definir o contrato de entrada/saída — declará-los antes
+disso seria inventar um contrato sem consumidor.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Sequence
+from typing import Literal, NamedTuple
+
+from pydantic import BaseModel, field_validator
+
+
+class AIProviderError(Exception):
+    """Falha do provedor de IA. Nunca deve virar um 500 não tratado.
+
+    Quem chama um `AIProvider` (controller ou pipeline) captura isto e
+    degrada a funcionalidade (ex.: formulário fica vazio e editável, busca
+    volta um resultado vazio) — nunca deixa a exceção subir sem tratamento.
+    """
+
+
+class AIProviderUnavailableError(AIProviderError):
+    """Nenhum provedor está configurado, ou o provedor configurado falhou."""
+
+
+class SuggestedField(BaseModel):
+    """Um campo sugerido pela IA a partir da imagem (VS-014).
+
+    `confidence` é opcional porque nem todo provedor expõe uma pontuação.
+    """
+
+    value: str
+    confidence: float | None = None
+
+
+class ImageAnalysisResult(BaseModel):
+    """Sugestões extraídas de uma ou mais fotos de uma peça (VS-014).
+
+    Cada campo é `None` quando o provedor não conseguiu sugerir aquele
+    atributo especificamente — não quando a chamada inteira falhou (nesse
+    caso o provider levanta `AIProviderError`).
+    """
+
+    category: SuggestedField | None = None
+    color: SuggestedField | None = None
+    size: SuggestedField | None = None
+    condition: SuggestedField | None = None
+    description: SuggestedField | None = None
+    # Só preenchida quando a etiqueta/marca está legível na foto (RN-58,
+    # back-end#150) — sem isso, fica `None`. A IA não chuta marca.
+    brand: SuggestedField | None = None
+    # Composição do tecido, com o mesmo cuidado da marca (back-end#257): só
+    # sai de etiqueta legível, nunca do aspecto do tecido.
+    composition: SuggestedField | None = None
+
+    @field_validator(
+        "category",
+        "color",
+        "size",
+        "condition",
+        "description",
+        "brand",
+        "composition",
+        mode="before",
+    )
+    @classmethod
+    def _sem_valor_vira_none(cls, campo: object) -> object:
+        """`{"value": null}` quer dizer "não sei", o mesmo que o campo nulo.
+
+        Modelos que não reconhecem a peça (foto sem roupa, por exemplo) devolvem
+        o objeto com `value` nulo em vez de omitir o campo, e o `str` de
+        `SuggestedField.value` rejeitava a resposta inteira como inválida.
+        Números (um tamanho `38`) viram texto pelo mesmo motivo.
+        """
+        if not isinstance(campo, dict) or "value" not in campo:
+            return campo
+        valor = campo["value"]
+        if valor is None or (isinstance(valor, str) and not valor.strip()):
+            return None
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+            return {**campo, "value": str(valor)}
+        return campo
+
+
+class ImagePhoto(NamedTuple):
+    """Bytes de uma foto e o tipo declarado (ex.: `image/jpeg`).
+
+    É a entrada de quem analisa a foto **sem URL** (back-end#255): a imagem
+    da busca chega no corpo da requisição e não é gravada, então não existe
+    endereço para `analyze_image` baixar. É também o que o download produz,
+    para os dois caminhos montarem as mesmas partes.
+    """
+
+    data: bytes
+    mime_type: str
+
+
+class ChatTurn(BaseModel):
+    """Uma mensagem do histórico da conversa, para dar contexto à busca."""
+
+    role: Literal["user", "assistant"]
+    text: str
+
+
+class SearchTextDelta(BaseModel):
+    """Pedaço de texto da resposta em streaming (VS-027)."""
+
+    type: Literal["text"] = "text"
+    delta: str
+
+
+class InterpretedQuery(BaseModel):
+    """O que a pergunta virou: objetivo → filtro, subjetivo → similaridade.
+
+    `filters` usa os mesmos nomes de campo do catálogo (`category`,
+    `price_max`, ...) para o controller poder repassar direto ao
+    `product_repository` — a IA não consulta o catálogo, só interpreta.
+    """
+
+    type: Literal["interpreted"] = "interpreted"
+    filters: dict[str, str] = {}
+    similarity: str | None = None
+    # back-end#231: não são filtro. `tipo` é um valor de `TIPOS_DE_PECA`, e
+    # `in_scope` é falso quando a pergunta não é sobre roupa, sapato ou
+    # acessório. Nulos quando o modelo não disse.
+    tipo: str | None = None
+    in_scope: bool | None = None
+
+
+class PecaParaComentar(BaseModel):
+    """Uma peça que a busca devolveu, como o modelo a vê (back-end#329).
+
+    Os atributos da RN-49 que a conversa pode citar, menos o preço: quem
+    escreve preço é o servidor. `name` e `description` são texto do vendedor e
+    chegam ao prompt delimitados (`personalidade.montar_pecas`).
+    """
+
+    product_id: int
+    name: str
+    description: str | None = None
+    category: str | None = None
+    color: str | None = None
+    size: str | None = None
+    brand: str | None = None
+    condition: str | None = None
+    city: str | None = None
+
+
+class ComentarioDaPeca(BaseModel):
+    """O que o modelo responde de uma peça: qual é, e o comentário dela."""
+
+    product_id: int
+    comentario: str
+
+
+class FalaDaVintex(BaseModel):
+    """A fala da assistente sobre as peças da busca (back-end#329).
+
+    Só comentário: nome, preço e a frase que abre a resposta são escritos pelo
+    servidor. Lista vazia é resposta legítima, de quando nenhuma peça da busca
+    merece comentário.
+    """
+
+    comentarios: list[ComentarioDaPeca] = []
+
+
+class SearchDone(BaseModel):
+    type: Literal["done"] = "done"
+
+
+SearchStreamEvent = SearchTextDelta | InterpretedQuery | SearchDone
+
+
+class ImageAnalysisProvider(ABC):
+    """Contrato mínimo para provedores usados pelo worker de imagens."""
+
+    @abstractmethod
+    def analyze_image(self, image_urls: Sequence[str]) -> ImageAnalysisResult:
+        """Sugere atributos da peça a partir das fotos."""
+
+    def analyze_image_bytes(self, images: Sequence[ImagePhoto]) -> ImageAnalysisResult:
+        """Sugere atributos a partir dos bytes das fotos, sem passar por URL.
+
+        Caminho da busca por foto (back-end#255), em que a imagem não é
+        gravada. O padrão falha alto de propósito: um provedor que só sabe
+        baixar URL responde 503 na busca, em vez de devolver análise vazia
+        como se a foto não tivesse nada (a lição da back-end#150).
+        """
+        raise AIProviderError("Este provedor não analisa fotos por bytes.")
+
+
+class AIProvider(ImageAnalysisProvider, ABC):
+    """Interface única para os usos de IA do Vintex.
+
+    Implementações concretas (um fornecedor real) entram como subclasses
+    quando o time escolher o modelo. Até lá, `UnavailableAIProvider`
+    (`app/services/ai/unavailable.py`) é o provider ativo por padrão.
+    """
+
+    @abstractmethod
+    def stream_interpret_search(
+        self, query: str, history: Sequence[ChatTurn] = ()
+    ) -> AsyncIterator[SearchStreamEvent]:
+        """Interpreta a busca em linguagem natural, em streaming (VS-027).
+
+        Emite texto (`SearchTextDelta`) e a interpretação da pergunta
+        (`InterpretedQuery`), terminando em `SearchDone`. Nunca inclui
+        peças: quem busca no catálogo real é o controller, usando
+        `InterpretedQuery.filters`/`similarity` (RN-65 — a IA não inventa
+        peça, preço ou loja).
+        """
+
+    def comentar_pecas(
+        self,
+        pergunta: str,
+        pecas: Sequence[PecaParaComentar],
+        *,
+        alternativas: bool = False,
+    ) -> FalaDaVintex:
+        """Comenta as peças que a busca devolveu (back-end#329).
+
+        Segunda chamada ao modelo, depois da busca: na primeira, que lê a
+        pergunta, as peças ainda não existem. Devolve só comentário, amarrado
+        ao `product_id` — o texto quem monta é quem chama.
+
+        O padrão falha de propósito, como `analyze_image_bytes`: provedor que
+        não gera texto não tem fala, e a conversa volta à frase pronta. Nenhuma
+        tela depende desta chamada, então falhar aqui é degradar, não quebrar.
+        """
+        raise AIProviderError("Este provedor não comenta as peças da busca.")
+
+    @abstractmethod
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        """Gera um vetor por texto de entrada (BE-US027-1, back-end#92).
+
+        Base da busca por similaridade (VS-027): cada peça vira uma posição
+        num espaço vetorial, e "achar parecido" vira uma consulta de
+        distância nesse espaço (`Product.embedding`). Devolve um vetor por
+        texto, na mesma ordem de `texts`.
+        """

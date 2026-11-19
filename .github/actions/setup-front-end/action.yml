@@ -1,0 +1,19 @@
+name: Setup front-end
+description: Instala pnpm e Node 22 com cache e as dependências travadas do front-end. Exige o checkout feito antes.
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      with:
+        version: 11.28.4
+        run_install: false
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: front-end/pnpm-lock.yaml
+    - name: Install locked dependencies
+      shell: bash
+      working-directory: front-end
+      run: pnpm install --frozen-lockfile

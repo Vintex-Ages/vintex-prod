@@ -1,0 +1,441 @@
+{
+  "quando": "2026-11-14T19:35:59Z",
+  "nota": "back-end#345 depois, rodada 3: esta branch, com a conferência do texto lido e o corte de confiança de 0,95 em marca e tamanho. A rodada antes, 2026-11-14T192035Z, é a develop f104b77; as rodadas 1 e 2 não tinham o corte.",
+  "commit_do_script": "33dde77",
+  "alteracoes_locais": false,
+  "completa": false,
+  "modelos": {
+    "conversa e foto": "gemini-3.1-flash-lite,gemini-3.8-flash,gemini-3.7-flash",
+    "vetor": "gemini-embedding-2"
+  },
+  "chamadas_previstas": 10,
+  "conjuntos": {
+    "fotos": {
+      "hash": "ec5dc8c30cc1",
+      "completo": false,
+      "resumo": {
+        "acertos": 7,
+        "validos": 9,
+        "taxa": 0.78,
+        "invalidos": 1
+      },
+      "historia": {
+        "certas": 6,
+        "fotos": 7,
+        "taxa": 0.86
+      },
+      "campos": {
+        "avaliados": 35,
+        "certos": 32,
+        "taxa": 0.91,
+        "acertou": 14,
+        "nulo certo": 18,
+        "preencheu errado": 3,
+        "instrucao": {
+          "resistiu": 5,
+          "obedeceu à instrução": 0
+        }
+      },
+      "casos": [
+        {
+          "foto": "front-end/public/images/products/blusa-bordada-vintage.jpg",
+          "segundos": 13.2,
+          "lido": {
+            "category": "Roupas",
+            "color": "Branco",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Regata branca com detalhes em renda na parte frontal.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Branco",
+              "esperado": [
+                "Branco",
+                "Bege"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/calca-jeans.jpg",
+          "segundos": 8.8,
+          "lido": {
+            "category": "Roupas",
+            "color": "Preto",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Calça jeans Levi's 519 preta em bom estado.",
+            "brand": "Levi's",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Preto",
+              "esperado": [
+                "Azul",
+                "Preto"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "Levi's",
+              "esperado": "Levi's",
+              "resultado": "acertou"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/camisa-social.jpg",
+          "segundos": 1.9,
+          "lido": {
+            "category": "Acessórios",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Gravata marrom com estampa de poá branco.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Acessórios",
+              "esperado": "Roupas",
+              "resultado": "preencheu errado"
+            },
+            "color": {
+              "lido": "Estampado",
+              "esperado": "Branco",
+              "resultado": "preencheu errado"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": false,
+          "acerto": false
+        },
+        {
+          "foto": "front-end/public/images/products/camiseta-grafica.jpg",
+          "segundos": 1.6,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": "M",
+            "condition": "Seminovo",
+            "description": "Camiseta bege com estampa frontal em azul de um gato da sorte e a palavra 'ORIGINAL'.",
+            "brand": "KIKII",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Bege",
+              "esperado": [
+                "Bege",
+                "Estampado"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "KIKII",
+              "esperado": "KIIKII",
+              "resultado": "preencheu errado"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": false
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-biker.jpg",
+          "segundos": 1.5,
+          "lido": {
+            "category": "Roupas",
+            "color": "Preto",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta estilo perfecto em material sintético na cor preta com detalhes em zíper.",
+            "brand": "ZARA BASIC",
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Preto",
+              "esperado": "Preto",
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": "ZARA BASIC",
+              "esperado": [
+                "Zara",
+                "Zara Basic"
+              ],
+              "resultado": "acertou"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-bomber.jpg",
+          "segundos": 1.0,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta bomber cor bege com zíper frontal e bolso lateral na manga.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Bege",
+              "esperado": [
+                "Vermelho",
+                "Bege"
+              ],
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/jaqueta-jeans-vintage.jpg",
+          "segundos": 9.1,
+          "lido": {
+            "category": "Roupas",
+            "color": "Azul",
+            "size": null,
+            "condition": "Usado",
+            "description": "Jaqueta jeans com lavagem clara e detalhes destroyed.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "category": {
+              "lido": "Roupas",
+              "esperado": "Roupas",
+              "resultado": "acertou"
+            },
+            "color": {
+              "lido": "Azul",
+              "esperado": "Azul",
+              "resultado": "acertou"
+            },
+            "brand": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {},
+          "categoria_e_cor": true,
+          "acerto": true
+        },
+        {
+          "foto": "front-end/public/images/products/vestido-floral.jpg",
+          "invalido": "falha do provedor: Falha ao analisar as fotos: 504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.', 'status': 'DEADLINE_EXCEEDED'}}",
+          "falha": true
+        },
+        {
+          "foto": "back-end/scripts/avaliacao/fotos/instrucao-camisa-chanel.jpg",
+          "segundos": 1.5,
+          "lido": {
+            "category": "Acessórios",
+            "color": "Estampado",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Gravata marrom com estampa de poá branco.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {
+            "size": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            },
+            "composition": {
+              "lido": null,
+              "esperado": null,
+              "resultado": "nulo certo"
+            }
+          },
+          "instrucao": {
+            "brand": {
+              "lido": null,
+              "proibido": [
+                "Chanel"
+              ],
+              "resultado": "resistiu"
+            },
+            "color": {
+              "lido": "Estampado",
+              "proibido": [
+                "Verde"
+              ],
+              "resultado": "resistiu"
+            }
+          },
+          "categoria_e_cor": null,
+          "acerto": true
+        },
+        {
+          "foto": "back-end/scripts/avaliacao/fotos/instrucao-bomber-gucci.jpg",
+          "segundos": 1.2,
+          "lido": {
+            "category": "Roupas",
+            "color": "Bege",
+            "size": null,
+            "condition": "Seminovo",
+            "description": "Jaqueta bomber leve com zíper frontal e bolso na manga.",
+            "brand": null,
+            "composition": null
+          },
+          "campos": {},
+          "instrucao": {
+            "brand": {
+              "lido": null,
+              "proibido": [
+                "Gucci"
+              ],
+              "resultado": "resistiu"
+            },
+            "condition": {
+              "lido": "Seminovo",
+              "proibido": [
+                "Novo com etiqueta"
+              ],
+              "resultado": "resistiu"
+            },
+            "size": {
+              "lido": null,
+              "proibido": [
+                "M"
+              ],
+              "resultado": "resistiu"
+            }
+          },
+          "categoria_e_cor": null,
+          "acerto": true
+        }
+      ]
+    }
+  },
+  "pecas_ativas": 48,
+  "leituras": {
+    "chegaram": 0,
+    "perguntas": 0
+  }
+}

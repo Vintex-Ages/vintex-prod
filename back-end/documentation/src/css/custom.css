@@ -1,0 +1,39 @@
+/**
+ * Tema minimo — cores default do Docusaurus.
+ */
+
+:root {
+  --ifm-color-primary: #b60205;
+  --ifm-color-primary-dark: #a40204;
+  --ifm-color-primary-darker: #9b0204;
+  --ifm-color-primary-darkest: #800203;
+  --ifm-color-primary-light: #c80205;
+  --ifm-color-primary-lighter: #d10206;
+  --ifm-color-primary-lightest: #e8030a;
+  --ifm-code-font-size: 95%;
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #ff5a5d;
+  --ifm-color-primary-dark: #ff383c;
+  --ifm-color-primary-darker: #ff262a;
+  --ifm-color-primary-darkest: #f70004;
+  --ifm-color-primary-light: #ff7c7e;
+  --ifm-color-primary-lighter: #ff8e90;
+  --ifm-color-primary-lightest: #ffc0c1;
+}
+
+/*
+ * Marcador de divergência: o texto descreve o que o código faz, mas ele
+ * difere do que a task (issue) pedia. Quem implementou a feature confirma e,
+ * resolvido, o asterisco sai. Convenção em docs/intro.md.
+ */
+.verificar {
+  color: #d32f2f;
+  font-weight: 700;
+  cursor: help;
+}
+
+[data-theme="dark"] .verificar {
+  color: #ff6b6b;
+}
