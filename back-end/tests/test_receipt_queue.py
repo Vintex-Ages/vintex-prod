@@ -302,8 +302,10 @@ def test_receipt_type_distingue_imagem_de_pdf(client, db_session, cenario, pdf, 
 
 
 def test_receipt_url_e_a_rota_autenticada_e_devolve_o_arquivo(
-    client, db_session, cenario
+    client, db_session, cenario, monkeypatch
 ):
+    # Sem PUBLIC_BASE_URL a rota usa a origem da requisição (o infra-complete a define).
+    monkeypatch.setattr("app.views.admin_routes.settings.PUBLIC_BASE_URL", "")
     pedido = pedir(db_session, cenario["ana"], cenario["pecas"]["jaqueta"])
     enviar(client, cenario, cenario["ana"], pedido, pdf=True)
 
