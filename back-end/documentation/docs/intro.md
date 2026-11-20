@@ -13,9 +13,11 @@ O [`path-map.json`](https://github.com/Vintex-Ages/vintex-prod/blob/develop/back
 
 - [Fundação HTTP](arquitetura/fundacao-http) — envelope de erro, autorização por papel, paginação, prefixo `/api`.
 - [Configuração por ambiente](arquitetura/configuracao) — variáveis do `.env` e o que é recusado em produção.
-- [Provedor de IA](arquitetura/provedor-ia) — abstração `AIProvider`, `UnavailableAIProvider`, fallback de modelo e repetição no 503.
+- [Provedor de IA](arquitetura/provedor-ia) — abstração `AIProvider`, `UnavailableAIProvider`, fallback de modelo, repetição no 503 e prazo da leitura da pergunta.
 - [Pedidos do comprador](dominio/pedidos-do-comprador) e [Validação do comprovante](dominio/validacao-de-comprovante) — do carrinho ao pedido confirmado.
 - [Painel da administradora](dominio/painel-da-administradora) — os números gerais da plataforma.
+- [Moderação de anúncios](dominio/moderacao-de-anuncios) e [Reclamação do pedido](dominio/reclamacao-do-pedido) — o que a administradora faz com o anúncio inadequado e com o pedido que deu problema.
+- [Avaliação da IA](arquitetura/avaliacao-da-ia) — como medir a conversa, a recomendação e a análise de foto contra o modelo real.
 - [Infraestrutura de teste local](infraestrutura/teste-local) — Makefile, Compose `vintex-infra`, Terraform, LocalStack, MiniStack.
 
 ## Como ler os marcadores

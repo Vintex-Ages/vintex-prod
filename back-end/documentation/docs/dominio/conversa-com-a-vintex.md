@@ -56,7 +56,7 @@ Medido na [#260](https://github.com/Vintex-Ages/back-end/issues/260), antes da #
 | tenis de corrida masculino 42 | Sapatos, 42; parecido com "de corrida masculino" | Lacoste Sapatênis Branco, 42 (antes vinha um tênis 38) |
 | bota bege | Sapatos, Bege: nenhuma | alternativas: C&A Bota Branco |
 
-A interpretação usa os modelos de geração de `GOOGLE_VISION_MODEL`, os mesmos da análise de foto, com o mesmo fallback no `503` e no `429` ([Provedor de IA](../arquitetura/provedor-ia#indisponibilidade-503-e-429)).
+A interpretação usa os modelos de geração de `GOOGLE_VISION_MODEL`, os mesmos da análise de foto, com o mesmo fallback no `503`, no `500` e no `429`, e com prazo próprio de 25 s para a leitura ([Provedor de IA](../arquitetura/provedor-ia#indisponibilidade-503-500-e-429)).
 
 ## A resposta escrita
 
@@ -126,7 +126,7 @@ A origem é o `request.client.host` que o uvicorn entrega. Atrás de um proxy re
 
 ## Cota do provedor (429)
 
-Quando a cota do provedor acaba, ele responde `429 RESOURCE_EXHAUSTED`. Na análise da foto, isso conta como indisponibilidade, igual ao `503`: aciona a cadeia de modelos de `GOOGLE_VISION_MODEL` e, se todos falharem, a rota devolve o mesmo `503 AI_UNAVAILABLE` ([Provedor de IA](../arquitetura/provedor-ia#indisponibilidade-503-e-429)). No chat, o embedding não tem cadeia, e o `429` vira o `error` de falha do provedor.
+Quando a cota do provedor acaba, ele responde `429 RESOURCE_EXHAUSTED`. Na análise da foto, isso conta como indisponibilidade, igual ao `503`: aciona a cadeia de modelos de `GOOGLE_VISION_MODEL` e, se todos falharem, a rota devolve o mesmo `503 AI_UNAVAILABLE` ([Provedor de IA](../arquitetura/provedor-ia#indisponibilidade-503-500-e-429)). No chat, o embedding não tem cadeia, e o `429` vira o `error` de falha do provedor.
 
 ## Testar localmente
 

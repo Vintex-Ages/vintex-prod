@@ -6,12 +6,13 @@ sidebar_position: 10
 
 Fonte de verdade: `app/controllers/notification_controller.py`, `app/repositories/notification_repository.py`, `app/models/notification.py` e a issue [#261](https://github.com/Vintex-Ages/back-end/issues/261).
 
-Aviso dentro do produto, e só dentro dele (RN-84): nada é enviado por e-mail nem por push. São dois eventos, os da RN-85, e nenhum outro:
+Aviso dentro do produto, e só dentro dele (RN-84): nada é enviado por e-mail nem por push. São dois eventos da RN-85, a venda e o favorito, e um terceiro, a moderação (RN-80), que a RN-85 não nomeia:
 
 | Evento | Quem recebe | Quando nasce |
 | --- | --- | --- |
 | `sale` | o vendedor da loja do pedido | quando a administradora **aprova** o comprovante ([Validação do comprovante](./validacao-de-comprovante)), e não no checkout: é a aprovação que confirma a venda (RN-21) |
 | `favorite` | o vendedor dono da peça | quando alguém favorita a peça ([Favoritos](./favoritos)) |
+| `moderation` | o vendedor dono da peça | quando a administradora **suspende** o anúncio dele, com o motivo ([Moderação de anúncios](./moderacao-de-anuncios)) |
 
 O aviso é gravado no mesmo commit do evento: não existe venda aprovada sem aviso, nem aviso de favorito recusado.
 
@@ -55,4 +56,6 @@ Sem token, as três respondem `401 AUTH_REQUIRED`.
 - **O vendedor que favorita a própria peça não é avisado.**
 - **`unread_count` conta todas as páginas**, para o badge não depender da página aberta.
 - **Marcar é idempotente.** Marcar de novo responde `204` e mantém a data da primeira leitura (`read_at`). Aviso de outra pessoa responde `404`, igual a inexistente: um `403` confirmaria o id.
-- **A coluna `type` é texto, com CHECK.** A despublicação pela administradora (RN-80, VS-034) é um terceiro tipo, que entra no `NotificationType` e no CHECK quando chegar.
+- **A coluna `type` é texto, com CHECK**, e aceita `sale`, `favorite` e `moderation` (`NotificationType`).
+- **O aviso de moderação leva o motivo.** `moderation_reason` só existe nesse tipo: o `CHECK` `ck_notifications_moderation` exige o motivo no `moderation` e o proíbe nos outros dois. A resposta de `GET /api/users/me/notifications` passa a trazer `moderation_reason`, preenchido só no tipo `moderation` e `null` nos demais. "Suspensa" sem o porquê não diz ao vendedor o que corrigir.
+- **Uma suspensão, um aviso.** Suspender de novo a mesma peça troca o motivo do aviso em curso, sem criar outro; depois de a peça ser devolvida, a suspensão seguinte é outro aviso, com a data dela.
