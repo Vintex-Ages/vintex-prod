@@ -9,6 +9,7 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
+from app.constants.catalog import parte_do_look
 from app.core.errors import ErrorCode, NotFound
 from app.core.pagination import PageParams
 from app.repositories.product_repository import ProductFeedRow, ProductRepository
@@ -21,10 +22,10 @@ from app.schemas.product_schema import (
 # Quantas peças o conjunto mostra. O contrato não pagina e a issue não fixa o
 # número: é um conjunto para a tela da peça, não uma listagem.
 LIMITE_DE_COMBINACOES = 4
-# Quantas candidatas a consulta traz antes de montar o conjunto. Com só três
-# categorias no catálogo e o mesmo modelo publicado por várias lojas, as 4 mais
-# parecidas eram, para uma calça jeans, quatro acessórios e duas bolsas iguais.
-JANELA_DE_CANDIDATAS = LIMITE_DE_COMBINACOES * 6
+# Quantas candidatas a consulta traz antes de montar o conjunto. As mais
+# parecidas costumam ser do mesmo tipo e do mesmo modelo, e o conjunto leva uma
+# de cada parte do look: a janela precisa alcançar as outras partes.
+JANELA_DE_CANDIDATAS = 100
 
 
 class CombinationController:
@@ -37,7 +38,7 @@ class CombinationController:
       a própria origem. Lojas diferentes são permitidas.
     - **A ordem é a semelhança** entre os vetores (RN-62), sem coocorrência de
       compra, dentro de cada categoria. O conjunto alterna as categorias e
-      não repete nome de peça (`_montar_conjunto`).
+      não repete modelo nem parte do look (`_montar_conjunto`).
     - **Sem vetor, ou sem peça parecida**, vem o catálogo de outras
       categorias com `fallback`, e não lista vazia (RN-61).
 
@@ -118,8 +119,11 @@ def _montar_conjunto(
     comparando o nome sem a marca: duas lojas com a "Bolsa de palha com franjas
     Farm", ou o mesmo tênis da Converse e da Adidas, e um look com os dois não é
     um look. As categorias se revezam na ordem da mais parecida de cada uma,
-    então uma calça recebe acessório, sapato, acessório, sapato, e não quatro
-    acessórios.
+    então uma calça recebe acessório, sapato, acessório, e não quatro acessórios.
+
+    Cada parte do look entra uma vez (`parte_do_look`): ninguém veste duas
+    jaquetas nem dois tênis. Com menos de quatro partes no catálogo o conjunto
+    sai menor, em vez de repetir. Peça cujo nome não diz o tipo não é cortada.
     """
     por_categoria: dict[str, list[ProductFeedRow]] = {}
     nomes: set[str] = set()
@@ -132,12 +136,29 @@ def _montar_conjunto(
 
     filas = list(por_categoria.values())
     conjunto: list[ProductFeedRow] = []
-    rodada = 0
-    while len(conjunto) < LIMITE_DE_COMBINACOES and any(
-        rodada < len(fila) for fila in filas
-    ):
+    partes: set[str] = set()
+    while len(conjunto) < LIMITE_DE_COMBINACOES and any(filas):
         for fila in filas:
-            if rodada < len(fila) and len(conjunto) < LIMITE_DE_COMBINACOES:
-                conjunto.append(fila[rodada])
-        rodada += 1
+            if len(conjunto) == LIMITE_DE_COMBINACOES:
+                break
+            while fila:
+                row = fila.pop(0)
+                parte = parte_do_look(row["name"])
+                if _cabe(parte, partes):
+                    conjunto.append(row)
+                    if parte is not None:
+                        partes.add(parte)
+                    break
     return conjunto
+
+
+def _cabe(parte: str | None, partes: set[str]) -> bool:
+    """Se a parte ainda não foi ocupada. Vestido e macacão ocupam a de cima e a
+    de baixo."""
+    if parte is None:
+        return True
+    if parte == "inteiro":
+        return partes.isdisjoint({"inteiro", "cima", "baixo"})
+    if parte in ("cima", "baixo"):
+        return parte not in partes and "inteiro" not in partes
+    return parte not in partes

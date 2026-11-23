@@ -222,22 +222,72 @@ def test_devolve_no_maximo_o_limite_na_ordem_da_semelhanca(pg_client, pg_session
 
 @pytest.mark.postgres
 def test_o_conjunto_alterna_as_categorias(pg_client, pg_session):
-    """As três bolsas são as mais parecidas, mas o sapato entra em segundo:
+    """Os três acessórios são os mais parecidos, mas o sapato entra em segundo:
     um look não é quatro peças da mesma categoria."""
     store = loja(pg_session, "Aurora")
-    origem = peca(pg_session, store, "Calça", "Calças", eixo(0))
-    bolsas = [
-        peca(
-            pg_session, store, f"Bolsa {i}", "Bolsas", perto_de(i + 1, (0, 1 - i / 10))
-        )
-        for i in range(3)
+    origem = peca(pg_session, store, "Calça", "Roupas", eixo(0))
+    acessorios = [
+        peca(pg_session, store, nome, "Acessórios", perto_de(i + 1, (0, 1 - i / 10)))
+        for i, nome in enumerate(("Bolsa", "Cinto", "Chapéu"))
     ]
     sapato = peca(pg_session, store, "Sapato", "Sapatos", perto_de(9, (0, 0.2)))
     pg_session.commit()
 
     body = combinar(pg_client, origem.id).json()
 
-    assert ids(body) == [bolsas[0].id, sapato.id, bolsas[1].id, bolsas[2].id]
+    assert ids(body) == [
+        acessorios[0].id,
+        sapato.id,
+        acessorios[1].id,
+        acessorios[2].id,
+    ]
+
+
+@pytest.mark.postgres
+def test_cada_parte_do_look_entra_uma_vez(pg_client, pg_session):
+    """Duas jaquetas e dois tênis não são um look. Sem outra parte no catálogo
+    o conjunto sai menor."""
+    store = loja(pg_session, "Aurora")
+    origem = peca(pg_session, store, "Bolsa", "Acessórios", eixo(0))
+    jaqueta = peca(pg_session, store, "Jaqueta jeans", "Roupas", eixo(0))
+    peca(pg_session, store, "Blazer", "Roupas", perto_de(1, (0, 0.9)))
+    tenis = peca(pg_session, store, "Tênis", "Sapatos", perto_de(2, (0, 0.8)))
+    peca(pg_session, store, "Coturno", "Sapatos", perto_de(3, (0, 0.7)))
+    calca = peca(pg_session, store, "Calça", "Roupas", perto_de(4, (0, 0.3)))
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [jaqueta.id, tenis.id, calca.id]
+
+
+@pytest.mark.postgres
+def test_vestido_ocupa_a_parte_de_cima_e_a_de_baixo(pg_client, pg_session):
+    store = loja(pg_session, "Aurora")
+    origem = peca(pg_session, store, "Bolsa", "Acessórios", eixo(0))
+    vestido = peca(pg_session, store, "Vestido", "Roupas", eixo(0))
+    peca(pg_session, store, "Saia", "Roupas", perto_de(1, (0, 0.9)))
+    peca(pg_session, store, "Camiseta", "Roupas", perto_de(2, (0, 0.8)))
+    jaqueta = peca(pg_session, store, "Jaqueta", "Roupas", perto_de(3, (0, 0.3)))
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [vestido.id, jaqueta.id]
+
+
+@pytest.mark.postgres
+def test_calca_no_conjunto_tira_o_vestido(pg_client, pg_session):
+    store = loja(pg_session, "Aurora")
+    origem = peca(pg_session, store, "Bolsa", "Acessórios", eixo(0))
+    calca = peca(pg_session, store, "Calça", "Roupas", eixo(0))
+    peca(pg_session, store, "Vestido", "Roupas", perto_de(1, (0, 0.9)))
+    camisa = peca(pg_session, store, "Camisa", "Roupas", perto_de(2, (0, 0.3)))
+    pg_session.commit()
+
+    body = combinar(pg_client, origem.id).json()
+
+    assert ids(body) == [calca.id, camisa.id]
 
 
 @pytest.mark.postgres
@@ -308,7 +358,7 @@ def test_o_mesmo_modelo_de_outra_marca_entra_uma_vez(pg_client, pg_session):
     converse = peca(
         pg_session,
         store,
-        "Tênis cano alto Converse",
+        "Cano alto Converse",
         "Sapatos",
         eixo(0),
         marca="Converse",
@@ -316,14 +366,14 @@ def test_o_mesmo_modelo_de_outra_marca_entra_uma_vez(pg_client, pg_session):
     peca(
         pg_session,
         store,
-        "Tenis cano alto Adidas",
+        "Cano alto Adidas",
         "Sapatos",
         perto_de(1, (0, 0.9)),
         marca="Adidas",
     )
     # Sem marca gravada, o nome inteiro conta: "Converse" no nome fica.
     sem_marca = peca(
-        pg_session, store, "Tênis cano alto Converse", "Sapatos", perto_de(2, (0, 0.8))
+        pg_session, store, "Cano alto Converse", "Sapatos", perto_de(2, (0, 0.8))
     )
     pg_session.commit()
 
