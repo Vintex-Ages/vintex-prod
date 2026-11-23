@@ -133,6 +133,37 @@ class OrderController:
             raise NotFound("Pedido não encontrado.", code=ErrorCode.ORDER_NOT_FOUND)
         return self._to_response(order)
 
+    def cancel_mine(self, user_id: int, order_id: int) -> OrderResponse:
+        """O comprador desiste antes de enviar comprovante: o pedido vai para
+        `cancelado` e as peças voltam a `ativo`, no mesmo commit.
+
+        Com comprovante já enviado, mesmo recusado (RN-23), não cancela: pode
+        haver Pix pago, e quem decide é a administradora (RN-21).
+        """
+        order = self.orders.get_for_buyer(order_id, user_id)
+        if order is None:
+            raise NotFound("Pedido não encontrado.", code=ErrorCode.ORDER_NOT_FOUND)
+        if order.status == _STATUS_INICIAL and order.expires_at <= utcnow_naive():
+            # Como no `submit_receipt`: venceu e ninguém expirou ainda.
+            self.expire_overdue()
+            raise self._nao_cancela()
+        if order.payments:
+            raise self._nao_cancela()
+
+        try:
+            # Condicional: se o comprovante entrou entre a leitura e aqui, o
+            # pedido já está `em_analise` e não cancela.
+            if not self.orders.transition(
+                order_id, de=_STATUS_INICIAL, para="cancelado"
+            ):
+                raise self._nao_cancela()
+            self.products.release_for_orders([order_id])
+        except Exception:
+            self.orders.rollback()
+            raise
+        self.orders.commit()
+        return self.get_mine(user_id, order_id)
+
     def submit_receipt(
         self,
         user_id: int,
@@ -211,6 +242,13 @@ class OrderController:
         return Conflict(
             "Este pedido não está aguardando comprovante.",
             code=ErrorCode.ORDER_NOT_AWAITING_RECEIPT,
+        )
+
+    @staticmethod
+    def _nao_cancela() -> Conflict:
+        return Conflict(
+            "Este pedido não pode mais ser cancelado.",
+            code=ErrorCode.ORDER_NOT_CANCELABLE,
         )
 
     @staticmethod

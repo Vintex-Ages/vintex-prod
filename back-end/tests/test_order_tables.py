@@ -180,7 +180,7 @@ def test_mesma_peca_nao_entra_duas_vezes_no_pedido(
 def test_status_do_pedido_recusa_valor_fora_da_lista(
     pg_session: Session, cenario: dict
 ) -> None:
-    cenario["pedido"].status = "cancelado"
+    cenario["pedido"].status = "devolvido"
 
     with pytest.raises(IntegrityError, match="ck_orders_status"):
         pg_session.flush()
@@ -191,7 +191,7 @@ def test_historico_recusa_status_fora_da_lista(
     pg_session: Session, cenario: dict
 ) -> None:
     pg_session.add(
-        OrderStatusHistory(order_id=cenario["pedido"].id, status="cancelado")
+        OrderStatusHistory(order_id=cenario["pedido"].id, status="devolvido")
     )
 
     with pytest.raises(IntegrityError, match="ck_order_status_history_status"):

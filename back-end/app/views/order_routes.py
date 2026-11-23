@@ -95,6 +95,26 @@ def report_problem(
 
 
 @router.post(
+    "/{order_id}/cancel",
+    response_model=OrderResponse,
+    summary="Cancela o pedido antes do comprovante e devolve as peças à venda",
+    responses={
+        404: {"description": "ORDER_NOT_FOUND: inexistente ou de outra pessoa"},
+        409: {
+            "description": "ORDER_NOT_CANCELABLE: já teve comprovante, venceu"
+            " ou já foi cancelado"
+        },
+    },
+)
+def cancel_my_order(
+    order_id: int,
+    user_id: int = Depends(get_current_user_id),
+    controller: OrderController = Depends(get_controller),
+) -> OrderResponse:
+    return controller.cancel_mine(user_id, order_id)
+
+
+@router.post(
     "/{order_id}/receipt",
     response_model=OrderReceiptResponse,
     # O contrato traz `payment` com status, nome e data, sem `rejection_reason`.

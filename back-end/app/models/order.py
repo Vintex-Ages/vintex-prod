@@ -25,10 +25,11 @@ if TYPE_CHECKING:
 
 # Os seis estados da RN-82, na ordem do fluxo, mais `expirado`: o pedido cujo
 # comprovante não foi enviado em 3 dias sai do fluxo e a peça volta a `ativo`
-# (back-end#243). Os nomes são os do contrato do front
+# (back-end#243). `cancelado` é a outra saída: o comprador desistiu antes de
+# enviar comprovante. Os nomes são os do contrato do front
 # (`front-end/src/types/order.ts`).
 #
-# O CHECK aceita os sete, mas nem todos viram linha: depois de `confirmado`,
+# O CHECK aceita todos, mas nem todos viram linha: depois de `confirmado`,
 # `preparando`, `enviado` e `concluido` são derivados na leitura a partir da
 # data de aprovação (RN-81 e RN-83 simulam postagem e entrega). Eles estão na
 # lista para a regra de derivação poder mudar sem migration nova.
@@ -40,6 +41,7 @@ OrderStatus = Literal[
     "enviado",
     "concluido",
     "expirado",
+    "cancelado",
 ]
 ORDER_STATUSES: tuple[str, ...] = get_args(OrderStatus)
 ORDER_STATUS_CHECK = "status IN ({})".format(

@@ -58,6 +58,8 @@ class ErrorCode:
     # Envio do comprovante pelo comprador (back-end#249). Os nomes são os que o
     # `orderService` do front já usa; ele traduz pelo status HTTP.
     ORDER_NOT_AWAITING_RECEIPT = "ORDER_NOT_AWAITING_RECEIPT"
+    # Cancelamento pelo comprador: só antes do primeiro comprovante.
+    ORDER_NOT_CANCELABLE = "ORDER_NOT_CANCELABLE"
     RECEIPT_TOO_LARGE = "RECEIPT_TOO_LARGE"
     RECEIPT_INVALID_TYPE = "RECEIPT_INVALID_TYPE"
     # Busca por foto (back-end#255). Tipo e tamanho têm status próprios no
