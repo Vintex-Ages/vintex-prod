@@ -744,7 +744,7 @@ describe('<OrderDetail /> cancelamento', () => {
 
   async function confirmar() {
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar pedido' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, cancelar' }));
   }
 
   it('antes do comprovante, cancela depois de confirmar e mostra o pedido cancelado', async () => {

@@ -52,7 +52,7 @@ function CancelOrderDialog({ open, onClose, onConfirm }: CancelOrderDialogProps)
             Manter pedido
           </Button>
           <Button disabled={submitting} onClick={() => void handleConfirm()}>
-            {submitting ? 'Cancelando…' : 'Confirmar cancelamento'}
+            {submitting ? 'Cancelando…' : 'Sim, cancelar'}
           </Button>
         </div>
       }

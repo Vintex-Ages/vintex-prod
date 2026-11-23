@@ -290,7 +290,7 @@ export default function OrderDetail() {
               ) : null}
               . Sem comprovante aprovado no prazo, o pedido expira.
             </p>
-            <div className="flex flex-col gap-2 tablet:flex-row">
+            <div className="flex shrink-0 flex-col gap-2 tablet:flex-row">
               {view.canCancel ? (
                 <Button variant="outline" onClick={() => setCancelling(true)}>
                   Cancelar pedido
