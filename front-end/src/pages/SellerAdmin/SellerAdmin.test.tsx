@@ -115,6 +115,27 @@ beforeEach(() => {
 });
 
 describe('<SellerAdmin />', () => {
+  it('peça reservada aparece no filtro "Reservadas", que some sem nenhuma', async () => {
+    vi.mocked(getMine).mockResolvedValue(
+      pagina([
+        peca({ id: '1', name: 'Jaqueta jeans', status: 'ativo' }),
+        peca({ id: '2', name: 'Camisa linho', status: 'reservado' }),
+      ]),
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reservadas (1)' }));
+
+    expect(screen.getByText('Camisa linho')).toBeInTheDocument();
+    expect(screen.queryByText('Jaqueta jeans')).not.toBeInTheDocument();
+    cleanup();
+
+    vi.mocked(getMine).mockResolvedValue(pagina([peca({ id: '1', status: 'ativo' })]));
+    renderPage();
+    await screen.findByText('1 peça no total');
+    expect(screen.queryByRole('button', { name: /Reservadas/ })).not.toBeInTheDocument();
+  });
+
   it('mostra as contagens por status e a lista de peças', async () => {
     vi.mocked(getMine).mockResolvedValue(
       pagina([

@@ -25,6 +25,8 @@ import TrustSealCard from './TrustSealCard';
 const CHIPS: { value: StatusFilter; label: string }[] = [
   { value: 'todas', label: 'Todas' },
   { value: 'ativo', label: 'Anunciadas' },
+  // Só aparece quando há peça reservada: o frame (T15) não tem este filtro.
+  { value: 'reservado', label: 'Reservadas' },
   { value: 'vendido', label: 'Vendidas' },
   { value: 'despublicado', label: 'Pausadas' },
 ];
@@ -229,7 +231,10 @@ function SellerAdmin({ storeSource }: { storeSource?: StoreVerificationSource })
 
           {/* Uma linha só, com rolagem na horizontal, como no frame (T15): os filtros não quebram. */}
           <div className="flex gap-2 overflow-x-auto pb-4">
-            {CHIPS.map((chip) => (
+            {CHIPS.filter(
+              (chip) =>
+                chip.value !== 'reservado' || state.counts.reservado > 0 || filter === 'reservado',
+            ).map((chip) => (
               <FilterChip
                 key={chip.value}
                 tone="tinta"

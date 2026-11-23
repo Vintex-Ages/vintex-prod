@@ -6,10 +6,11 @@ import type { ProductStatus, SellerProduct } from '@/types/product';
  * Chips do painel (RN-51). `rascunho` não entra na lista nem nas contagens
  * (`docs/adr/0001`); tem aba própria, com hook próprio (`docs/adr/0004`).
  */
-export type StatusFilter = 'todas' | 'ativo' | 'vendido' | 'despublicado';
+export type StatusFilter = 'todas' | 'ativo' | 'reservado' | 'vendido' | 'despublicado';
 
 export type SellerProductsCounts = {
   ativo: number;
+  reservado: number;
   vendido: number;
   despublicado: number;
   total: number;
@@ -47,6 +48,7 @@ async function buscarTodas(): Promise<SellerProduct[]> {
 function contar(products: SellerProduct[]): SellerProductsCounts {
   return {
     ativo: products.filter((product) => product.status === 'ativo').length,
+    reservado: products.filter((product) => product.status === 'reservado').length,
     vendido: products.filter((product) => product.status === 'vendido').length,
     despublicado: products.filter((product) => product.status === 'despublicado').length,
     total: products.length,
