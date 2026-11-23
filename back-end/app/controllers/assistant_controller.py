@@ -11,7 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.constants.catalog import nome_e_do_tipo
+from app.constants.catalog import nome_e_do_tipo, tipo_do_nome
 from app.core.errors import ErrorCode, ServiceUnavailable
 from app.core.pagination import PageParams
 from app.repositories.product_repository import ProductRepository, ProductSimilarRow
@@ -42,6 +42,8 @@ from app.services.chat_quota import ChatQuota, CotaEsgotada
 logger = logging.getLogger("vintex.assistant")
 
 _PECAS_NO_CHAT = 5
+# Com tipo pedido, quantas peças a busca olha para achar as daquele tipo.
+_JANELA_DO_TIPO = 100
 
 # O que a #260 manda cortar: os filtros do catálogo (RN-40) que são atributo da
 # peça (RN-49). Localização e loja ficam de fora, como no card.
@@ -257,9 +259,16 @@ class AssistantController:
 
         filtros = _filtros_da_pergunta(interpretada)
         tipo = interpretada.tipo if interpretada is not None else None
-        rows, _ = self.repository.find_similar(vectors[0], modelo, pagina, filtros)
-        if rows and _tem_o_tipo(rows, tipo):
-            return Achado(rows, "exact", abertura_do_exato(len(rows)))
+        janela = (
+            PageParams(page=1, page_size=_JANELA_DO_TIPO)
+            if tipo is not None
+            else pagina
+        )
+        rows, _ = self.repository.find_similar(vectors[0], modelo, janela, filtros)
+        certas = _so_do_tipo(rows, tipo)[:_PECAS_NO_CHAT]
+        rows = rows[:_PECAS_NO_CHAT]
+        if certas and _tem_o_tipo(certas, tipo):
+            return Achado(certas, "exact", abertura_do_exato(len(certas)))
         if rows:
             # O filtro achou peças, mas nenhuma do tipo pedido: "vestido" num
             # catálogo sem vestido devolvia calça como resposta certa. As
@@ -413,6 +422,19 @@ def _pecas(
         products=[ProductFeedItemResponse.from_row(row) for row in rows],
         match_type=match_type,
     )
+
+
+def _so_do_tipo(
+    rows: Sequence[ProductSimilarRow], tipo: str | None
+) -> list[ProductSimilarRow]:
+    """As peças do tipo pedido, na ordem da semelhança, e depois as que o nome
+    não diz de que tipo são. Peça de outro tipo sai: quem pediu casaco recebia
+    vestido e camiseta como "peças que combinam". Sem tipo, ficam todas."""
+    if tipo is None:
+        return list(rows)
+    certas = [row for row in rows if nome_e_do_tipo(row["name"], tipo)]
+    sem_tipo = [row for row in rows if tipo_do_nome(row["name"]) is None]
+    return certas + sem_tipo
 
 
 def _tem_o_tipo(rows: Sequence[ProductSimilarRow], tipo: str | None) -> bool:

@@ -16,7 +16,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.constants.catalog import TIPOS_DE_PECA, nome_e_do_tipo
+from app.constants.catalog import (
+    TIPOS_DE_PECA,
+    nome_e_do_tipo,
+    parte_do_look,
+    tipo_do_nome,
+)
 from app.controllers.assistant_controller import (
     _FORA_DO_ESCOPO,
     _aviso_de_alternativas,
@@ -140,6 +145,38 @@ def test_todo_modelo_do_seed_e_do_proprio_tipo(modelo) -> None:  # noqa: ANN001
     assert nome_e_do_tipo(modelo.nome, tipo)
 
 
+@pytest.mark.parametrize(
+    ("texto", "tipo"),
+    [
+        ("Vestido midi com cinto", "Vestido"),
+        ("Cinto para vestido", "Cinto"),
+        ("Uma jaqueta bomber cor de terracota com zíper", "Jaqueta"),
+        ("Baby look cropped", "Camiseta"),
+        ("Nike Air Force 1", None),
+        ("", None),
+    ],
+)
+def test_tipo_do_nome_e_o_que_o_texto_diz_primeiro(
+    texto: str, tipo: str | None
+) -> None:
+    assert tipo_do_nome(texto) == tipo
+
+
+@pytest.mark.parametrize(
+    ("nome", "parte"),
+    [
+        ("Jaqueta de couro", "sobreposicao"),
+        ("Sobretudo de lã", "sobreposicao"),
+        ("Tênis branco", "pes"),
+        ("Rasteira de couro", "pes"),
+        ("Cinto de couro", "Cinto"),
+        ("Peça sem tipo", None),
+    ],
+)
+def test_parte_do_look(nome: str, parte: str | None) -> None:
+    assert parte_do_look(nome) == parte
+
+
 # --- leitura da pergunta ----------------------------------------------------
 
 
@@ -258,9 +295,13 @@ def test_tipo_presente_pelo_sinonimo_continua_resultado_direto(
     pg_client: TestClient, pg_session: Session, monkeypatch
 ) -> None:
     loja = _loja(pg_session)
-    tenis = _peca(pg_session, loja, "Tênis branco", _vetor(1), category="Sapatos")
+    _peca(pg_session, loja, "Tênis branco", _vetor(1), category="Sapatos")
     rasteira = _peca(
         pg_session, loja, "Rasteira de couro", _vetor(1, 0.5), category="Sapatos"
+    )
+    # Nome que não diz o tipo não é cortado, e vem depois das certas.
+    sem_tipo = _peca(
+        pg_session, loja, "Melissa Possession", _vetor(1), category="Sapatos"
     )
     pg_session.commit()
     _usar(
@@ -277,7 +318,36 @@ def test_tipo_presente_pelo_sinonimo_continua_resultado_direto(
 
     assert [e["type"] for e in eventos] == ["interpreted", "products", "text", "done"]
     assert _busca(eventos)["match_type"] == "exact"
-    assert _ids(eventos) == [tenis.id, rasteira.id]
+    assert _ids(eventos) == [rasteira.id, sem_tipo.id]
+
+
+@pytest.mark.postgres
+def test_peca_do_tipo_fora_das_cinco_mais_parecidas_entra(
+    pg_client: TestClient, pg_session: Session, monkeypatch
+) -> None:
+    """Seis camisetas mais parecidas que o único casaco: a resposta é o casaco,
+    e não cinco camisetas como "peças que combinam"."""
+    loja = _loja(pg_session)
+    for i in range(6):
+        _peca(pg_session, loja, f"Camiseta {i}", _vetor(1), category="Roupas")
+    casaco = _peca(
+        pg_session, loja, "Sobretudo de lã", _vetor(1, 0.5), category="Roupas"
+    )
+    pg_session.commit()
+    _usar(
+        monkeypatch,
+        _Provedor(
+            InterpretedQuery(
+                filters={"category": "Roupas"}, tipo="Casaco", in_scope=True
+            ),
+            _vetor(1),
+        ),
+    )
+
+    eventos = _perguntar(pg_client, "casaco para o inverno")
+
+    assert _busca(eventos)["match_type"] == "exact"
+    assert _ids(eventos) == [casaco.id]
 
 
 @pytest.mark.postgres

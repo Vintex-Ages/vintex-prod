@@ -80,6 +80,27 @@ TIPOS_DE_PECA: dict[str, tuple[str, ...]] = {
     "Relógio": ("relógio",),
 }
 
+# Onde a peça entra no look. Duas peças da mesma parte não se vestem juntas, e o
+# "monte o look" leva uma de cada. `inteiro` ocupa o lugar de `cima` e `baixo`.
+# Tipo sem entrada aqui (cinto, óculos, relógio...) é uma parte sozinho.
+_PARTES: dict[str, tuple[str, ...]] = {
+    "cima": ("Camiseta", "Regata", "Camisa", "Blusa", "Moletom"),
+    "sobreposicao": ("Jaqueta", "Casaco", "Blazer"),
+    "inteiro": ("Vestido", "Macacão"),
+    "baixo": ("Saia", "Calça", "Shorts"),
+    "pes": (
+        "Tênis",
+        "Bota",
+        "Sandália",
+        "Scarpin",
+        "Mocassim",
+        "Sapatilha",
+        "Chinelo",
+    ),
+    "bolsa": ("Bolsa", "Mochila"),
+    "cabeca": ("Boné", "Chapéu"),
+}
+
 
 def lista(valores: tuple[str, ...]) -> str:
     """Valores separados por vírgula, para citar dentro de um prompt."""
@@ -193,3 +214,32 @@ def nome_e_do_tipo(nome: str, tipo: str) -> bool:
     """
     palavras = _palavras(nome)
     return any(_contem(palavras, termo) for termo in TIPOS_DE_PECA.get(tipo, ()))
+
+
+def tipo_do_nome(nome: str) -> str | None:
+    """O tipo que o texto diz primeiro, ou `None` se não diz nenhum.
+
+    "Vestido midi com cinto" é Vestido: o que vem depois descreve a peça.
+    """
+    palavras = _palavras(nome)
+    achado: tuple[int, int, str] | None = None
+    for tipo, termos in TIPOS_DE_PECA.items():
+        for termo in termos:
+            alvo = _palavras(termo)
+            for i in range(len(palavras) - len(alvo) + 1):
+                if palavras[i : i + len(alvo)] == alvo:
+                    candidato = (i, -len(alvo), tipo)
+                    if achado is None or candidato < achado:
+                        achado = candidato
+                    break
+    return achado[2] if achado else None
+
+
+def parte_do_look(nome: str) -> str | None:
+    """A parte do look que a peça ocupa pelo nome (`_PARTES`), ou `None` se o
+    nome não diz o tipo."""
+    tipo = tipo_do_nome(nome)
+    for parte, tipos in _PARTES.items():
+        if tipo in tipos:
+            return parte
+    return tipo
