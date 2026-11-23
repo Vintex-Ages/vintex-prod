@@ -197,7 +197,7 @@ export function SearchBar({
         className={clsx(
           'relative flex shrink-0 items-center justify-center gap-2 font-semibold text-branco-quente transition',
           'hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente',
-          'disabled:cursor-not-allowed disabled:opacity-70',
+          'disabled:cursor-not-allowed disabled:bg-papel-profundo disabled:text-texto-auxiliar disabled:hover:brightness-100',
           'min-h-touch',
           arrow
             ? 'w-11 bg-verde-rs'
