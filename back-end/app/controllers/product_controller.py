@@ -291,19 +291,24 @@ class ProductController:
         """As mais parecidas com a foto: da categoria lida, as do mesmo tipo
         primeiro, no máximo `_PECAS_DA_FOTO`.
 
-        A categoria que a pessoa escolheu nos filtros vale mais que a lida. O
-        tipo sai da descrição, como sai do nome na conversa; sem tipo, fica só
+        O que a pessoa filtrou vale mais que a categoria lida: se as duas coisas
+        juntas não deixam peça, cai a lida e ficam os filtros dela. O tipo sai da descrição, como sai do nome na conversa; sem tipo, fica só
         a semelhança.
         """
-        if filters.category is None and analise.category and analise.category.value:
-            filters = filters.model_copy(update={"category": analise.category.value})
         janela = PageParams(page=1, page_size=_JANELA_DA_FOTO)
-        rows, _ = self._similares(vetor, modelo, janela, filters)
+        rows: Sequence[ProductSimilarRow] = []
+        if filters.category is None and analise.category and analise.category.value:
+            da_categoria = filters.model_copy(
+                update={"category": analise.category.value}
+            )
+            rows, _ = self.repository.find_similar(vetor, modelo, janela, da_categoria)
+        if not rows:
+            rows, _ = self._similares(vetor, modelo, janela, filters)
         tipo = tipo_do_nome(analise.description.value) if analise.description else None
         if tipo is not None:
             # `sorted` é estável: dentro de cada grupo continua a semelhança.
             rows = sorted(rows, key=lambda row: not nome_e_do_tipo(row["name"], tipo))
-        return rows[:_PECAS_DA_FOTO]
+        return list(rows[:_PECAS_DA_FOTO])
 
     def _similares(
         self,

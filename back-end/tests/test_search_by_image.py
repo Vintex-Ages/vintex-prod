@@ -263,6 +263,23 @@ def test_categoria_lida_sem_peca_no_catalogo_devolve_alternativas(
 
 
 @pytest.mark.postgres
+def test_filtro_da_pessoa_vale_mais_que_a_categoria_lida(
+    pg_client: TestClient, pg_session: Session, provedor: _Provedor
+) -> None:
+    """A foto é de jaqueta e nenhuma jaqueta cabe no preço: fica o preço."""
+    loja = _loja(pg_session, "Aurora")
+    _peca(pg_session, loja, "Jaqueta", eixo(0), categoria="Jaquetas", preco="300")
+    barata = _peca(
+        pg_session, loja, "Cinto", eixo(1), categoria="Acessórios", preco="30"
+    )
+    pg_session.commit()
+
+    corpo = _buscar(pg_client, price_max="60").json()
+
+    assert [item["id"] for item in corpo["items"]] == [barata.id]
+
+
+@pytest.mark.postgres
 def test_tipo_lido_na_descricao_vem_primeiro(
     pg_client: TestClient, pg_session: Session, monkeypatch
 ) -> None:
