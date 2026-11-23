@@ -6,7 +6,7 @@ import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { CartContext, type CartContextValue } from '@/context/useCart';
 import { paths, productDetail, storeProfile } from '@/routes/paths';
 import { CombinationError, getCombinations } from '@/services/combinationService';
-import { getOrder, OrderError } from '@/services/orderService';
+import { cancelOrder, getOrder, OrderError } from '@/services/orderService';
 import { OrderReportError, reportOrder } from '@/services/reportService';
 import { rateStore, StoreError } from '@/services/storeService';
 import type { LookSuggestion } from '@/types/look';
@@ -16,6 +16,7 @@ import OrderDetail from './OrderDetail';
 vi.mock('@/services/orderService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/orderService')>()),
   getOrder: vi.fn(),
+  cancelOrder: vi.fn(),
 }));
 
 vi.mock('@/services/reportService', async (importOriginal) => ({
@@ -731,5 +732,72 @@ describe('<OrderDetail />', () => {
       await screen.findByRole('alert');
       expect(getCombinations).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('<OrderDetail /> cancelamento', () => {
+  beforeEach(() => {
+    vi.mocked(getCombinations).mockResolvedValue(EMPTY_LOOK);
+    vi.mocked(cancelOrder).mockReset();
+  });
+  afterEach(cleanup);
+
+  async function confirmar() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar pedido' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+  }
+
+  it('antes do comprovante, cancela depois de confirmar e mostra o pedido cancelado', async () => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder());
+    vi.mocked(cancelOrder).mockResolvedValue(
+      makeOrder({
+        status: 'cancelado',
+        history: historico(['aguardando_comprovante', 'cancelado']),
+      }),
+    );
+    renderDetail();
+
+    await confirmar();
+
+    expect(await screen.findByText('Pedido cancelado')).toBeInTheDocument();
+    expect(screen.getByText(/as peças voltaram a ficar disponíveis/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enviar comprovante' })).not.toBeInTheDocument();
+    expect(cancelOrder).toHaveBeenCalledWith('u_1', 'ped-1');
+  });
+
+  it('"Manter pedido" fecha sem cancelar', async () => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder());
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar pedido' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manter pedido' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(cancelOrder).not.toHaveBeenCalled();
+  });
+
+  it('falha ao cancelar avisa no diálogo', async () => {
+    vi.mocked(getOrder).mockResolvedValue(makeOrder());
+    vi.mocked(cancelOrder).mockRejectedValue(new OrderError('ORDER_NOT_CANCELABLE', 'x'));
+    renderDetail();
+
+    await confirmar();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível cancelar o pedido.',
+    );
+  });
+
+  it.each([
+    ['em análise', makeOrder({ status: 'em_analise', payment: { status: 'pendente' } })],
+    ['comprovante recusado', makeOrder({ payment: { status: 'rejeitado' } })],
+    ['expirado', makeOrder({ status: 'expirado' })],
+  ])('%s: não oferece cancelar', async (_caso, order) => {
+    vi.mocked(getOrder).mockResolvedValue(order);
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Peças' });
+    expect(screen.queryByRole('button', { name: 'Cancelar pedido' })).not.toBeInTheDocument();
   });
 });

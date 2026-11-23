@@ -9,8 +9,9 @@
 /**
  * Os seis status da linha do tempo (VS-023) mais `expirado`, a saída negativa
  * dela (back-end#243): sem comprovante aprovado em 3 dias (`expiresAt`), o
- * Pedido expira e as peças voltam a `ativo`. `expirado` NÃO é etapa da linha
- * do tempo. Rejeição de comprovante continua não sendo status: é lida de
+ * Pedido expira e as peças voltam a `ativo`. `cancelado` é a outra saída: o
+ * comprador desistiu antes de enviar comprovante. Nenhum dos dois é etapa da
+ * linha do tempo. Rejeição de comprovante continua não sendo status: é lida de
  * `payment.status` (RN-23, ver `Order.payment` abaixo).
  */
 export type OrderStatus =
@@ -20,7 +21,8 @@ export type OrderStatus =
   | 'preparando'
   | 'enviado'
   | 'concluido'
-  | 'expirado';
+  | 'expirado'
+  | 'cancelado';
 
 export type PaymentStatus = 'pendente' | 'aprovado' | 'rejeitado';
 

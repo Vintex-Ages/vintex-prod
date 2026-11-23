@@ -62,6 +62,7 @@ const STATUS_BADGES: Record<OrderStatus, { label: string; tone: BadgeTone }> = {
   enviado: { label: 'Enviado', tone: 'success' },
   concluido: { label: 'Concluído', tone: 'success' },
   expirado: { label: 'Expirado', tone: 'danger' },
+  cancelado: { label: 'Cancelado', tone: 'danger' },
 };
 
 const REJECTED_BADGE = { label: 'Comprovante recusado', tone: 'danger' as const };

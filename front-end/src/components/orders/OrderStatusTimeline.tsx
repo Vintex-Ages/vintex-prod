@@ -18,9 +18,9 @@ import type { OrderStatus } from '@/types/order';
  * da atual fica em `tinta`: branco sobre `dourado` dá ~3:1, abaixo do AA. O aviso de
  * expirado tem borda `vermelho-escuro`, para não parecer a etapa atual.
  *
- * `expirado` não é etapa: é a saída negativa. Nesse caso aparecem só as etapas
- * com entrada no `history` e, no lugar das futuras, o aviso "Pedido expirado",
- * sem etapa atual.
+ * `expirado` e `cancelado` não são etapas: são as saídas negativas. Nesse caso
+ * aparecem só as etapas com entrada no `history` e, no lugar das futuras, o
+ * aviso ("Pedido expirado" ou "Pedido cancelado"), sem etapa atual.
  *
  * Sem texto de prazo nem rastreio de transportadora (RN-83).
  *
@@ -34,7 +34,8 @@ export type OrderStatusTimelineProps = {
   history: { status: OrderStatus; at: string }[];
 };
 
-type TimelineStatus = Exclude<OrderStatus, 'expirado'>;
+type ClosedStatus = 'expirado' | 'cancelado';
+type TimelineStatus = Exclude<OrderStatus, ClosedStatus>;
 type StepState = 'completed' | 'current' | 'upcoming';
 
 const STEPS: { status: TimelineStatus; label: string }[] = [
@@ -45,6 +46,11 @@ const STEPS: { status: TimelineStatus; label: string }[] = [
   { status: 'enviado', label: 'Enviado' },
   { status: 'concluido', label: 'Concluído' },
 ];
+
+const CLOSED_LABEL: Record<ClosedStatus, string> = {
+  expirado: 'Pedido expirado',
+  cancelado: 'Pedido cancelado',
+};
 
 // Fuso fixo: a data exibida não depende da máquina de quem abre a tela.
 const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
@@ -117,14 +123,14 @@ function OrderStatusTimeline({ current, history }: OrderStatusTimelineProps) {
   const dates = new Map<OrderStatus, string>();
   for (const entry of history) dates.set(entry.status, entry.at);
 
-  const isExpired = current === 'expirado';
+  const closed = current === 'expirado' || current === 'cancelado' ? current : null;
   const currentIndex = STEPS.findIndex((step) => step.status === current);
-  const visibleSteps = isExpired ? STEPS.filter((step) => dates.has(step.status)) : STEPS;
+  const visibleSteps = closed ? STEPS.filter((step) => dates.has(step.status)) : STEPS;
 
   return (
     <ol className="flex flex-col">
       {visibleSteps.map((step, index) => {
-        const state: StepState = isExpired
+        const state: StepState = closed
           ? 'completed'
           : index < currentIndex
             ? 'completed'
@@ -133,7 +139,7 @@ function OrderStatusTimeline({ current, history }: OrderStatusTimelineProps) {
               : 'upcoming';
         const at = dates.get(step.status);
         const formatted = state !== 'upcoming' && at ? formatDate(at) : null;
-        const hasNext = isExpired || index < visibleSteps.length - 1;
+        const hasNext = closed !== null || index < visibleSteps.length - 1;
 
         return (
           <li
@@ -164,14 +170,17 @@ function OrderStatusTimeline({ current, history }: OrderStatusTimelineProps) {
         );
       })}
 
-      {isExpired ? (
-        <li data-state="expired" className="relative flex gap-3">
+      {closed ? (
+        <li
+          data-state={closed === 'expirado' ? 'expired' : 'cancelled'}
+          className="relative flex gap-3"
+        >
           <span
             aria-hidden="true"
             className="relative z-10 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-vermelho-escuro bg-papel"
           />
           <div className="flex min-h-8 flex-col justify-center">
-            <span className="text-body-sm font-semibold text-tinta">Pedido expirado</span>
+            <span className="text-body-sm font-semibold text-tinta">{CLOSED_LABEL[closed]}</span>
           </div>
         </li>
       ) : null}

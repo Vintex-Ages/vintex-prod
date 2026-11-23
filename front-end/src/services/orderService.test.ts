@@ -151,6 +151,46 @@ describe('orderService (mock)', () => {
     });
   });
 
+  describe('cancelOrder', () => {
+    const statusOf = (id: string) => mockProducts.find((product) => product.id === id)?.status;
+
+    it('cancela o Pedido e devolve as peças à venda', async () => {
+      const order = await orderService.createOrder(USER_ID, {
+        productIds: ['1', '8'],
+        deliveryAddress: ADDRESS,
+      });
+
+      const cancelled = await orderService.cancelOrder(USER_ID, order.id);
+
+      expect(cancelled.status).toBe('cancelado');
+      expect(cancelled.history.map((entry) => entry.status)).toEqual([
+        'aguardando_comprovante',
+        'cancelado',
+      ]);
+      expect(statusOf('1')).toBe('ativo');
+      expect(statusOf('8')).toBe('ativo');
+    });
+
+    it('com comprovante enviado, recusa e mantém as peças reservadas', async () => {
+      const order = await orderService.createOrder(USER_ID, {
+        productIds: ['1'],
+        deliveryAddress: ADDRESS,
+      });
+      await orderService.submitReceipt(USER_ID, order.id, new File(['x'], 'pix.png'));
+
+      await expect(orderService.cancelOrder(USER_ID, order.id)).rejects.toMatchObject({
+        code: 'ORDER_NOT_CANCELABLE',
+      });
+      expect(statusOf('1')).toBe('reservado');
+    });
+
+    it('rejeita com ORDER_NOT_FOUND para um pedido inexistente', async () => {
+      await expect(orderService.cancelOrder(USER_ID, 'nada')).rejects.toMatchObject({
+        code: 'ORDER_NOT_FOUND',
+      });
+    });
+  });
+
   describe('approveReceipt / rejectReceipt (mock-only, pra #312)', () => {
     it('approveReceipt rejeita com ORDER_NOT_FOUND para um pedido inexistente', async () => {
       await expect(orderService.approveReceipt(USER_ID, 'inexistente')).rejects.toMatchObject({
@@ -437,6 +477,20 @@ describe('orderService (API real) — contrato proposto pelo front', () => {
       { status: 'em_analise', at: '2026-09-21T09:00:00Z' },
     ],
   };
+
+  it('cancelOrder chama a rota de cancelamento e mapeia o Pedido devolvido', async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: { ...REJECTED_ORDER_RESPONSE, status: 'cancelado', payment: null },
+    });
+    vi.doMock('@/services/httpClient', () => ({ httpClient: { post } }));
+    const service = await import('./orderService');
+
+    const order = await service.cancelOrder('u_1', '77');
+
+    expect(post).toHaveBeenCalledWith('/users/me/orders/77/cancel');
+    expect(order.status).toBe('cancelado');
+    vi.doUnmock('@/services/httpClient');
+  });
 
   // Objetivo declarado: back-end#243 — status expirado e expires_at mapeiam sem erro.
   it('mapeia status expirado e expiresAt a partir de expires_at', async () => {

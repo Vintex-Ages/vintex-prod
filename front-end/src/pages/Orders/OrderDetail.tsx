@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import Button from '@/components/common/Button';
 import ErrorState from '@/components/common/ErrorState';
 import Container from '@/components/layout/Container';
+import CancelOrderDialog from '@/components/orders/CancelOrderDialog';
 import OrderLookSection from '@/components/orders/OrderLookSection';
 import OrderStatusTimeline from '@/components/orders/OrderStatusTimeline';
 import RateStoreDialog from '@/components/orders/RateStoreDialog';
@@ -24,7 +25,8 @@ import { formatCentsToBRL } from '@/utils/format';
  * endereço de entrega, o total e o nome e a situação do comprovante — nunca o
  * arquivo. Comprovante recusado traz o motivo e "Reenviar comprovante" (RN-23);
  * aguardando comprovante traz "Enviar comprovante" e o prazo (`expiresAt`);
- * expirado não oferece pagamento.
+ * expirado não oferece pagamento. Antes do primeiro comprovante dá para cancelar
+ * o Pedido, com confirmação (`CancelOrderDialog`).
  *
  * "Reportar problema" (#410, botão de contorno) aparece quando
  * `canReportOrder` deixa (confirmado em diante, RN-77) e abre o
@@ -195,7 +197,8 @@ function ReceiptSection({ order }: { order: Order }) {
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { state, view, reload } = useOrderDetail(id);
+  const { state, view, reload, cancel } = useOrderDetail(id);
+  const [cancelling, setCancelling] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [rating, setRating] = useState(false);
   // O id, e não um booleano: trocar de Pedido sem desmontar não herda a nota.
@@ -287,8 +290,26 @@ export default function OrderDetail() {
               ) : null}
               . Sem comprovante aprovado no prazo, o pedido expira.
             </p>
-            <Button onClick={goToPayment}>Enviar comprovante</Button>
+            <div className="flex flex-col gap-2 tablet:flex-row">
+              {view.canCancel ? (
+                <Button variant="outline" onClick={() => setCancelling(true)}>
+                  Cancelar pedido
+                </Button>
+              ) : null}
+              <Button onClick={goToPayment}>Enviar comprovante</Button>
+            </div>
           </div>
+        ) : null}
+
+        {cancelling ? (
+          <CancelOrderDialog open onClose={() => setCancelling(false)} onConfirm={cancel} />
+        ) : null}
+
+        {/* "Pedido cancelado" já vem da linha do tempo; aqui só o que mudou. */}
+        {view?.cancelled ? (
+          <p className="border border-linha bg-papel-profundo p-4 text-body text-tinta">
+            Você cancelou este pedido e as peças voltaram a ficar disponíveis na loja.
+          </p>
         ) : null}
 
         {/* "Pedido expirado" já vem da linha do tempo; aqui só o que mudou. */}

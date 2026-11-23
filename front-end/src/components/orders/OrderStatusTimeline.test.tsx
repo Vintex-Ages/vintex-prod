@@ -76,6 +76,22 @@ describe('<OrderStatusTimeline />', () => {
     });
   });
 
+  it('com current = cancelado, mostra a etapa atingida e o aviso, sem etapa futura', () => {
+    render(
+      <OrderStatusTimeline
+        current="cancelado"
+        history={[
+          { status: 'aguardando_comprovante', at: '2026-10-01T17:30:00Z' },
+          { status: 'cancelado', at: '2026-10-01T18:30:00Z' },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Pedido cancelado')).toBeVisible();
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByText('Comprovante em análise')).toBeNull();
+  });
+
   it('com current = expirado, mostra as etapas atingidas, o aviso e nenhuma etapa futura', () => {
     render(
       <OrderStatusTimeline

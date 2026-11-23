@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/useAuth';
-import { getOrder, OrderError } from '@/services/orderService';
+import { cancelOrder, getOrder, OrderError } from '@/services/orderService';
 import type { Order } from '@/types/order';
 
 export type OrderDetailState =
@@ -21,6 +21,9 @@ export interface OrderDetailView {
   /** Motivo da recusa, só quando há reenvio a fazer. */
   rejectionReason: string | null;
   expired: boolean;
+  cancelled: boolean;
+  /** Só antes do primeiro comprovante: recusado também não cancela (o Pix pode ter sido pago). */
+  canCancel: boolean;
 }
 
 /** Códigos de "não existe para você": o do mock e o 404 do envelope do back. */
@@ -39,6 +42,8 @@ export function deriveOrderView(order: Pick<Order, 'status' | 'payment'>): Order
     paymentAction: awaiting ? (rejected ? 'resend' : 'send') : null,
     rejectionReason: rejected ? (order.payment?.rejectionReason ?? null) : null,
     expired: order.status === 'expirado',
+    cancelled: order.status === 'cancelado',
+    canCancel: awaiting && order.payment === null,
   };
 }
 
@@ -107,7 +112,24 @@ export function useOrderDetail(id: string | undefined) {
     void load(false);
   }, [load]);
 
+  /**
+   * Cancela o Pedido e mostra o que o back devolveu. Recusado ou com falha, o
+   * erro sobe para a tela, e o Pedido é relido: a recusa quer dizer que ele
+   * mudou (comprovante enviado em outra aba, prazo vencido).
+   */
+  const cancel = useCallback(async () => {
+    if (!userId || !id) return;
+    try {
+      const order = await cancelOrder(userId, id);
+      latest.current += 1;
+      setState({ status: 'ready', order });
+    } catch (error) {
+      void load(true);
+      throw error;
+    }
+  }, [userId, id, load]);
+
   const view = state.status === 'ready' ? deriveOrderView(state.order) : null;
 
-  return { state, view, reload };
+  return { state, view, reload, cancel };
 }

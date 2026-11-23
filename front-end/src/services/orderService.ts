@@ -34,6 +34,9 @@ import type { Paginated } from '@/types/product';
  *   resposta PARCIAL `{ id, status, payment, history }`, por isso `submitReceipt`
  *   relê o detalhe e devolve o Pedido completo).
  *
+ *   `POST /users/me/orders/{id}/cancel`: só antes do primeiro comprovante; devolve
+ *   o Pedido completo, já `cancelado`, com as peças de volta à venda.
+ *
  *   O mock reserva as peças ao criar o Pedido e as marca vendidas quando o
  *   comprovante é aprovado (back-end#251). Não mexe no carrinho: o checkout
  *   recarrega e mostra o que o service devolver.
@@ -65,6 +68,7 @@ function expiresAtFrom(createdAt: string): string {
  * Erro de Pedido com `code` tipado — o mesmo formato em mock e API real.
  * Códigos usados pelo mock: `EMPTY_ORDER`, `PIECE_UNAVAILABLE`,
  * `MIXED_STORES`, `STORE_WITHOUT_PIX`, `ORDER_NOT_FOUND`.
+ * Do cancelamento: `ORDER_NOT_CANCELABLE` (409).
  * Do envio de comprovante na API real (por status HTTP): `RECEIPT_TOO_LARGE`
  * (413), `RECEIPT_INVALID_TYPE` (415), `ORDER_NOT_AWAITING_RECEIPT` (409).
  */
@@ -405,6 +409,36 @@ async function mockSubmitReceipt(userId: string, orderId: string, file: File): P
   return updated;
 }
 
+/** Como o back: só sem comprovante nenhum; as peças voltam a `ativo`. */
+async function mockCancelOrder(userId: string, orderId: string): Promise<Order> {
+  const orders = readStoredOrders(userId);
+  const index = orders.findIndex((order) => order.id === orderId);
+  if (index === -1) {
+    // Pedido de exemplo existe na tela, mas não vive no `sessionStorage`.
+    throw findExampleOrder(orderId)
+      ? new OrderError('ORDER_NOT_CANCELABLE', 'Este pedido não pode mais ser cancelado.')
+      : new OrderError('ORDER_NOT_FOUND', `Pedido ${orderId} não encontrado.`);
+  }
+  const order = orders[index];
+  if (order.status !== 'aguardando_comprovante' || order.payment !== null) {
+    throw new OrderError('ORDER_NOT_CANCELABLE', 'Este pedido não pode mais ser cancelado.');
+  }
+
+  for (const item of order.items) {
+    const product = findMockProduct(item.productId);
+    if (product) product.status = 'ativo';
+  }
+
+  const updated: Order = {
+    ...order,
+    status: 'cancelado',
+    history: [...order.history, { status: 'cancelado', at: new Date().toISOString() }],
+  };
+  orders[index] = updated;
+  writeStoredOrders(userId, orders);
+  return updated;
+}
+
 /**
  * Sem mock de `users.address` disponível ainda: usa o endereço do Pedido
  * mais recente do usuário como padrão (comportamento razoável — a maioria
@@ -711,6 +745,15 @@ async function apiSubmitReceipt(orderId: string, file: File): Promise<Order> {
   return apiGetOrder(orderId);
 }
 
+async function apiCancelOrder(orderId: string): Promise<Order> {
+  try {
+    const { data } = await httpClient.post<ApiOrder>(`/users/me/orders/${orderId}/cancel`);
+    return mapApiOrder(data);
+  } catch (error) {
+    throw toOrderError(error);
+  }
+}
+
 /**
  * Endereço do Pedido mais recente (FE-INT-3, #332). O endereço do comprador só
  * existe dentro do Pedido, e a lista do back traz `delivery_address` para isto:
@@ -753,6 +796,11 @@ export function getOrder(userId: string, id: string): Promise<Order> {
 
 export function submitReceipt(userId: string, orderId: string, file: File): Promise<Order> {
   return useMocks ? mockSubmitReceipt(userId, orderId, file) : apiSubmitReceipt(orderId, file);
+}
+
+/** Cancela o Pedido antes do primeiro comprovante e devolve as peças à venda. */
+export function cancelOrder(userId: string, orderId: string): Promise<Order> {
+  return useMocks ? mockCancelOrder(userId, orderId) : apiCancelOrder(orderId);
 }
 
 export function getDeliveryAddressDefault(userId: string): Promise<DeliveryAddress | null> {

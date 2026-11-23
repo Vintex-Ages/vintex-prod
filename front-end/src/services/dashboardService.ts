@@ -61,7 +61,7 @@ export class AdminDashboardError extends Error {
 const ORDERS_KEY_PREFIX = 'orders:';
 
 /** Status em que o Pedido ainda não tem pagamento validado (ou expirou): não conta nas vendas. */
-const UNCONFIRMED_STATUSES = ['aguardando_comprovante', 'em_analise', 'expirado'];
+const UNCONFIRMED_STATUSES = ['aguardando_comprovante', 'em_analise', 'expirado', 'cancelado'];
 
 interface StoredOrder {
   status: string;

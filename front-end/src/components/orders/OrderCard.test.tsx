@@ -117,6 +117,12 @@ describe('<OrderCard />', () => {
     expect(screen.getByText('Expirado')).toBeInTheDocument();
   });
 
+  it('com status cancelado mostra "Cancelado"', () => {
+    render(<OrderCard order={makeOrder({ status: 'cancelado' })} onOpen={vi.fn()} />);
+
+    expect(screen.getByText('Cancelado')).toBeInTheDocument();
+  });
+
   // #321: recusado e depois expirado — o Pedido acabou, a recusa ficou para trás.
   it('com status expirado e comprovante rejeitado mostra "Expirado", não "Comprovante recusado"', () => {
     render(
