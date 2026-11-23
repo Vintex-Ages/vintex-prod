@@ -207,8 +207,8 @@ def test_devolve_no_maximo_o_limite_na_ordem_da_semelhanca(pg_client, pg_session
         peca(
             pg_session,
             store,
-            f"Sapato {i}",
-            "Sapatos",
+            f"Acessório {i}",
+            "Acessórios",
             perto_de(i + 1, (0, 1 - i / 10)),
         )
         for i in range(LIMITE_DE_COMBINACOES + 2)
@@ -253,6 +253,7 @@ def test_cada_parte_do_look_entra_uma_vez(pg_client, pg_session):
     peca(pg_session, store, "Blazer", "Roupas", perto_de(1, (0, 0.9)))
     tenis = peca(pg_session, store, "Tênis", "Sapatos", perto_de(2, (0, 0.8)))
     peca(pg_session, store, "Coturno", "Sapatos", perto_de(3, (0, 0.7)))
+    peca(pg_session, store, "Nike Air Force 1", "Sapatos", perto_de(5, (0, 0.6)))
     calca = peca(pg_session, store, "Calça", "Roupas", perto_de(4, (0, 0.3)))
     pg_session.commit()
 
@@ -358,22 +359,22 @@ def test_o_mesmo_modelo_de_outra_marca_entra_uma_vez(pg_client, pg_session):
     converse = peca(
         pg_session,
         store,
-        "Cano alto Converse",
-        "Sapatos",
+        "Pingente Converse",
+        "Acessórios",
         eixo(0),
         marca="Converse",
     )
     peca(
         pg_session,
         store,
-        "Cano alto Adidas",
-        "Sapatos",
+        "Pingente Adidas",
+        "Acessórios",
         perto_de(1, (0, 0.9)),
         marca="Adidas",
     )
     # Sem marca gravada, o nome inteiro conta: "Converse" no nome fica.
     sem_marca = peca(
-        pg_session, store, "Cano alto Converse", "Sapatos", perto_de(2, (0, 0.8))
+        pg_session, store, "Pingente Converse", "Acessórios", perto_de(2, (0, 0.8))
     )
     pg_session.commit()
 

@@ -123,7 +123,8 @@ def _montar_conjunto(
 
     Cada parte do look entra uma vez (`parte_do_look`): ninguém veste duas
     jaquetas nem dois tênis. Com menos de quatro partes no catálogo o conjunto
-    sai menor, em vez de repetir. Peça cujo nome não diz o tipo não é cortada.
+    sai menor, em vez de repetir. Roupa e acessório cujo nome não diz o tipo não
+    são cortados.
     """
     por_categoria: dict[str, list[ProductFeedRow]] = {}
     nomes: set[str] = set()
@@ -143,13 +144,20 @@ def _montar_conjunto(
                 break
             while fila:
                 row = fila.pop(0)
-                parte = parte_do_look(row["name"])
+                parte = _parte(row)
                 if _cabe(parte, partes):
                     conjunto.append(row)
                     if parte is not None:
                         partes.add(parte)
                     break
     return conjunto
+
+
+def _parte(row: ProductFeedRow) -> str | None:
+    """Todo sapato vai nos pés, mesmo sem o tipo no nome ("Nike Air Force 1")."""
+    if _normalizado(row["category"]) == "sapatos":
+        return "pes"
+    return parte_do_look(row["name"])
 
 
 def _cabe(parte: str | None, partes: set[str]) -> bool:
