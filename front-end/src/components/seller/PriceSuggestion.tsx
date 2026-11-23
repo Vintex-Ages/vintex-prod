@@ -19,7 +19,7 @@ export type PriceSuggestionValue = {
 };
 
 export type PriceSuggestionProps = {
-  state: 'idle' | 'loading' | 'ready' | 'unavailable';
+  state: 'idle' | 'loading' | 'ready' | 'unavailable' | 'missing_name';
   /** Faixa (em reais), justificativa e quantidade de peças comparadas. */
   suggestion?: PriceSuggestionValue;
   /** Preço digitado, em reais; `null` ou ausente se vazio. */
@@ -98,6 +98,12 @@ function PriceSuggestion({
         ) : null}
         {isLoading ? 'Buscando sugestão…' : 'Sugerir preço'}
       </button>
+
+      {state === 'missing_name' ? (
+        <p role="status" className="text-body-sm text-texto-auxiliar">
+          Preencha o título da peça para receber a sugestão de preço.
+        </p>
+      ) : null}
 
       {state === 'unavailable' ? (
         <p className="text-body-sm text-texto-auxiliar">

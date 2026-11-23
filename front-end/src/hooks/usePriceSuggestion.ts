@@ -5,7 +5,7 @@ import type { PriceSuggestion, PriceSuggestionInput } from '@/types/vintex-ai';
 
 /** Estado da sugestão de preço, no formato que o `PriceSuggestion` desenha. */
 export interface PriceSuggestionState {
-  status: 'idle' | 'loading' | 'ready' | 'unavailable';
+  status: 'idle' | 'loading' | 'ready' | 'unavailable' | 'missing_name';
   suggestion?: PriceSuggestion;
 }
 
@@ -29,6 +29,8 @@ export function priceOutOfRange(
  * Sugestão de preço do cadastro da peça (FE-US018-1, #326).
  *
  * - Só pede quando o vendedor clica (RN-67): nada aqui roda sozinho.
+ * - Sem título não há o que comparar (o back recusa): vira `missing_name`, e a
+ *   tela pede o título.
  * - Falha de rede ou do back vira `unavailable`, um aviso discreto; o cadastro
  *   segue (VS-018, cenário 3).
  * - Não é salva com a peça: some em `reset()`, que o `useProductForm` chama ao
@@ -46,6 +48,10 @@ export function usePriceSuggestion() {
 
   const request = useCallback(async (input: PriceSuggestionInput) => {
     const current = ++latest.current;
+    if (input.name.trim() === '') {
+      setState({ status: 'missing_name' });
+      return;
+    }
     setState({ status: 'loading' });
     try {
       const suggestion = await suggestPrice(input);

@@ -775,7 +775,11 @@ export function useProductForm(productId?: string): UseProductFormResult {
     // Com o vídeo ainda subindo, o rascunho iria sem ele.
     canContinue: values.media.length > 0 && !saving && !analyzing && !enviandoVideo,
     publishBlocked,
-    priceSuggestion: precoSugerido.state,
+    // O aviso de título vazio some quando a pessoa digita o título.
+    priceSuggestion:
+      precoSugerido.state.status === 'missing_name' && values.name.trim() !== ''
+        ? { status: 'idle' }
+        : precoSugerido.state,
     priceAlert: priceOutOfRange(precoSugerido.state, priceReais),
     requestPriceSuggestion,
     applyPriceSuggestion,

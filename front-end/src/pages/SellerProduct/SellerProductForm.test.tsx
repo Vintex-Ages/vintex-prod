@@ -642,6 +642,7 @@ describe('SellerProductForm', () => {
     it('"Usar R$ X" preenche o preço e o valor líquido recalcula', async () => {
       renderForm();
       await subirFoto();
+      preencherObrigatorios();
 
       await pedirSugestao();
       fireEvent.click(screen.getByRole('button', { name: 'Usar R$ 150,00' }));
@@ -660,6 +661,20 @@ describe('SellerProductForm', () => {
 
       fireEvent.change(screen.getByLabelText('Preço'), { target: { value: '150,00' } });
       expect(screen.queryByText(ALERTA_ACIMA)).not.toBeInTheDocument();
+    });
+
+    it('sem título, pede o título em vez de chamar o back', async () => {
+      renderForm();
+      await subirFoto();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sugerir preço' }));
+
+      const aviso = 'Preencha o título da peça para receber a sugestão de preço.';
+      expect(await screen.findByText(aviso)).toBeInTheDocument();
+      expect(vi.mocked(vintexAiService.suggestPrice)).not.toHaveBeenCalled();
+
+      preencherObrigatorios();
+      expect(screen.queryByText(aviso)).not.toBeInTheDocument();
     });
 
     // Objetivo declarado 2: VS-018 cenário 3, a falha não impede salvar.
