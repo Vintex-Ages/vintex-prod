@@ -92,3 +92,42 @@ def test_terraform_composition_maps_base_and_runtime_without_schema_change():
         match_page("infra/terraform/aws/tests/staging.tftest.hcl", entries)
         == "infraestrutura/aws-staging"
     )
+
+
+DOCUMENTATION = Path(__file__).resolve().parents[1] / "documentation"
+
+
+def _paginas_do_portal() -> set[str]:
+    docs = DOCUMENTATION / "docs"
+    return {p.relative_to(docs).with_suffix("").as_posix() for p in docs.rglob("*.md")}
+
+
+def test_toda_pagina_do_mapa_existe_no_portal():
+    entries = load_path_map(DOCUMENTATION / "path-map.json")
+    faltando = {e.page for e in entries} - _paginas_do_portal()
+    assert not faltando, f"Páginas do path-map sem arquivo em docs/: {faltando}"
+
+
+def test_toda_pagina_do_portal_tem_ao_menos_um_caminho_no_mapa():
+    entries = load_path_map(DOCUMENTATION / "path-map.json")
+    orfas = _paginas_do_portal() - {e.page for e in entries}
+    assert not orfas, f"Páginas que nenhum caminho do path-map aponta: {orfas}"
+
+
+def test_nenhum_padrao_repetido_no_mapa():
+    # A primeira correspondência vence: um padrão repetido nunca é usado.
+    padroes = [e.pattern for e in load_path_map(DOCUMENTATION / "path-map.json")]
+    repetidos = {p for p in padroes if padroes.count(p) > 1}
+    assert not repetidos, f"Padrões repetidos no path-map: {repetidos}"
+
+
+def test_producao_e_worker_nao_caem_no_mapa_generico_de_infra():
+    entries = load_path_map(DOCUMENTATION / "path-map.json")
+    assert (
+        match_page("infra/terraform/aws-production/main.tf", entries)
+        == "infraestrutura/aws-producao"
+    )
+    assert (
+        match_page("app/workers/ai_analysis.py", entries)
+        == "infraestrutura/mensageria"
+    )

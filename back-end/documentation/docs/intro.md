@@ -11,12 +11,16 @@ O [`path-map.json`](https://github.com/Vintex-Ages/vintex-prod/blob/develop/back
 
 ## Onde começar
 
+- [Decisões de arquitetura](arquitetura/decisoes) — as ADRs do back-end e como registrar uma nova.
 - [Fundação HTTP](arquitetura/fundacao-http) — envelope de erro, autorização por papel, paginação, prefixo `/api`.
+- [Autenticação e conta](dominio/autenticacao-e-conta) — cadastro, login, refresh token, logout e as guardas de papel.
 - [Configuração por ambiente](arquitetura/configuracao) — variáveis do `.env` e o que é recusado em produção.
 - [Provedor de IA](arquitetura/provedor-ia) — abstração `AIProvider`, `UnavailableAIProvider`, fallback de modelo e repetição no 503.
 - [Pedidos do comprador](dominio/pedidos-do-comprador) e [Validação do comprovante](dominio/validacao-de-comprovante) — do carrinho ao pedido confirmado.
-- [Painel da administradora](dominio/painel-da-administradora) — os números gerais da plataforma.
+- [Painel da administradora](dominio/painel-da-administradora) e [Moderação de anúncios](dominio/moderacao-de-anuncios) — os números gerais e a suspensão de anúncios.
+- [Avaliação da IA](arquitetura/avaliacao-da-ia) — a suíte que mede a IA contra conjuntos de referência.
 - [Infraestrutura de teste local](infraestrutura/teste-local) — Makefile, Compose `vintex-infra`, Terraform, LocalStack, MiniStack.
+- [Staging](infraestrutura/aws-staging) e [Produção](infraestrutura/aws-producao) — os dois ambientes AWS e o deploy de cada um.
 
 ## Como ler os marcadores
 

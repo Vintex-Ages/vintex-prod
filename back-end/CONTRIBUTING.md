@@ -1,52 +1,35 @@
-# Contribuindo com o Vintex
+# Contribuindo com o back-end
 
-## Fluxo de branches
+O back-end vive em `back-end/` no monorepo `vintex-prod`. Fluxo de branches,
+issues, template de PR, revisão e CI são os do repositório inteiro: siga o
+[`CONTRIBUTING.md` da raiz](../CONTRIBUTING.md). Este arquivo só acrescenta o
+que é específico do back-end.
 
-`main` é a branch padrão e representa a versão principal. O desenvolvimento diário parte de `develop`.
-
-```text
-branch de trabalho -> develop -> main -> deploy
-```
-
-Crie branches a partir de `develop` usando um dos formatos:
+## Resumo do fluxo (detalhes na raiz)
 
 ```text
-feature/<issue>-<descricao>
-bugfix/<issue>-<descricao>
-hotfix/<issue>-<descricao>
-refactor/<issue>-<descricao>
-docs/<issue>-<descricao>
-chore/<issue>-<descricao>
+feature/* -> develop -> qa -> main -> deploy
 ```
 
-Use palavras minúsculas separadas por hífen. Todo trabalho deve possuir uma issue.
+- Branch a partir de `develop`: `feature|bugfix|hotfix|refactor|docs|chore/<issue>-<descricao>`.
+- A issue pode ser deste repositório (`Closes #12`) ou do antigo
+  `Vintex-Ages/back-end` (`Closes Vintex-Ages/back-end#269`).
+- Em **Componentes afetados** do template, marque `back-end`.
+- Merge em `main` faz o deploy da staging; merge em `deploy`, o da produção.
 
-## Pull Requests
+## Back-end
 
-- PRs de trabalho apontam para `develop`.
-- Somente `develop` promove para `main`.
-- Somente `main` promove para `deploy`.
-- Preencha o template inteiro e use `Closes #<issue>` como referência primária lida pela automação.
-- A primeira issue vinculada deve ser a issue indicada na branch. Outras issues podem ser incluídas, desde que não tenham milestones conflitantes.
-- Como os PRs de trabalho apontam para `develop` e `main` é a branch padrão, o GitHub não cria o vínculo nativo em Development a partir da keyword. Para exibi-lo, vincule o PR manualmente na sidebar Development ou crie a branch pela própria issue antes de começar o trabalho.
-- Selecione exatamente um tipo de mudança.
-- Declare como IA foi utilizada ou informe explicitamente que não houve uso.
-- Assignees e labels são unidos a partir das issues; a milestone e os campos dos Projects vêm da issue primária.
-- O PR entra no Project do backend e no Project geral. Draft fica em `In progress`, PR pronto em `In review` e merge em `Done`.
-- O GitHub solicita review aos quatro integrantes de AGES III. O merge exige duas aprovações vigentes, que podem vir de AGES III ou AGES IV.
-- Faça commits pequenos; novo commit invalida aprovações anteriores.
-
-## Backend
-
-O backend usa Python 3.12, FastAPI, SQLAlchemy e arquitetura MVC:
+O back-end usa Python 3.12, FastAPI, SQLAlchemy e arquitetura MVC:
 
 ```text
 View -> Controller -> Repository
 ```
 
-Schemas Pydantic validam entrada e saída; Models SQLAlchemy representam persistência.
+Schemas Pydantic validam entrada e saída; Models SQLAlchemy representam
+persistência. O commit fica no controller (ADR 0001 §6). As regras completas
+estão em `.ai/architecture.md` e `.ai/coding-rules.md`.
 
-Antes do push, execute:
+Antes do push, execute dentro de `back-end/`:
 
 ```bash
 ruff check .
@@ -55,4 +38,23 @@ pytest tests/ -v
 mypy app/ --ignore-missing-imports
 ```
 
-Nunca versionar credenciais, `.env` ou material interno de auditoria.
+`make lint` e `make format-check` rodam Ruff e Black na imagem da API, com as
+versões fixadas em `requirements.txt`.
+
+## Documentação
+
+- Mudou comportamento de rota, regra de negócio ou infraestrutura? Atualize a
+  página correspondente em `documentation/docs/`. O PR recebe o comentário
+  **Back-end Documentation Draft** apontando as páginas, pelo
+  `documentation/path-map.json`.
+- Criou um arquivo que não tem página? Acrescente o caminho ao `path-map.json`.
+  `tests/test_generate_draft.py` falha se o mapa apontar para uma página que não
+  existe, se uma página ficar sem nenhum caminho ou se um padrão se repetir.
+- Tomou uma decisão de arquitetura? Registre uma ADR em `.ai/adr/` e liste-a em
+  `documentation/docs/arquitetura/decisoes.md`.
+- Termo novo do domínio? Acrescente em `CONTEXT.md`.
+
+## Regras gerais
+
+O repositório é público. Nunca versione credenciais, `.env` ou material interno
+de auditoria.

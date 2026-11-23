@@ -25,7 +25,10 @@ lado dele:
 
 - **Back-end:** portal próprio em
   [`back-end/documentation`](https://github.com/Vintex-Ages/vintex-prod/tree/develop/back-end/documentation),
-  com o domínio, a arquitetura e a infraestrutura da API.
+  com o domínio, a arquitetura e a infraestrutura da API (inclusive staging e
+  produção na AWS). Decisões de arquitetura em
+  [`back-end/.ai/adr`](https://github.com/Vintex-Ages/vintex-prod/tree/develop/back-end/.ai/adr),
+  listadas no portal em *Arquitetura › Decisões*.
 - **Front-end:** decisões de arquitetura em
   [`front-end/docs/adr`](https://github.com/Vintex-Ages/vintex-prod/tree/develop/front-end/docs/adr).
   Ainda não há portal.

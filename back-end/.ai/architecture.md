@@ -15,6 +15,12 @@
   diretamente. Sem fornecedor escolhido, o provider ativo é
   `UnavailableAIProvider`, que levanta `AIProviderUnavailableError` — quem
   chama degrada a funcionalidade, nunca deixa isso virar um 500.
+- `app/services/`: serviços sem rota própria — mídia, embedding e perfil de
+  estilo, cota do chat, sugestão de preço.
+- `app/workers/ai_analysis.py`: consumidor SQS da análise de imagens; roda como
+  processo separado da API (`python -m app.workers.ai_analysis`).
+- `app/constants/`: catálogos versionados com o código (estilos, vocabulário).
+- `app/seeds/`: dados sintéticos idempotentes para desenvolvimento e demo.
 - `app/main.py`: composição da aplicação (`create_app`) e middleware.
 
 Fluxo esperado: `Route/View → Controller → Repository → Model/Database`, usando schemas na fronteira HTTP. Rotas não devem conter queries; repositories não devem decidir respostas HTTP; models não devem acumular orquestração de casos de uso.
@@ -39,8 +45,15 @@ refresh token).
 - `.ai/adr/0002-autenticacao-jwt.md`: biblioteca, algoritmo, expiração,
   estratégia de sessão persistente/logout (refresh token), hash de senha,
   claim de papel e localização do código de autenticação.
+- `.ai/adr/0003-ambientes-staging-e-producao.md`: staging em EC2 com Compose,
+  produção em ECS/Fargate, IA só assíncrona na produção, promoção do mesmo SHA
+  e limites da conta AWS.
+
+O índice das ADRs, com as páginas do portal que descrevem cada uma, fica em
+`documentation/docs/arquitetura/decisoes.md`.
 
 ## Decisões pendentes
 
-- padrão de migrations e ciclo de ambientes;
+- padrão de migrations (o que existe está descrito em
+  `documentation/docs/arquitetura/migrations.md`, sem ADR);
 - estratégia de testes com banco.
