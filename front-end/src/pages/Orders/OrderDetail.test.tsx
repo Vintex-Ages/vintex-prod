@@ -764,6 +764,7 @@ describe('<OrderDetail /> cancelamento', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enviar comprovante' })).not.toBeInTheDocument();
     expect(cancelOrder).toHaveBeenCalledWith('u_1', 'ped-1');
+    expect(screen.queryByText(/monte o look/)).not.toBeInTheDocument();
   });
 
   it('"Manter pedido" fecha sem cancelar', async () => {

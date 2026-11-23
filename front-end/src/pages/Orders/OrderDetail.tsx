@@ -329,10 +329,17 @@ export default function OrderDetail() {
             <ItemsSection order={order} />
             <AddressSection order={order} />
             <ReceiptSection order={order} />
-            {/* Uma seção por peça; sem combinação, a seção não renderiza nada. */}
-            {order.items.map((item) => (
-              <OrderLookSection key={item.productId} productId={item.productId} name={item.name} />
-            ))}
+            {/* Uma seção por peça; sem combinação, a seção não renderiza nada.
+                Pedido cancelado não tem peça comprada para combinar (RN-63). */}
+            {view?.cancelled
+              ? null
+              : order.items.map((item) => (
+                  <OrderLookSection
+                    key={item.productId}
+                    productId={item.productId}
+                    name={item.name}
+                  />
+                ))}
           </div>
         </div>
       </>

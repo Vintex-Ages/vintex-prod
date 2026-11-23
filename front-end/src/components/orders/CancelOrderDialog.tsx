@@ -59,7 +59,7 @@ function CancelOrderDialog({ open, onClose, onConfirm }: CancelOrderDialogProps)
     >
       {failed ? (
         <p role="alert" className="font-ui text-body-sm text-vermelho-escuro">
-          Não foi possível cancelar o pedido. Confira a situação dele e tente de novo.
+          Não foi possível cancelar o pedido. Feche este aviso e confira a situação dele.
         </p>
       ) : null}
     </Dialog>
