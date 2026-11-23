@@ -7,6 +7,7 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
+from app.constants.catalog import nome_e_do_tipo, tipo_do_nome
 from app.controllers.media_controller import ArquivoRecebido
 from app.core.clock import utcnow_naive
 from app.core.comissao import dividir
@@ -70,6 +71,11 @@ logger = logging.getLogger(__name__)
 _BUSCA_INDISPONIVEL = (
     "A busca por foto está indisponível agora. Tente de novo em instantes."
 )
+# Quantas peças a busca por foto mostra. Sem teto ela devolvia o catálogo
+# inteiro, só reordenado.
+_PECAS_DA_FOTO = 12
+# Quantas candidatas ela olha para trazer primeiro as do tipo lido na foto.
+_JANELA_DA_FOTO = 100
 
 
 class ProductController:
@@ -248,9 +254,10 @@ class ProductController:
             logger.error("Provedor não devolveu vetor para a busca por foto")
             raise ServiceUnavailable(_BUSCA_INDISPONIVEL, code=ErrorCode.AI_UNAVAILABLE)
 
-        rows, total = self._similares(vetores[0], modelo, params, filters)
-        if not rows:
+        achadas = self._da_foto(vetores[0], modelo, filters, analise)
+        if not achadas:
             return self._catalogo_como_resultado(params, filters, analise)
+        rows = achadas[params.offset : params.offset + params.limit]
         return ProductImageSearchResponse(
             items=[
                 ProductImageSearchItem.from_row(row, distance=row["distance"])
@@ -259,7 +266,7 @@ class ProductController:
             interpreted=_interpretada(analise),
             page=params.page,
             page_size=params.page_size,
-            total=total,
+            total=len(achadas),
         )
 
     def _reservar_busca(self, pessoa: str) -> None:
@@ -273,6 +280,30 @@ class ProductController:
                 code=ErrorCode.QUOTA_EXCEEDED,
                 status_code=429,
             ) from cota
+
+    def _da_foto(
+        self,
+        vetor: Sequence[float],
+        modelo: str,
+        filters: ProductFilters,
+        analise: ImageAnalysisResult,
+    ) -> list[ProductSimilarRow]:
+        """As mais parecidas com a foto: da categoria lida, as do mesmo tipo
+        primeiro, no máximo `_PECAS_DA_FOTO`.
+
+        A categoria que a pessoa escolheu nos filtros vale mais que a lida. O
+        tipo sai da descrição, como sai do nome na conversa; sem tipo, fica só
+        a semelhança.
+        """
+        if filters.category is None and analise.category and analise.category.value:
+            filters = filters.model_copy(update={"category": analise.category.value})
+        janela = PageParams(page=1, page_size=_JANELA_DA_FOTO)
+        rows, _ = self._similares(vetor, modelo, janela, filters)
+        tipo = tipo_do_nome(analise.description.value) if analise.description else None
+        if tipo is not None:
+            # `sorted` é estável: dentro de cada grupo continua a semelhança.
+            rows = sorted(rows, key=lambda row: not nome_e_do_tipo(row["name"], tipo))
+        return rows[:_PECAS_DA_FOTO]
 
     def _similares(
         self,

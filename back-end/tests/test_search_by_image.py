@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.constants.embedding import EMBEDDING_DIM
 from app.controllers import product_controller
+from app.controllers.product_controller import _PECAS_DA_FOTO
 from app.models import Address, Product, Seller, Store, User
 from app.services import media_rules
 from app.services.ai.base import (
@@ -175,7 +176,8 @@ def test_foto_de_peca_do_catalogo_traz_a_peca_entre_as_primeiras(
 ) -> None:
     loja = _loja(pg_session, "Aurora")
     parecida = _peca(pg_session, loja, "Jaqueta jeans", eixo(0), categoria="Jaquetas")
-    distante = _peca(pg_session, loja, "Bota de couro", eixo(1), categoria="Sapatos")
+    distante = _peca(pg_session, loja, "Jaqueta longa", eixo(1), categoria="Jaquetas")
+    _peca(pg_session, loja, "Bota de couro", eixo(0), categoria="Sapatos")
     pg_session.commit()
 
     resposta = _buscar(pg_client)
@@ -244,6 +246,64 @@ def test_filtro_sem_peca_devolve_alternativas_e_nao_lista_vazia(
     corpo = resposta.json()
     assert [item["id"] for item in corpo["items"]] == [jaqueta.id]
     assert corpo["total"] == 1
+
+
+@pytest.mark.postgres
+def test_categoria_lida_sem_peca_no_catalogo_devolve_alternativas(
+    pg_client: TestClient, pg_session: Session, provedor: _Provedor
+) -> None:
+    """RN-61: a categoria lida na foto corta, mas não deixa a busca vazia."""
+    loja = _loja(pg_session, "Aurora")
+    bota = _peca(pg_session, loja, "Bota de couro", eixo(0), categoria="Sapatos")
+    pg_session.commit()
+
+    corpo = _buscar(pg_client).json()
+
+    assert [item["id"] for item in corpo["items"]] == [bota.id]
+
+
+@pytest.mark.postgres
+def test_tipo_lido_na_descricao_vem_primeiro(
+    pg_client: TestClient, pg_session: Session, monkeypatch
+) -> None:
+    """A saia é a mais parecida no vetor, mas a foto é de uma jaqueta."""
+    loja = _loja(pg_session, "Aurora")
+    saia = _peca(pg_session, loja, "Saia", eixo(0), categoria="Roupas")
+    jaqueta = _peca(pg_session, loja, "Jaqueta jeans", eixo(1), categoria="Roupas")
+    pg_session.commit()
+    monkeypatch.setattr(
+        product_controller,
+        "get_ai_provider",
+        lambda: _Provedor(
+            ImageAnalysisResult(
+                category=SuggestedField(value="Roupas", confidence=0.9),
+                description=SuggestedField(
+                    value="Jaqueta bomber com zíper", confidence=0.9
+                ),
+            )
+        ),
+    )
+
+    corpo = _buscar(pg_client).json()
+
+    assert [item["id"] for item in corpo["items"]] == [jaqueta.id, saia.id]
+
+
+@pytest.mark.postgres
+def test_a_busca_por_foto_tem_teto(
+    pg_client: TestClient, pg_session: Session, provedor: _Provedor
+) -> None:
+    loja = _loja(pg_session, "Aurora")
+    for i in range(_PECAS_DA_FOTO + 3):
+        _peca(pg_session, loja, f"Jaqueta {i}", eixo(0), categoria="Jaquetas")
+    pg_session.commit()
+
+    primeira = _buscar(pg_client).json()
+    segunda = _buscar(pg_client, page="2").json()
+
+    assert len(primeira["items"]) == primeira["total"] == _PECAS_DA_FOTO
+    assert segunda["items"] == []
+    assert segunda["total"] == _PECAS_DA_FOTO
 
 
 @pytest.mark.postgres
