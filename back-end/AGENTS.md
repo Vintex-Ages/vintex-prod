@@ -6,8 +6,9 @@ Antes de trabalhar neste repositório, leia e siga:
 - `.ai/architecture.md`
 - `.ai/coding-rules.md`
 - `.ai/learning-rules.md`
+- `.ai/git-workflow.md`
 
-Consulte `.ai/glossary.md` e `.ai/examples.md` quando forem relevantes.
+Consulte `.ai/glossary.md`, `CONTEXT.md` e `.ai/examples.md` quando forem relevantes. O comportamento atual de cada área da API está em `documentation/docs/`.
 
 Estas regras valem para todas as tarefas no repositório. Instruções explícitas do usuário podem ajustar o nível de ajuda, mas não autorizam ignorar segurança, escopo ou fatos observados no código.
 
@@ -19,7 +20,7 @@ Estas regras valem para todas as tarefas no repositório. Instruções explícit
 - Faça mudanças pequenas e alinhadas ao pedido; não altere código não relacionado.
 - Preserve as responsabilidades de rota/view, controller, repository, schema e model.
 - Não trate exemplos comentados como implementação pronta.
-- Não implemente autenticação mock. JWT é a direção arquitetural informada, mas a implementação e suas decisões de segurança ainda devem ser confirmadas no repositório.
+- Não implemente autenticação mock. A autenticação JWT já existe em `app/core/security.py` (ADR 0002); use as guardas de lá, sem criar caminhos paralelos.
 - Ao concluir mudanças de produto, execute as verificações proporcionais ao risco (`pytest`, Ruff e Black, conforme aplicável).
 
 ## Skills do projeto

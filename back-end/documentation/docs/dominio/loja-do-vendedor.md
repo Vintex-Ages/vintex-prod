@@ -15,10 +15,28 @@ A loja do próprio vendedor vive sob `/api/users/me/store` (ADR 0001 §4) e exig
 | `POST /api/users/me/store` | cria a loja: nome, descrição, logo, chave Pix, endereço, documento e versão do contrato |
 | `GET /api/users/me/store` | a própria loja, com chave Pix, documento e selo; `404 STORE_NOT_FOUND` sem loja |
 | `PATCH /api/users/me/store` | edita nome, descrição, `logo_url`, endereço e chave Pix; `404 STORE_NOT_FOUND` sem loja |
+| `POST /api/users/me/store/verification` | pede o selo Confiável; ver [O selo Confiável](#o-selo-confiável) |
 
 ## O selo na própria loja
 
 `GET /api/users/me/store` devolve `verified` (RN-73), o mesmo selo da loja pública. O painel do vendedor deixou de fazer uma segunda requisição só para saber se a loja tem o selo ([#259](https://github.com/Vintex-Ages/back-end/issues/259)).
+
+## O selo Confiável
+
+Fonte de verdade: `app/views/seller_verification_routes.py` e `app/controllers/seller_controller.py`, da BE-US007-1 ([#143](https://github.com/Vintex-Ages/back-end/issues/143)).
+
+A verificação é **simulada**: não consulta Receita Federal nem outro órgão. Ela confere o dígito verificador do documento que o vendedor informou ao criar a loja, pela mesma regra descrita em [O documento do vendedor](#o-documento-do-vendedor).
+
+| Situação | Resposta |
+| --- | --- |
+| documento válido | `200 { "verified": true }`, e `sellers.verified` passa a `true` |
+| já verificado | `200 { "verified": true }`, sem conferir de novo (idempotente) |
+| documento inválido | `422` no campo `document_value`; o selo não muda |
+| sem loja | `404 STORE_NOT_FOUND` |
+
+O documento é conferido de novo nessa hora, e não só no cadastro, porque um vendedor gravado antes da [#217](https://github.com/Vintex-Ages/back-end/issues/217) pode ter documento que só passava na contagem de dígitos. Não há rota para retirar o selo.
+
+> <span className="verificar">*</span> **Verificar com quem implementou a #143.** O cabeçalho de `seller_verification_routes.py` diz que o arquivo é temporário e que a rota migraria para `store_routes.py` quando a #141 entrasse. A #141 já entrou e a rota continua no arquivo separado. Falta decidir se a migração ainda vale.
 
 ## O documento do vendedor
 

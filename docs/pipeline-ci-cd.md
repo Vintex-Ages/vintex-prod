@@ -58,6 +58,8 @@ Sem as variáveis abaixo o job **não valida nada** e avisa no resumo da execuç
 
 O deploy só roda com **front-end/ e back-end/** presentes no repositório (o release exige imagem e `frontend/index.html`).
 
+`deploy-prod.yml` (produção, ECS/Fargate): **não faz build**. Um portão confere que o commit da `deploy` é um commit da `main` com deploy de staging bem-sucedido e promove esse mesmo SHA (ADR 0003). Em seguida registra as task definitions com a imagem `vintex-backend:<sha>`, roda `alembic upgrade head` numa task avulsa, atualiza os serviços, publica o front que a staging testou (`releases/<sha>/front-end.tar.gz`) e faz o smoke test em `/health` e na página inicial. Detalhes em `back-end/documentation/docs/infraestrutura/aws-producao.md`.
+
 ### Variáveis (nada disso vai para o código)
 
 | Onde | Nome | Para quê |
@@ -65,7 +67,8 @@ O deploy só roda com **front-end/ e back-end/** presentes no repositório (o re
 | Repositório | `DEPLOY_STAGING_ENABLED`, `DEPLOY_PRODUCTION_ENABLED` | liga cada deploy (`true`) |
 | Repositório | `AWS_ROLE_ARN_STAGING`, `STAGING_INSTANCE_ID` | `LLM key check` |
 | Repositório | `REQUIRE_LLM_CHECK`, `LLM_PROBE_COMPLETION` | endurecem o `LLM key check` |
-| Environment `staging` / `production` | `AWS_ROLE_ARN`, `DEPLOY_BUCKET`, `INSTANCE_ID` | deploy |
+| Environment `staging` | `AWS_ROLE_ARN`, `DEPLOY_BUCKET`, `INSTANCE_ID` | deploy |
+| Environment `production` | `AWS_ROLE_ARN`, `PRODUCTION_CONFIG` | deploy; `PRODUCTION_CONFIG` é o output `deploy_config` do Terraform `aws-production` (sem segredos) |
 | Environment | `PUBLIC_BASE_URL`, `AWS_REGION` | smoke test; região (padrão `us-east-2`) |
 
 O role AWS usa OIDC. Exemplo de condição na trust policy: `token.actions.githubusercontent.com:sub = repo:Vintex-Ages/vintex-prod:environment:staging` (e `:environment:production`).
@@ -80,8 +83,13 @@ O role AWS usa OIDC. Exemplo de condição na trust policy: `token.actions.githu
 ## Antes de ligar o deploy da staging
 
 - **Ajustes manuais da EC2.** `compose.yml`, `nginx.conf` e `deploy_staging.py` da staging foram alterados à mão no host. O deploy extrai o release do git e **não preserva** essas edições; reconcilie tudo no repositório antes de definir `DEPLOY_STAGING_ENABLED=true`.
-- **Produção não existe.** Falta o ambiente no Terraform e o `scripts/infra/deploy_production.py`; `deploy-prod.yml` falha de propósito no build enquanto o script não estiver no release (o `deploy_staging.py` valida conta e fila da staging e não deve ser reaproveitado).
-- **Artefato de produção.** O deploy de produção reconstrói a imagem a partir do commit de `deploy`; promover a mesma imagem testada na staging é uma melhoria futura.
+
+## Antes de ligar o deploy da produção
+
+- **Provisionar o Terraform `aws-production`** (`make terraform-apply production`, na raiz do back-end) depois da staging: o provedor OIDC e os repositórios ECR pertencem ao state da staging.
+- **Preencher o Environment `production`** com os outputs `deploy_role_arn`, `public_url` e `deploy_config`.
+- **Confirmar as inscrições de e-mail** do tópico de alarmes (SNS) antes de contar com os avisos.
+- Só então definir `DEPLOY_PRODUCTION_ENABLED=true`.
 
 ## Limites conhecidos (não verificados)
 

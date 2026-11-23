@@ -6,12 +6,15 @@ sidebar_position: 10
 
 Fonte de verdade: `app/controllers/notification_controller.py`, `app/repositories/notification_repository.py`, `app/models/notification.py` e a issue [#261](https://github.com/Vintex-Ages/back-end/issues/261).
 
-Aviso dentro do produto, e só dentro dele (RN-84): nada é enviado por e-mail nem por push. São dois eventos, os da RN-85, e nenhum outro:
+Aviso dentro do produto, e só dentro dele (RN-84): nada é enviado por e-mail nem por push. São três eventos: os dois da RN-85 e a suspensão pela moderação (RN-80, [#327](https://github.com/Vintex-Ages/back-end/issues/327)):
 
 | Evento | Quem recebe | Quando nasce |
 | --- | --- | --- |
 | `sale` | o vendedor da loja do pedido | quando a administradora **aprova** o comprovante ([Validação do comprovante](./validacao-de-comprovante)), e não no checkout: é a aprovação que confirma a venda (RN-21) |
 | `favorite` | o vendedor dono da peça | quando alguém favorita a peça ([Favoritos](./favoritos)) |
+| `moderation` | o vendedor dono da peça | quando a administradora suspende a peça, com o motivo em `moderation_reason` ([Moderação de anúncios](./moderacao-de-anuncios)). Suspender de novo atualiza o motivo do mesmo aviso, sem criar outro |
+
+`order_id` só vem preenchido em `sale`, e `moderation_reason` só em `moderation`. O banco garante a segunda regra com o CHECK `ck_notifications_moderation`.
 
 O aviso é gravado no mesmo commit do evento: não existe venda aprovada sem aviso, nem aviso de favorito recusado.
 

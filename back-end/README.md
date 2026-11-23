@@ -3,8 +3,11 @@
 Consulte o [guia de contribuição](CONTRIBUTING.md) antes de abrir uma issue ou Pull Request.
 
 Backend da aplicação Vintex, desenvolvido com **Python** e **FastAPI**, seguindo o padrão **MVC**.
+Vive em `back-end/` no monorepo [`vintex-prod`](../README.md), importado do antigo
+repositório `Vintex-Ages/back-end` em 04/11/2026. As issues antigas continuam lá.
 
-Documentação viva (arquitetura, decisões, infraestrutura) em [`documentation/`](documentation/README.md).
+Documentação viva (domínio, arquitetura, infraestrutura) em [`documentation/`](documentation/README.md).
+Decisões de arquitetura em [`.ai/adr/`](.ai/adr/) e vocabulário do domínio em [`CONTEXT.md`](CONTEXT.md).
 
 ## Arquitetura
 
@@ -15,6 +18,11 @@ app/
 ├── controllers/     # Controller — lógica de negócio
 ├── schemas/         # DTOs — validação de request/response (Pydantic)
 ├── repositories/    # Acesso a dados (queries)
+├── services/        # IA, mídia, embedding, cota do chat, sugestão de preço
+├── workers/         # Consumidor SQS da análise de imagens
+├── core/            # Erros, segurança/JWT, paginação, relógio, documento
+├── constants/       # Catálogo de estilos e vocabulário fechado
+├── seeds/           # Dados sintéticos de desenvolvimento
 ├── config.py        # Configurações (env vars)
 ├── database.py      # Conexão com o banco
 └── main.py          # Entrypoint da aplicação
@@ -32,9 +40,8 @@ app/
 ## Setup local
 
 ```bash
-# Clonar o repositório
-git clone <repo-url>
-cd vintex-backend
+# A partir da raiz do monorepo
+cd back-end
 
 # Criar e ativar venv
 python -m venv .venv
@@ -157,14 +164,24 @@ Alvos granulares para diagnóstico: `lint`, `format-check`, `terraform-init`, `t
 
 `test-localstack`, `test-sqs`, `test-ai-worker`, `test-ministack` e `test-interoperability` executam testes reais dos emuladores e do fluxo local (VE-17/VE-18/VE-20/VE-21/VE-22). `infra-up` aplica as migrations ao Postgres local e provisiona as filas SQS no mesmo LocalStack do Compose; `test-unit` roda no container da API. O consumidor sintético de interoperabilidade permanece um harness de teste; o worker de produto consome a fila de análise. O módulo Terraform de VPC Link pertence à VE-19 (#170), ainda em hold.
 
-A [VE-14 (#165)](https://github.com/Vintex-Ages/back-end/issues/165) acrescenta módulos Terraform de rede e papel de execução ECS, exercitados apenas por plano mockado. A interface de cada task Fargate será criada pelo modo `awsvpc` quando a VE-19 ligar os módulos à computação; nenhum recurso AWS real é aplicado nesta fase. Veja [a documentação de Terraform](infra/terraform/README.md).
+A [VE-14 (#165)](https://github.com/Vintex-Ages/back-end/issues/165) acrescenta módulos Terraform de rede e papel de execução ECS, exercitados apenas por plano mockado. No ambiente local eles continuam exercitados só contra LocalStack e MiniStack; a produção real em ECS/Fargate (VE-19) usa o módulo de rede no root `infra/terraform/aws-production/`. Veja [a documentação de Terraform](infra/terraform/README.md).
+
+## Ambientes AWS
+
+Staging em EC2 com Docker Compose (merge em `main`) e produção em ECS/Fargate
+(merge em `deploy`), conforme o [ADR 0003](.ai/adr/0003-ambientes-staging-e-producao.md).
+Recursos, deploy e operação em
+[`documentation/docs/infraestrutura/`](documentation/docs/infraestrutura/).
+
+## Avaliação da IA
+
+`scripts/avaliar_ia.py` mede a IA contra conjuntos de referência, com o provedor
+real e fora do CI. Ver
+[`documentation/docs/arquitetura/avaliacao-da-ia.md`](documentation/docs/arquitetura/avaliacao-da-ia.md).
 
 ## Convenção de branches
 
-```
-feature/<issue-number>-<descricao>
-bugfix/<issue-number>-<descricao>
-hotfix/<issue-number>-<descricao>
-```
+Segue o [`CONTRIBUTING.md` da raiz](../CONTRIBUTING.md): `<prefixo>/<issue>-<descricao>`,
+com `feature`, `bugfix`, `hotfix`, `refactor`, `docs` ou `chore`, sempre a partir de `develop`.
 
 Exemplo: `feature/42-tela-de-login`

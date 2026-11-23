@@ -104,3 +104,13 @@ externa é sintética; não há inferência real nem acesso à AWS. Nos erros, t
 entregas levam à DLQ, enquanto health e cadastro manual continuam funcionando.
 Os tempos de polling/visibilidade são reduzidos apenas no harness de teste.
 Filas, objetos e registros sintéticos são removidos ao final.
+
+## Filas por ambiente
+
+O worker é o mesmo código (`python -m app.workers.ai_analysis`) nos três ambientes. Muda a fila e de onde o gateway de IA vem:
+
+| Ambiente | Fila e DLQ | Gateway de IA do worker |
+| --- | --- | --- |
+| Local | `vintex-local-image-analysis` (LocalStack) | conforme o `.env`; perfil opt-in `ai-worker` no Compose |
+| Staging | `vintex-ai-staging` ([Ambiente AWS de staging](./aws-staging.md)) | FreeLLMAPI no Compose da EC2 |
+| Produção | `vintex-ai-production` ([Ambiente AWS de produção](./aws-producao.md)) | FreeLLMAPI como sidecar na task do worker, que escala de 0 a 1 pela fila |
