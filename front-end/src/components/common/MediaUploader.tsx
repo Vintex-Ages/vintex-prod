@@ -415,7 +415,7 @@ function MediaUploader({
                   aria-label={`Remover mídia ${index + 1}`}
                   disabled={disabled}
                   onClick={() => removeItem(index)}
-                  className="flex min-h-11 min-w-11 items-center justify-center border border-vermelho-escuro bg-transparent text-vermelho-escuro transition-colors hover:bg-vermelho-suave focus:outline-none focus-visible:ring-2 focus-visible:ring-vermelho-escuro disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-11 min-w-11 items-center justify-center border border-vermelho-escuro bg-transparent text-vermelho-escuro transition-colors hover:bg-vermelho-suave focus:outline-none focus-visible:ring-2 focus-visible:ring-vermelho-escuro disabled:cursor-not-allowed disabled:border-linha disabled:bg-transparent disabled:text-texto-auxiliar"
                 >
                   <svg
                     aria-hidden="true"

@@ -24,6 +24,16 @@ describe('<Button />', () => {
     },
   );
 
+  // RN-87: o vinho com transparência fica rosa.
+  it.each(['primary', 'secondary', 'quiet', 'success', 'outline'] as const)(
+    'desativado, a variante "%s" não usa transparência',
+    (variant) => {
+      renderButton({ variant, disabled: true });
+
+      expect(screen.getByRole('button').className).not.toMatch(/opacity/);
+    },
+  );
+
   it('applies different styles depending on the variant', () => {
     renderButton({ variant: 'primary' });
     const primaryClassName = screen.getByRole('button').className;

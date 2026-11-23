@@ -247,7 +247,7 @@ export default function VintexAI() {
               type="submit"
               aria-label="Enviar"
               disabled={!draft.trim() || quotaAtiva}
-              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-vermelho-escuro bg-vermelho-escuro text-branco-quente transition hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-branco-quente disabled:cursor-not-allowed disabled:border-linha disabled:bg-papel-profundo disabled:text-texto-auxiliar disabled:hover:brightness-100"
             >
               <SendIcon className="h-5 w-5" />
             </button>
