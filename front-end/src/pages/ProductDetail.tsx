@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import SuspendProductAction from '@/components/admin/SuspendProductAction';
 import Avatar from '@/components/common/Avatar';
@@ -72,7 +72,9 @@ function sizeLabel(size: string): string {
   return label ? `${size} (${label})` : size;
 }
 
-function Attribute({ label, value }: { label: string; value: ReactNode }) {
+/** Atributo da ficha; sem valor não aparece. */
+function Attribute({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_1.85fr] items-start gap-3 border-b border-linha py-2.5">
       <dt className="text-body-sm font-medium text-texto-auxiliar">{label}</dt>
@@ -457,16 +459,18 @@ function ProductDetail() {
               </div>
             ) : null}
             <p className="mb-2 font-ui text-label font-bold uppercase leading-relaxed tracking-wider text-vermelho-escuro">
-              {product.category} · {product.color} · {product.condition}
+              {[product.category, product.color, product.condition].filter(Boolean).join(' · ')}
             </p>
             <h1 className="font-display text-[2.6rem] leading-[1.05] tracking-[-0.02em] text-tinta">
               {product.name}
             </h1>
             <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3 border-b border-linha pb-4">
               <p className="font-ui text-[2rem] font-bold leading-[1.5] text-tinta">{priceLabel}</p>
-              <p className="text-body-sm text-texto-auxiliar">
-                Tamanho: <span className="font-bold text-tinta">{sizeLabel(product.size)}</span>
-              </p>
+              {product.size ? (
+                <p className="text-body-sm text-texto-auxiliar">
+                  Tamanho: <span className="font-bold text-tinta">{sizeLabel(product.size)}</span>
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -524,14 +528,20 @@ function ProductDetail() {
             <dl className="mt-4 border-t border-linha">
               <Attribute label="Marca / Origem" value={product.brand} />
               <Attribute label="Estado" value={product.condition} />
-              <Attribute label="Material" value={product.material ?? '—'} />
-              <Attribute label="Medidas" value={product.measurements ?? '—'} />
-              <Attribute label="Localização" value={product.store.city ?? '—'} />
+              <Attribute label="Material" value={product.material} />
+              <Attribute label="Medidas" value={product.measurements} />
+              <Attribute label="Localização" value={product.store.city} />
             </dl>
           </section>
 
           {/* Sem peças (ou enquanto carrega, ou em erro), nada aparece. */}
-          {look ? <LookSuggestions suggestion={look} onAdd={handleAddLookPiece} /> : null}
+          {look ? (
+            <LookSuggestions
+              suggestion={look}
+              onAdd={handleAddLookPiece}
+              basePrice={purchaseUnavailable ? undefined : product.price}
+            />
+          ) : null}
         </div>
       </div>
 

@@ -31,7 +31,7 @@ describe('<Gallery />', () => {
     expect(screen.queryByRole('group')).toBeNull();
   });
 
-  it('mantém o contador e esconde navegação quando há só uma foto', () => {
+  it('esconde o contador e a navegação quando há só uma foto', () => {
     render(
       <Gallery
         media={[{ type: 'image', url: 'https://example.com/0.jpg', position: 0 }]}
@@ -40,7 +40,7 @@ describe('<Gallery />', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Próxima foto' })).toBeNull();
-    expect(screen.getByText('Foto 1 de 1')).toBeInTheDocument();
+    expect(screen.queryByText('Foto 1 de 1')).toBeNull();
   });
 
   it('clicar numa miniatura troca a foto principal e atualiza o indicador', async () => {

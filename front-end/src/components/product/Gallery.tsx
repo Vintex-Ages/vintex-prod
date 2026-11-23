@@ -61,8 +61,8 @@ function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
  * A proporção quase quadrada segue o frame de detalhe do Figma; as miniaturas
  * continuam recortando para quadrado.
  *
- * As miniaturas e setas só aparecem quando há mais de um item. O contador
- * acompanha a mídia principal e é `aria-live` para leitor de tela acompanhar
+ * As miniaturas, as setas e o contador só aparecem quando há mais de um item. O
+ * contador acompanha a mídia principal e é `aria-live` para leitor de tela acompanhar
  * a troca.
  *
  * Usage:
@@ -134,7 +134,7 @@ function Gallery({ media, productName }: GalleryProps) {
             </div>
           </>
         ) : null}
-        {active.type === 'image' ? (
+        {hasMultiple && active.type === 'image' ? (
           <p
             aria-live="polite"
             className="absolute bottom-2 right-2 bg-tinta/75 px-2 py-1 text-[10px] uppercase tracking-wider text-branco-quente"
@@ -142,7 +142,6 @@ function Gallery({ media, productName }: GalleryProps) {
             <span>
               Foto {activeIndex + 1} de {items.length}
             </span>
-            <span aria-hidden="true"> · Vintex Archive</span>
           </p>
         ) : null}
       </div>

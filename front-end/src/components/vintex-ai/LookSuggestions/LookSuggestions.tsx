@@ -48,6 +48,8 @@ export interface LookSuggestionsProps {
    * gênero da peça, então o componente não o deduz. Sem ele, usa o título genérico.
    */
   title?: string;
+  /** Preço da peça aberta, em reais. Com ele, o total é o do look inteiro. */
+  basePrice?: number;
 }
 
 const DEFAULT_TITLE = 'Combine esta peça e monte o look';
@@ -136,6 +138,7 @@ export function LookSuggestions({
   suggestion,
   onAdd,
   title = DEFAULT_TITLE,
+  basePrice,
 }: LookSuggestionsProps) {
   const { pieces, matchType, totalAmount } = suggestion;
   const hasPieces = pieces.length > 0;
@@ -180,8 +183,12 @@ export function LookSuggestions({
       </ul>
 
       <p className="mt-1 flex items-baseline justify-between border-t border-linha pt-3 text-body-sm text-texto-auxiliar">
-        <span>Total do conjunto</span>
-        <strong className="text-body font-bold text-tinta">{brl(totalAmount)}</strong>
+        <span>
+          {basePrice === undefined ? 'Total do conjunto' : 'Total do conjunto, com esta peça'}
+        </span>
+        <strong className="text-body font-bold text-tinta">
+          {brl(totalAmount + (basePrice ?? 0))}
+        </strong>
       </p>
     </section>
   );

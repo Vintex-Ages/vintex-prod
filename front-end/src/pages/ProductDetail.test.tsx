@@ -318,11 +318,21 @@ describe('<ProductDetail />', () => {
       expect(secao.getByText('Brechó da Redenção')).toBeInTheDocument();
       expect(secao.getByText('R$ 90,00')).toBeInTheDocument();
       expect(secao.getByText('Lenço de seda estampado')).toBeInTheDocument();
-      expect(secao.getByText('Total do conjunto')).toBeInTheDocument();
-      expect(secao.getByText('R$ 125,50')).toBeInTheDocument();
+      // 125,50 das sugestões mais 159,90 da peça aberta.
+      expect(secao.getByText('Total do conjunto, com esta peça')).toBeInTheDocument();
+      expect(secao.getByText('R$ 285,40')).toBeInTheDocument();
       expect(mockedGetCombinations).toHaveBeenCalledWith('1');
       // O placeholder fixo saiu.
       expect(screen.queryByRole('img', { name: /Bolsa Baú de Couro/ })).not.toBeInTheDocument();
+    });
+
+    it('peça vendida: o total é só o das sugestões', async () => {
+      mockedGetCombinations.mockResolvedValue(LOOK);
+      renderAt('/product/4');
+
+      const secao = within(await secaoDoLook());
+      expect(secao.getByText('Total do conjunto')).toBeInTheDocument();
+      expect(secao.getByText('R$ 125,50')).toBeInTheDocument();
     });
 
     // Teste 2.
