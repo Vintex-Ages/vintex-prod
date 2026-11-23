@@ -59,7 +59,7 @@ export function VintexSearchSpotlight({
   eyebrow = 'IA calibrada • Vintage 90s + Alfaiataria',
   heading = 'O que você procura hoje no RS?',
   placeholder = 'Descreva a peça ou estilo...',
-  suggestions = ['Blazer de lã', 'Jeans anos 90', 'Camisa de seda'],
+  suggestions = ['Casaco para o inverno', 'Bolsa de couro', 'Tênis branco'],
   onlineLabel = 'Online',
   isOnline = true,
   onSubmit,

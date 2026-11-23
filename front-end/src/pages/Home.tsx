@@ -5,6 +5,8 @@ import BrandSignature from '@/components/common/BrandSignature';
 import Button from '@/components/common/Button';
 import { EmptyState } from '@/components/common/EmptyState';
 import ErrorState from '@/components/common/ErrorState';
+import AdminHomePanel from '@/components/home/AdminHomePanel';
+import SellerHomePanel from '@/components/home/SellerHomePanel';
 import Container from '@/components/layout/Container';
 import { SearchBar } from '@/components/catalog/SearchBar';
 import { CATEGORIES } from '@/components/catalog/categories';
@@ -22,13 +24,15 @@ import type { Preference, StyleOption } from '@/types/preference';
 
 const SUGGESTIONS = ['Jaqueta', 'Vestido', 'Tênis', 'Bolsa'];
 
-const VINTEX_SUGGESTIONS = ['Blazer de lã', 'Jeans anos 90', 'Camisa de seda'];
+const VINTEX_SUGGESTIONS = ['Casaco para o inverno', 'Bolsa de couro', 'Tênis branco'];
 
 function Home() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
 
-  const showSellInvite = isAuthenticated && !user?.is_seller;
+  const isSeller = user?.is_seller === true;
+  const isAdmin = user?.is_admin === true;
+  const showSellInvite = isAuthenticated && !isSeller && !isAdmin;
   const firstName = user?.name?.trim().split(/\s+/)[0] || '';
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -141,37 +145,44 @@ function Home() {
             <div className="flex min-w-0 flex-col gap-8 tablet:gap-10">
               <section aria-labelledby="home-saudacao">
                 <p className="mb-3 font-ui text-label font-bold uppercase tracking-wider text-vermelho-escuro">
-                  Curadoria personalizada
+                  {isAdmin ? 'Administração' : 'Curadoria personalizada'}
                 </p>
 
                 <h1 id="home-saudacao" className="font-display text-h1 text-tinta">
                   Olá{firstName ? `, ${firstName}` : ''}.
-                  <span className="block">Novos achados do seu estilo.</span>
+                  <span className="block">
+                    {isAdmin ? 'Veja o que espera por você.' : 'Novos achados do seu estilo.'}
+                  </span>
                 </h1>
 
-                <div className="mt-4 font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
-                  {preferenceLabels.length > 0 ? (
-                    <p>
-                      Seu estilo está calibrado para{' '}
-                      <strong className="font-semibold text-tinta">
-                        {preferenceLabels.join(' e ')}
-                      </strong>
-                      . Explore as peças selecionadas para você.
-                    </p>
-                  ) : (
-                    <p>
-                      Escolha seus estilos para receber uma curadoria personalizada.{' '}
-                      <Link
-                        to={paths.profilePreferences}
-                        className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
-                      >
-                        Defina suas preferências
-                      </Link>
-                      .
-                    </p>
-                  )}
-                </div>
+                {isAdmin ? null : (
+                  <div className="mt-4 font-ui text-body-sm leading-relaxed text-texto-auxiliar tablet:text-body">
+                    {preferenceLabels.length > 0 ? (
+                      <p>
+                        Seu estilo está calibrado para{' '}
+                        <strong className="font-semibold text-tinta">
+                          {preferenceLabels.join(' e ')}
+                        </strong>
+                        . Explore as peças selecionadas para você.
+                      </p>
+                    ) : (
+                      <p>
+                        Escolha seus estilos para receber uma curadoria personalizada.{' '}
+                        <Link
+                          to={paths.profilePreferences}
+                          className="font-semibold text-vermelho-escuro underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
+                        >
+                          Defina suas preferências
+                        </Link>
+                        .
+                      </p>
+                    )}
+                  </div>
+                )}
               </section>
+
+              {isAdmin && <AdminHomePanel />}
+              {isSeller && <SellerHomePanel />}
 
               {showSellInvite && (
                 <section aria-labelledby="vender-titulo">
@@ -233,17 +244,17 @@ function Home() {
                 'text-[30.8px] font-semibold leading-[30.8px] tracking-[-1.232px] tablet:text-h2 tablet:leading-[1.05] tablet:tracking-normal',
             )}
           >
-            {isAuthenticated ? 'Garimpados para Você' : 'Feed de achados'}
+            {isAuthenticated && !isAdmin ? 'Garimpados para Você' : 'Feed de achados'}
           </h2>
 
-          {isAuthenticated ? (
+          {isAuthenticated && !isAdmin ? (
             <Link
               to={paths.profilePreferences}
               className="font-ui text-label font-semibold text-vermelho-escuro underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vermelho-escuro"
             >
               Editar minhas preferências
             </Link>
-          ) : feed && feed.total > 0 ? (
+          ) : !isAuthenticated && feed && feed.total > 0 ? (
             <p className="hidden font-ui text-body-sm text-texto-auxiliar tablet:block">
               {formatPieceCount(feed.total)} à venda agora
             </p>

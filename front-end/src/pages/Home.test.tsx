@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthContext, type AuthContextValue } from '@/context/useAuth';
 import { FavoritesProvider } from '@/context/FavoritesContext';
+import { useSellerProducts } from '@/hooks/useSellerProducts';
+import { listReceipts } from '@/services/adminReceiptService';
 import { getFeedWithDetails } from '@/services/catalogService';
 import {
   getRecommendationsWithDetails,
@@ -13,6 +15,8 @@ import type { AuthUser } from '@/types/auth';
 import type { Paginated, ProductDetail } from '@/types/product';
 import Home from './Home';
 
+vi.mock('@/hooks/useSellerProducts', () => ({ useSellerProducts: vi.fn() }));
+vi.mock('@/services/adminReceiptService', () => ({ listReceipts: vi.fn() }));
 vi.mock('@/services/catalogService', () => ({ getFeedWithDetails: vi.fn() }));
 vi.mock('@/services/recommendationService', () => ({ getRecommendationsWithDetails: vi.fn() }));
 
@@ -141,6 +145,19 @@ function renderHome(user: AuthUser | null = null) {
 
 beforeEach(() => {
   vi.mocked(getFeedWithDetails).mockReset();
+  vi.mocked(useSellerProducts).mockReturnValue({
+    state: {
+      status: 'ready',
+      products: [],
+      counts: { ativo: 3, reservado: 1, vendido: 2, despublicado: 0, total: 6 },
+    },
+  } as unknown as ReturnType<typeof useSellerProducts>);
+  vi.mocked(listReceipts).mockReset().mockResolvedValue({
+    items: [],
+    page: 1,
+    pageSize: 20,
+    total: 2,
+  });
   // Logado, a grade vem das recomendações; por padrão, os mesmos itens do feed.
   vi.mocked(getRecommendationsWithDetails)
     .mockReset()
@@ -296,7 +313,72 @@ describe('<Home />', () => {
       renderHome({ ...BUYER, is_seller: true });
 
       await screen.findByRole('link', { name: 'Vestido floral' });
-      expect(screen.queryByRole('link', { name: 'Anunciar Peça' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Criar meu brechó' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Home por papel', () => {
+    it('quem vende vê a situação da loja e os atalhos', async () => {
+      renderHome({ ...BUYER, is_seller: true });
+
+      const loja = await screen.findByRole('region', { name: 'Sua loja' });
+      expect(
+        within(loja).getByText('3 peças anunciadas, 1 reservada, 2 vendidas'),
+      ).toBeInTheDocument();
+      expect(within(loja).getByRole('link', { name: 'Abrir minha loja' })).toHaveAttribute(
+        'href',
+        '/seller',
+      );
+      expect(within(loja).getByRole('link', { name: 'Anunciar peça' })).toHaveAttribute(
+        'href',
+        '/seller/products/new',
+      );
+    });
+
+    it('quem vende e não tem as peças carregadas fica com os atalhos', async () => {
+      vi.mocked(useSellerProducts).mockReturnValue({
+        state: { status: 'error' },
+      } as unknown as ReturnType<typeof useSellerProducts>);
+      renderHome({ ...BUYER, is_seller: true });
+
+      const loja = await screen.findByRole('region', { name: 'Sua loja' });
+      expect(within(loja).queryByText(/anunciada/)).not.toBeInTheDocument();
+      expect(within(loja).getByRole('link', { name: 'Abrir minha loja' })).toBeInTheDocument();
+    });
+
+    it('administradora vê a área dela, sem convite para vender nem preferências', async () => {
+      renderHome({ ...BUYER, is_admin: true });
+
+      const area = await screen.findByRole('region', { name: 'Administração da Vintex' });
+      expect(
+        await within(area).findByText('2 comprovantes esperando análise.'),
+      ).toBeInTheDocument();
+      expect(listReceipts).toHaveBeenCalledWith({ status: 'pendente' });
+      expect(within(area).getByRole('link', { name: 'Comprovantes' })).toHaveAttribute(
+        'href',
+        '/admin/receipts',
+      );
+      expect(screen.queryByRole('link', { name: 'Criar meu brechó' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/preferências/)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Feed de achados' })).toBeInTheDocument();
+    });
+
+    it('administradora sem a contagem de comprovantes fica com os atalhos', async () => {
+      vi.mocked(listReceipts).mockRejectedValue(new Error('500'));
+      renderHome({ ...BUYER, is_admin: true });
+
+      const area = await screen.findByRole('region', { name: 'Administração da Vintex' });
+      expect(within(area).queryByText(/esperando análise/)).not.toBeInTheDocument();
+    });
+
+    it('comprador não vê área de loja nem de administração', async () => {
+      renderHome(BUYER);
+
+      await screen.findByRole('link', { name: 'Vestido floral' });
+      expect(screen.queryByRole('region', { name: 'Sua loja' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('region', { name: 'Administração da Vintex' }),
+      ).not.toBeInTheDocument();
     });
   });
 
